@@ -1,0 +1,62 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+ENV/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+config.yaml
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Project output data (generated, never in repo) ----
+projects/*
+!projects/.gitkeep
+
+# ---- Data / media artifacts ----
+# NOTE: broad ignore. If a small fixture must be committed, force-add it:
+*.csv
+*.json
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.wav
+*.mp3
+*.npy
+*.npz
+
+# ---- ML model weights / checkpoints ----
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.h5
+*.pb
+*.tflite
+
+# ---- Keep tracked config/lock files that would otherwise match above ----
+!config.yaml.example
+!uv.lock

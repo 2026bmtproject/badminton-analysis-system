@@ -1,0 +1,2 @@
+# 範例設定。使用：cp config.yaml.example config.yaml 後填入自己的值。
+# 真正的 config.yaml 含 API key 等機密，已被 .gitignore 忽略，勿提交。
