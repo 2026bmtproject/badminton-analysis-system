@@ -35,6 +35,10 @@ Thumbs.db
 projects/*
 !projects/.gitkeep
 
+# ---- Stage output data (generated, never in repo) ----
+stages/*
+!stages/.gitkeep
+
 # ---- Data / media artifacts ----
 # NOTE: broad ignore. If a small fixture must be committed, force-add it:
 *.csv
