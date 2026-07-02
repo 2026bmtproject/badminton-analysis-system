@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+
+
+class StageStatus(str, Enum):
+    """Execution status of a single module (stage).
+
+    Subclassing str lets it serialize straight to a JSON string and
+    compare against plain strings.
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+STATUS_FILENAME = "status.json"
+
+
+@dataclass
+class StageState:
+    """Contents of status.json, one per stage.
+
+    Stored at stages/{name}/status.json.
+    Paths are always saved as strings relative to project_path for
+    portability; resolve them back to absolute paths when reading.
+    """
+
+    name: str
+    status: StageStatus = StageStatus.PENDING
+    started_at: str | None = None      # ISO 8601, when execution started
+    finished_at: str | None = None     # ISO 8601, when it ended (success or failure)
+    output_path: str | None = None     # main output file, relative to project_path
+    error: str | None = None           # error message when status == FAILED
+    updated_at: str | None = None      # when this file was last written
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["status"] = self.status.value
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "StageState":
+        return cls(
+            name=d["name"],
+            status=StageStatus(d.get("status", StageStatus.PENDING.value)),
+            started_at=d.get("started_at"),
+            finished_at=d.get("finished_at"),
+            output_path=d.get("output_path"),
+            error=d.get("error"),
+            updated_at=d.get("updated_at"),
+        )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def read_status(stage_dir: Path) -> StageState | None:
+    """Read stage_dir/status.json; return None if it does not exist."""
+    path = Path(stage_dir) / STATUS_FILENAME
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as f:
+        return StageState.from_dict(json.load(f))
+
+
+def write_status(stage_dir: Path, state: StageState) -> None:
+    """Write state into stage_dir/status.json, refreshing updated_at."""
+    state.updated_at = _now_iso()
+    path = Path(stage_dir) / STATUS_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+
+
+class BaseModule:
+    name: str
+    dependencies: list[str]  # which modules must finish first
+
+    def check_ready(self, project_path) -> bool:
+        """Return True only when every dependency's status is completed."""
+        raise NotImplementedError
+    def run(self, project_path, on_progress=None):
+        """Run processing, write results to stages/{name}/, update status.json."""
+        raise NotImplementedError
+
+    def get_output_path(self, project_path) -> Path:
+        """Return the path to the result file."""
+        raise NotImplementedError
