@@ -16,6 +16,11 @@ import json
 import pytest
 
 from modules.base import StageState, StageStatus, read_status, write_status
+from modules.common.config import (
+    GEMINI_API_KEY_ENV,
+    get_gemini_api_key,
+    load_config,
+)
 from modules.match_segmentation.segmenter import (
     DEFAULT_AVG_THR_SCALE,
     DEFAULT_FINAL_MERGE_GAP,
@@ -107,6 +112,40 @@ def test_parse_args_rejects_non_numeric_frame_step(monkeypatch):
     monkeypatch.setattr("sys.argv", ["segmenter", "in.mp4", "out.json", "--frame-step", "abc"])
     with pytest.raises(SystemExit):
         parse_args()
+
+
+# --------------------------------------------------------------------------- #
+# config.yaml loader + Gemini API key resolution
+# --------------------------------------------------------------------------- #
+
+
+def test_load_config_missing_file_returns_empty(tmp_path):
+    assert load_config(tmp_path / "config.yaml") == {}
+
+
+def test_load_config_reads_yaml(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("gemini_api_key: from-file\n", encoding="utf-8")
+    assert load_config(cfg) == {"gemini_api_key": "from-file"}
+
+
+def test_get_gemini_api_key_prefers_env_over_config(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("gemini_api_key: from-file\n", encoding="utf-8")
+    monkeypatch.setenv(GEMINI_API_KEY_ENV, "from-env")
+    assert get_gemini_api_key(cfg) == "from-env"
+
+
+def test_get_gemini_api_key_falls_back_to_config(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("gemini_api_key: from-file\n", encoding="utf-8")
+    monkeypatch.delenv(GEMINI_API_KEY_ENV, raising=False)
+    assert get_gemini_api_key(cfg) == "from-file"
+
+
+def test_get_gemini_api_key_none_when_unset_everywhere(tmp_path, monkeypatch):
+    monkeypatch.delenv(GEMINI_API_KEY_ENV, raising=False)
+    assert get_gemini_api_key(tmp_path / "config.yaml") is None
 
 
 # --------------------------------------------------------------------------- #
