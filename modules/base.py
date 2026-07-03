@@ -62,6 +62,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def stage_completed(project_path: Path, name: str) -> bool:
+    """True if stage ``name`` under ``project_path`` finished successfully."""
+    from modules.contracts import stage_dir  # local import avoids a cycle
+
+    state = read_status(stage_dir(project_path, name))
+    return state is not None and state.status == StageStatus.COMPLETED
+
+
 def read_status(stage_dir: Path) -> StageState | None:
     """Read stage_dir/status.json; return None if it does not exist."""
     path = Path(stage_dir) / STATUS_FILENAME
@@ -82,11 +90,16 @@ def write_status(stage_dir: Path, state: StageState) -> None:
 
 class BaseModule:
     name: str
-    dependencies: list[str]  # which modules must finish first
+    dependencies: list[str] = []  # which modules must finish first
 
     def check_ready(self, project_path) -> bool:
-        """Return True only when every dependency's status is completed."""
-        raise NotImplementedError
+        """Return True only when every dependency's status is completed.
+
+        Default gate for a stage whose only precondition is that its upstream
+        stages finished. Stages with extra preconditions (e.g. the first stage
+        needing a raw video) override this.
+        """
+        return all(stage_completed(Path(project_path), d) for d in self.dependencies)
     def run(self, project_path, on_progress=None):
         """Run processing, write results to stages/{name}/, update status.json."""
         raise NotImplementedError
