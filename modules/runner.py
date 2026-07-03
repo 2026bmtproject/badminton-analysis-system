@@ -20,6 +20,7 @@ from pathlib import Path
 from modules.base import BaseModule, StageStatus, read_status
 from modules.contracts import stage_dir, topological_order
 from modules.match_segmentation import MatchSegmentationModule
+from modules.score_recognition import ScoreRecognitionModule
 
 
 def available_modules() -> dict[str, BaseModule]:
@@ -30,6 +31,7 @@ def available_modules() -> dict[str, BaseModule]:
     """
     modules: list[BaseModule] = [
         MatchSegmentationModule(),
+        ScoreRecognitionModule(),
     ]
     return {m.name: m for m in modules}
 
