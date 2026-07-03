@@ -3,13 +3,18 @@ name = "badminton-analysis-system"
 version = "0.1.0"
 description = "本地端羽球比賽分析系統"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.11"
 
-dependencies = []
+dependencies = [
+    "numpy<2",
+    "opencv-python",
+]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[dependency-groups]
+dev = [
+    "pytest",
+]
 
-[tool.hatch.build.targets.wheel]
-packages = ["modules"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
