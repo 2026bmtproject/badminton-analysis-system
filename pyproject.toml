@@ -9,3 +9,12 @@ dependencies = [
     "numpy<2",
     "opencv-python",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
