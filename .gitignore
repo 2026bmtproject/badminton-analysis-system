@@ -31,13 +31,11 @@ config.yaml
 .DS_Store
 Thumbs.db
 
-# ---- Project output data (generated, never in repo) ----
-projects/*
-!projects/.gitkeep
-
-# ---- Stage output data (generated, never in repo) ----
-stages/*
-!stages/.gitkeep
+# ---- Matches output data (generated, never in repo) ----
+# A match dir matches/{match}/ is a project path: input/ holds the raw video,
+# stages/ holds every stage's generated output. None of it is committed.
+matches/*
+!matches/.gitkeep
 
 # ---- Data / media artifacts ----
 # NOTE: broad ignore. If a small fixture must be committed, force-add it:
