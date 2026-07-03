@@ -40,6 +40,57 @@ def scaled_video_name(stem: str, height: int, with_audio: bool = False) -> str:
     return f"{stem}_{height}p{'_audio' if with_audio else ''}.mp4"
 
 
+# Video containers we may find sitting in a match's cache/ folder.
+CACHE_VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".avi", ".m4v")
+
+
+def pick_cached_scan_video(
+    project_path: str | Path,
+    original_path: str | Path,
+    min_height: int = 480,
+) -> Path | None:
+    """Pick the lightest already-cached downscale to read instead of the source.
+
+    Returns the cached video under ``cache/`` with the SMALLEST height that is
+    still ``>= min_height`` and strictly below the original's height — i.e. the
+    lowest-resolution copy that does not drop below the legibility floor, so a
+    stage decodes the fewest pixels. Returns ``None`` when the cache holds no
+    such copy; callers then fall back to the original **without** generating
+    anything (spending encode time on a fresh downscale is not worth it when the
+    compute budget may be shared with other models).
+
+    Downscaling preserves fps and frame count, so frame indices from
+    ``segments.json`` still address the same moments in a cached copy.
+    """
+    from modules.contracts import cache_dir
+
+    cdir = Path(cache_dir(project_path))
+    if not cdir.is_dir():
+        return None
+
+    try:
+        orig_h = get_video_height(str(original_path))
+    except RuntimeError:
+        orig_h = 0
+
+    best: Path | None = None
+    best_h: int | None = None
+    for entry in sorted(cdir.iterdir()):
+        if not (entry.is_file() and entry.suffix.lower() in CACHE_VIDEO_EXTS):
+            continue
+        try:
+            h = get_video_height(str(entry))
+        except RuntimeError:
+            continue
+        if h < min_height:
+            continue
+        if orig_h > 0 and h >= orig_h:  # not actually lower quality than source
+            continue
+        if best_h is None or h < best_h:
+            best, best_h = entry, h
+    return best
+
+
 def ensure_max_height(
     input_path: str,
     max_height: int = 480,

@@ -1,2 +1,6 @@
 # 範例設定。使用：cp config.yaml.example config.yaml 後填入自己的值。
 # 真正的 config.yaml 含 API key 等機密，已被 .gitignore 忽略，勿提交。
+
+# Gemini API key（score_recognition 階段用；申請：https://aistudio.google.com/app/api-keys）
+# 環境變數 GEMINI_API_KEY 若有設定會優先於此值。
+gemini_api_key: ""

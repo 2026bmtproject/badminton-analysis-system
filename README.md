@@ -48,7 +48,7 @@ matches/MK_vs_CT_2019/          # = project_path
 取用並重用（見 `modules.common.downscale.scaled_video`）。
 
 階段間的輸入輸出格式（每個 `stages/*/*.json` 的 schema）與依賴關係都定義在
-[`modules/contracts.py`](modules/contracts.py)，模組展開前先把契約鎖好，之後接線較不痛。
+[`modules/contracts.py`](modules/contracts.py)，模組展開前先把契約鎖好。
 
 ## 開始使用
 
@@ -86,12 +86,18 @@ uv run python -m modules.match_segmentation MATCH.mp4 segments.json
 uv run python -m modules.common.downscale MATCH.mp4 --height 480
 
 # 依片段 JSON 剪輯影片：給 project path 即自動找影片與 segments.json
-# （video=input/、segments=stages/match_segmentation/segments.json、output=<project>/clips）
 uv run python -m modules.common.video_cutter matches/MK_vs_CT_2019            # 預設 separate
 uv run python -m modules.common.video_cutter matches/MK_vs_CT_2019 -m merge   # 合併
 
 # 或完全指定路徑（separate / merge / inverse-merge）
 uv run python -m modules.common.video_cutter -v MATCH.mp4 -s segments.json -m separate -o ./clips
+
+# 比分辨識：對每個 segment 直接從原片抽 frame、合成後送 Gemini 讀比分
+# 需先設定 GEMINI_API_KEY 環境變數
+uv run python -m modules.score_recognition matches/MK_vs_CT_2019
+
+# 影格合成工具（單獨使用；把影片抽樣的 frame 合成以凸顯靜態元素如記分板）
+uv run python -m modules.common.frame_composite MATCH.mp4 -n 30 -o composites/
 ```
 
 片段 JSON 格式：
