@@ -35,7 +35,7 @@ def get_video_height(input_path: str) -> int:
     return height
 
 
-def scaled_video_name(stem: str, height: int, with_audio: bool = False) -> str:
+def downscaled_video_name(stem: str, height: int, with_audio: bool = False) -> str:
     """Cache filename for a downscaled copy, keyed by height and audio track."""
     return f"{stem}_{height}p{'_audio' if with_audio else ''}.mp4"
 
@@ -44,8 +44,8 @@ def scaled_video_name(stem: str, height: int, with_audio: bool = False) -> str:
 CACHE_VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".avi", ".m4v")
 
 
-def pick_cached_scan_video(
-    project_path: str | Path,
+def pick_cached_downscaled_video(
+    match_path: str | Path,
     original_path: str | Path,
     min_height: int = 480,
 ) -> Path | None:
@@ -62,9 +62,9 @@ def pick_cached_scan_video(
     Downscaling preserves fps and frame count, so frame indices from
     ``segments.json`` still address the same moments in a cached copy.
     """
-    from modules.contracts import cache_dir
+    from modules.contracts import cache_path
 
-    cdir = Path(cache_dir(project_path))
+    cdir = Path(cache_path(match_path))
     if not cdir.is_dir():
         return None
 
@@ -107,7 +107,7 @@ def ensure_max_height(
     If the source is already <= ``max_height`` (or ``max_height`` <= 0), the
     input path is returned unchanged. Otherwise the video is downscaled to
     ``max_height`` and cached at ``<workdir>/<name>`` (see
-    :func:`scaled_video_name`; reused if already present) so reruns don't
+    :func:`downscaled_video_name`; reused if already present) so reruns don't
     re-encode. ``workdir`` defaults to the source's own folder.
 
     Returns ``(path_to_use, downscaled)``. Audio is dropped by default since the
@@ -124,7 +124,7 @@ def ensure_max_height(
     folder = workdir if workdir is not None else os.path.dirname(input_path)
     if folder:
         os.makedirs(folder, exist_ok=True)
-    name = scaled_video_name(stem, max_height, with_audio=not no_audio)
+    name = downscaled_video_name(stem, max_height, with_audio=not no_audio)
     output_path = os.path.join(folder, name) if folder else name
 
     if os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
@@ -141,8 +141,8 @@ def ensure_max_height(
     return output_path, True
 
 
-def scaled_video(
-    project_path: str | Path,
+def downscaled_video(
+    match_path: str | Path,
     height: int = 480,
     with_audio: bool = False,
     *,
@@ -161,11 +161,11 @@ def scaled_video(
     things consumers actually differ on: target height and whether audio is kept.
     """
     # Local import: keeps modules.contracts free of the cv2/ffmpeg import chain.
-    from modules.contracts import cache_dir, resolve_input_video
+    from modules.contracts import cache_path, resolve_input_video
 
-    src = resolve_input_video(project_path)
+    src = resolve_input_video(match_path)
     out, _ = ensure_max_height(
-        str(src), height, workdir=str(cache_dir(project_path)),
+        str(src), height, workdir=str(cache_path(match_path)),
         crf=crf, preset=preset, gpu=gpu, no_audio=not with_audio, verbose=verbose,
     )
     return Path(out)

@@ -1,6 +1,6 @@
-"""CLI entry point: ``python -m modules.score_recognition <project_path>``.
+"""CLI entry point: ``python -m modules.score_recognition <match_path>``.
 
-Runs the score_recognition stage on a match project, reading the segments
+Runs the score_recognition stage on a match, reading the segments
 produced by match_segmentation and writing ``stages/score_recognition/scores.json``.
 Requires a Gemini API key: set ``$GEMINI_API_KEY`` or put ``gemini_api_key`` in
 ``config.yaml`` at the repo root.
@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Read badminton scoreboards per rally segment via Gemini",
     )
-    parser.add_argument("project_path", help="match directory, e.g. matches/MK_vs_CT_2019")
+    parser.add_argument("match_path", help="match path, e.g. matches/MK_vs_CT_2019")
     parser.add_argument("--model", default="gemini-2.5-flash", help="Gemini model name")
     parser.add_argument("--rpm", type=float, default=8.0,
                         help="Max Gemini requests per minute, shared across workers (default 8)")
@@ -59,7 +59,7 @@ def main() -> None:
     bar = SmoothProgress("score_recognition", total=100)
     module = ScoreRecognitionModule(config=config)
     output = module.run(
-        Path(args.project_path),
+        Path(args.match_path),
         on_progress=lambda ratio: bar.update(int(ratio * 100)),
     )
     bar.update(100, force=True)

@@ -12,10 +12,10 @@ from modules.base import (
     write_status,
 )
 from modules.common.config import GEMINI_API_KEY_ENV, get_gemini_api_key
-from modules.common.downscale import pick_cached_scan_video
+from modules.common.downscale import pick_cached_downscaled_video
 from modules.common.scores_io import write_scores
 from modules.common.segments_io import read_segments
-from modules.contracts import PIPELINE, resolve_input_video, stage_dir
+from modules.contracts import PIPELINE, resolve_input_video, stage_path
 from modules.score_recognition.recognizer import (
     ScoreRecognitionConfig,
     recognize_scores,
@@ -30,7 +30,7 @@ class ScoreRecognitionModule(BaseModule):
     Consumes ``match_segmentation``'s ``segments.json`` plus the raw match video,
     and writes ``stages/score_recognition/scores.json`` plus a ``status.json``.
     Frames are sampled straight from the source video per segment (no pre-cut
-    clips needed).
+    segments needed).
     """
 
     name = "score_recognition"
@@ -42,41 +42,41 @@ class ScoreRecognitionModule(BaseModule):
         input_video: str | None = None,
     ) -> None:
         self.config = config or ScoreRecognitionConfig()
-        # Optional explicit input video (relative to project_path or absolute).
+        # Optional explicit input video (relative to match_path or absolute).
         self.input_video = input_video
 
-    def _resolve_input_video(self, project_path: Path) -> Path:
+    def _resolve_input_video(self, match_path: Path) -> Path:
         if self.input_video:
             candidate = Path(self.input_video)
             if not candidate.is_absolute():
-                candidate = project_path / candidate
+                candidate = match_path / candidate
             if not candidate.is_file():
                 raise FileNotFoundError(f"input video not found: {candidate}")
             return candidate
-        return resolve_input_video(project_path)
+        return resolve_input_video(match_path)
 
-    def _resolve_scan_video(self, project_path: Path, original: Path) -> Path:
+    def _resolve_downscaled_video(self, match_path: Path, original: Path) -> Path:
         """Read frames from the lightest cached downscale, else the source.
 
         Reuses an existing ``cache/`` copy (>= ``min_scan_height`` and lower-res
         than the source) to decode fewer pixels; never generates one, so a bare
         cache just falls back to the original.
         """
-        cached = pick_cached_scan_video(project_path, original, self.config.min_scan_height)
+        cached = pick_cached_downscaled_video(match_path, original, self.config.min_scan_height)
         return cached if cached is not None else original
 
-    def _segments_path(self, project_path: Path) -> Path:
+    def _segments_path(self, match_path: Path) -> Path:
         dep = PIPELINE["match_segmentation"]
-        return stage_dir(project_path, dep.name) / dep.output_filename
+        return stage_path(match_path, dep.name) / dep.output_filename
 
-    def get_output_path(self, project_path) -> Path:
-        return stage_dir(project_path, self.name) / OUTPUT_FILENAME
+    def get_output_path(self, match_path) -> Path:
+        return stage_path(match_path, self.name) / OUTPUT_FILENAME
 
-    def run(self, project_path, on_progress=None) -> Path:
+    def run(self, match_path, on_progress=None) -> Path:
         """Read scores for every segment and keep status.json up to date."""
-        project_path = Path(project_path)
-        out_dir = stage_dir(project_path, self.name)
-        output_json = self.get_output_path(project_path)
+        match_path = Path(match_path)
+        out_dir = stage_path(match_path, self.name)
+        output_json = self.get_output_path(match_path)
 
         state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
         write_status(out_dir, state)
@@ -90,27 +90,27 @@ class ScoreRecognitionModule(BaseModule):
                     f"(get a key at https://aistudio.google.com/app/api-keys)"
                 )
 
-            original_video = self._resolve_input_video(project_path)
-            scan_video = self._resolve_scan_video(project_path, original_video)
-            segments = read_segments(self._segments_path(project_path))["segments"]
+            original_video = self._resolve_input_video(match_path)
+            downscaled_video = self._resolve_downscaled_video(match_path, original_video)
+            segments = read_segments(self._segments_path(match_path))["segments"]
             output_json.parent.mkdir(parents=True, exist_ok=True)
 
             rallies, meta = recognize_scores(
-                str(scan_video),
+                str(downscaled_video),
                 segments,
                 api_key,
                 self.config,
                 on_progress=on_progress,
             )
             try:
-                meta["scan_video"] = str(scan_video.relative_to(project_path))
+                meta["downscaled_video"] = str(downscaled_video.relative_to(match_path))
             except ValueError:
-                meta["scan_video"] = str(scan_video)
+                meta["downscaled_video"] = str(downscaled_video)
             write_scores(output_json, rallies, self.config.model, extra=meta)
 
             state.status = StageStatus.COMPLETED
             state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(project_path))
+            state.output_path = str(output_json.relative_to(match_path))
             write_status(out_dir, state)
             return output_json
         except Exception as e:

@@ -110,13 +110,13 @@ def test_module_check_ready_true_with_video(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_run_pipeline_missing_project_path(tmp_path):
-    with pytest.raises(FileNotFoundError, match="project path not found"):
+def test_run_pipeline_missing_match_path(tmp_path):
+    with pytest.raises(FileNotFoundError, match="match path not found"):
         run_pipeline(tmp_path / "no_such_match")
 
 
 def test_run_pipeline_stops_when_first_stage_not_ready(tmp_path, capsys):
-    # A real, empty project dir: the stage is not ready (no input video), so the
+    # A real, empty match path: the stage is not ready (no input video), so the
     # pipeline must stop early and report False rather than crash.
     assert run_pipeline(tmp_path) is False
     assert "not ready" in capsys.readouterr().out

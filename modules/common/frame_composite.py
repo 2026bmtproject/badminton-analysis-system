@@ -12,7 +12,7 @@ Two frame samplers are provided:
   grabs sequentially, so reading a segment out of the full match video is cheap
   (per-frame ``cap.set`` seeking is ~40x slower — measured on a 90-min 1080p
   match). This is why the score stage reads segments straight from the source
-  video and never needs pre-cut clips.
+  video and never needs pre-cut segments.
 
 CLI usage:
     python -m modules.common.frame_composite input.mp4 -n 30 -o output_dir/
@@ -57,8 +57,8 @@ def extract_frames(video_path: str, n_frames: int, resize_width: int | None = No
         cap.release()
         raise ValueError(f"video has fewer than 2 frames: {video_path}")
 
-    # Adaptive sampling: short clips use the baseline count (n_frames);
-    # longer clips (>60 frames) sample 1/5 of all frames, but never fewer
+    # Adaptive sampling: short videos use the baseline count (n_frames);
+    # longer videos (>60 frames) sample 1/5 of all frames, but never fewer
     # than the baseline. Cap the total at max_frames to bound memory — the
     # composite stacks every sampled frame into one big array, so frame count
     # drives peak RAM (and OOM risk under parallel workers).
@@ -87,7 +87,7 @@ def extract_frames_in_range(
 
     Seeks once to ``start_frame`` then grabs sequentially to the last wanted
     frame, decoding only the frames actually kept. This lets the score stage
-    pull a rally straight out of the full match video without pre-cutting clips.
+    pull a segment straight out of the full match video without pre-cutting segments.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():

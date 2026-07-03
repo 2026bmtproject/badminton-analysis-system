@@ -3,14 +3,14 @@
 This module is the *single source of truth* for two things that the nine
 analysis stages must agree on **before** they are individually built:
 
-1. **Project layout.** A match lives under ``matches/{match}/`` which we call
-   the *project path*. Inside it::
+1. **Match layout.** A match lives under ``matches/{match}/`` which we call
+   the *match path* (``match_path``). Inside it::
 
        matches/{match}/
        ├── input/                 # raw material (the broadcast video)
        │   └── match.mp4
        ├── cache/                 # shared derived media, rebuildable, safe to delete
-       │   └── match_480p.mp4     # e.g. a downscaled copy several stages reuse
+       │   └── match_480p.mp4     # e.g. a downscaled video several stages reuse
        └── stages/                # one folder per stage, generated output
            └── {stage_name}/
                ├── status.json    # StageState (see modules.base)
@@ -18,9 +18,9 @@ analysis stages must agree on **before** they are individually built:
 
    ``input/`` is the untouched source, ``stages/{name}/`` holds contract
    artifacts (the JSON schemas below), and ``cache/`` holds derived media that
-   is expensive to build but cheap to reproduce (a downscaled scan copy, an
+   is expensive to build but cheap to reproduce (a downscaled video, an
    extracted audio track, ...). Keyed by parameters so any stage can request
-   and reuse one — see ``modules.common.downscale.scaled_video``.
+   and reuse one — see ``modules.common.downscale.downscaled_video``.
 
 2. **Data contracts.** Each stage reads the artifacts of its dependencies and
    writes exactly one primary artifact (a JSON file) whose record shape is
@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
-# Project layout
+# Match layout
 # --------------------------------------------------------------------------- #
 
 INPUT_DIRNAME = "input"
@@ -56,28 +56,28 @@ CACHE_DIRNAME = "cache"
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".mov", ".avi")
 
 
-def input_dir(project_path: str | Path) -> Path:
+def input_path(match_path: str | Path) -> Path:
     """``matches/{match}/input`` — where the raw video lives."""
-    return Path(project_path) / INPUT_DIRNAME
+    return Path(match_path) / INPUT_DIRNAME
 
 
-def stage_dir(project_path: str | Path, stage_name: str) -> Path:
+def stage_path(match_path: str | Path, stage_name: str) -> Path:
     """``matches/{match}/stages/{stage_name}`` — a stage's output folder."""
-    return Path(project_path) / STAGES_DIRNAME / stage_name
+    return Path(match_path) / STAGES_DIRNAME / stage_name
 
 
-def cache_dir(project_path: str | Path) -> Path:
+def cache_path(match_path: str | Path) -> Path:
     """``matches/{match}/cache`` — shared, rebuildable derived media."""
-    return Path(project_path) / CACHE_DIRNAME
+    return Path(match_path) / CACHE_DIRNAME
 
 
-def resolve_input_video(project_path: str | Path) -> Path:
+def resolve_input_video(match_path: str | Path) -> Path:
     """Return the raw match video under ``input/``.
 
     Picks the first file (sorted) whose suffix is in :data:`VIDEO_EXTENSIONS`.
     Raises ``FileNotFoundError`` if the ``input/`` folder or a video is missing.
     """
-    folder = input_dir(project_path)
+    folder = input_path(match_path)
     if not folder.is_dir():
         raise FileNotFoundError(f"input folder not found: {folder}")
     for entry in sorted(folder.iterdir()):
@@ -95,7 +95,8 @@ def resolve_input_video(project_path: str | Path) -> Path:
 
 @dataclass
 class Segment:
-    """One candidate rally. Artifact: ``segments.json`` (key ``segments``).
+    """One video segment (the slice for one candidate rally). Artifact:
+    ``segments.json`` (key ``segments``).
 
     Envelope also carries top-level ``fps``. This is the only contract that is
     already produced/consumed in code — see ``modules.common.segments_io``.

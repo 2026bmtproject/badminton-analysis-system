@@ -1,7 +1,7 @@
 """Read badminton scoreboards per rally segment via the Google Gemini API.
 
 For each segment we sample frames straight from the source match video (no
-pre-cut clips — see ``modules.common.frame_composite.extract_frames_in_range``),
+pre-cut segments — see ``modules.common.frame_composite.extract_frames_in_range``),
 composite them to average away moving players, and ask Gemini to transcribe the
 scoreboard. Several composite methods are tried in turn until both scores are
 read (or the list is exhausted); the best attempt wins.

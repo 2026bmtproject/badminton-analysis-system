@@ -5,7 +5,7 @@ Supports three modes: per-segment output, merged output, and inverse merge
 
 CLI usage:
     python -m modules.common.video_cutter -v test.mp4 -s r.json -m merge -o merged.mp4
-    python -m modules.common.video_cutter -v match.mp4 -s match.json -m separate -o ./clips
+    python -m modules.common.video_cutter -v match.mp4 -s match.json -m separate -o ./segments
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def parse_segments(json_path: str) -> list[dict]:
     segments = []
 
     # index is 0-based to match segments.json position and scores.json's
-    # segment_index everywhere else in the pipeline (so clip seg0000 == segment_index 0).
+    # segment_index everywhere else in the pipeline (so segment seg0000 == segment_index 0).
     for i, record in enumerate(data["segments"]):
         try:
             start_sec = float(record["start_sec"])
@@ -58,7 +58,7 @@ def parse_segments(json_path: str) -> list[dict]:
     return segments
 
 
-def compute_keep_segments(
+def compute_keep_ranges(
     segments: list[dict],
     video_duration: float,
 ) -> list[tuple[float, float]]:
@@ -82,16 +82,16 @@ def compute_keep_segments(
         else:
             merged_remove.append([start, end])
 
-    keep_segments: list[tuple[float, float]] = []
+    keep_ranges: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in merged_remove:
         if start > cursor:
-            keep_segments.append((cursor, start))
+            keep_ranges.append((cursor, start))
         cursor = max(cursor, end)
     if cursor < video_duration:
-        keep_segments.append((cursor, video_duration))
+        keep_ranges.append((cursor, video_duration))
 
-    return keep_segments
+    return keep_ranges
 
 
 def _cut_segment_cmd(video_path: str, start: float, end: float, out: str) -> list[str]:
@@ -109,7 +109,7 @@ def _cut_segment_cmd(video_path: str, start: float, end: float, out: str) -> lis
 
 
 def _concat_files(tmp_files: list[str], tmp_dir: str, output_path: str) -> bool:
-    """Concatenate the given temp clips into ``output_path`` via ffmpeg concat."""
+    """Concatenate the given temp segments into ``output_path`` via ffmpeg concat."""
     list_file = os.path.join(tmp_dir, "concat_list.txt")
     with open(list_file, "w", encoding="utf-8") as f:
         for p in tmp_files:
@@ -192,21 +192,21 @@ def mode_inverse_merge(video_path: str, segments: list[dict], output_path: str) 
         print(f"[error] failed to read video duration: {e}")
         return
 
-    keep_segments = compute_keep_segments(segments, video_duration)
-    if not keep_segments:
+    keep_ranges = compute_keep_ranges(segments, video_duration)
+    if not keep_ranges:
         print("\n[error] segments cover the whole video, nothing to keep.")
         return
 
     print(f"  video duration: {video_duration:.3f}s")
-    print(f"  keep ranges: {len(keep_segments)}, staging then concatenating...\n")
+    print(f"  keep ranges: {len(keep_ranges)}, staging then concatenating...\n")
 
     tmp_dir = tempfile.mkdtemp(prefix="ffmpeg_inverse_merge_")
     tmp_files: list[str] = []
     try:
-        for idx, (start, end) in enumerate(keep_segments, start=1):
+        for idx, (start, end) in enumerate(keep_ranges, start=1):
             dur = end - start
             tmp = os.path.join(tmp_dir, f"keep{idx:04d}.mp4")
-            print(f"  [{idx}/{len(keep_segments)}] {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
+            print(f"  [{idx}/{len(keep_ranges)}] {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
             if run_ffmpeg(_cut_segment_cmd(video_path, start, end, tmp), f"stage keep range {idx}"):
                 tmp_files.append(tmp)
                 print("    ok")
@@ -280,49 +280,49 @@ def interactive_mode() -> None:
         mode_inverse_merge(video, segments, out)
 
 
-def _default_output(project_path: Path, mode: str) -> str:
-    """Default output location under the project path for a given mode."""
+def _default_output(match_path: Path, mode: str) -> str:
+    """Default output location under the match path for a given mode."""
     if mode == "separate":
-        return str(project_path / "clips")
+        return str(match_path / "segments")
     if mode == "merge":
-        return str(project_path / "merged.mp4")
-    return str(project_path / "inverse_merged.mp4")
+        return str(match_path / "merged.mp4")
+    return str(match_path / "inverse_merged.mp4")
 
 
 def resolve_io(args: argparse.Namespace) -> tuple[str, str, str]:
     """Resolve (video, segments, output) from the args.
 
-    When a project path is given, anything left unset is filled from the match
-    layout: the raw video under ``input/``, ``match_segmentation``'s
-    ``segments.json``, and a mode-appropriate output under the project path.
+    When a match path is given, anything left unset is filled from the
+    match layout: the raw video under ``input/``, ``match_segmentation``'s
+    ``segments.json``, and a mode-appropriate output under the match path.
     Explicit ``-v/-s/-o`` always win.
     """
     video, segments, output = args.video, args.segments, args.output
 
-    if args.project:
+    if args.match:
         # Imported here so the standalone tool has no import cost when unused.
-        from modules.contracts import PIPELINE, resolve_input_video, stage_dir
+        from modules.contracts import PIPELINE, resolve_input_video, stage_path
 
-        project_path = Path(args.project)
-        if not project_path.is_dir():
-            print(f"[error] project path not found: {project_path}")
+        match_path = Path(args.match)
+        if not match_path.is_dir():
+            print(f"[error] match path not found: {match_path}")
             sys.exit(1)
         if video is None:
             try:
-                video = str(resolve_input_video(project_path))
+                video = str(resolve_input_video(match_path))
             except FileNotFoundError as e:
                 print(f"[error] {e}")
                 sys.exit(1)
         if segments is None:
             spec = PIPELINE["match_segmentation"]
-            segments = str(stage_dir(project_path, spec.name) / spec.output_filename)
+            segments = str(stage_path(match_path, spec.name) / spec.output_filename)
         if output is None:
-            output = _default_output(project_path, args.mode)
+            output = _default_output(match_path, args.mode)
     else:
         missing = [f for f, v in (("-v/--video", video), ("-s/--segments", segments),
                                   ("-o/--output", output)) if v is None]
         if missing:
-            print(f"[error] without a project path, {', '.join(missing)} are required.")
+            print(f"[error] without a match path, {', '.join(missing)} are required.")
             sys.exit(1)
 
     return video, segments, output
@@ -338,20 +338,20 @@ segments JSON schema (required per record: start_sec, end_sec):
   {"fps": 30.0, "segments": [{"start_frame":.., "end_frame":.., "start_sec":.., "end_sec":.., "duration_sec":..}]}
 
 examples:
-  project (auto-resolve video/segments/output from the match layout):
+  match (auto-resolve video/segments/output from the match layout):
                  python -m modules.common.video_cutter matches/MK_vs_CT_2019
                  python -m modules.common.video_cutter matches/MK_vs_CT_2019 -m merge
   explicit paths:
-  separate:      python -m modules.common.video_cutter -v in.mp4 -s clips.json -m separate -o ./clips
-  merge:         python -m modules.common.video_cutter -v in.mp4 -s clips.json -m merge -o merged.mp4
-  inverse-merge: python -m modules.common.video_cutter -v in.mp4 -s clips.json -m inverse-merge -o inv.mp4
+  separate:      python -m modules.common.video_cutter -v in.mp4 -s segments.json -m separate -o ./segments
+  merge:         python -m modules.common.video_cutter -v in.mp4 -s segments.json -m merge -o merged.mp4
+  inverse-merge: python -m modules.common.video_cutter -v in.mp4 -s segments.json -m inverse-merge -o inv.mp4
 """,
     )
-    parser.add_argument("project", nargs="?", default=None,
-                        help="match project path (e.g. matches/MK_vs_CT_2019); "
+    parser.add_argument("match", nargs="?", default=None,
+                        help="match path (e.g. matches/MK_vs_CT_2019); "
                              "auto-resolves video/segments/output when given")
-    parser.add_argument("-v", "--video", default=None, help="MP4 video path (overrides project input)")
-    parser.add_argument("-s", "--segments", default=None, help="segments JSON path (overrides project output)")
+    parser.add_argument("-v", "--video", default=None, help="MP4 video path (overrides match input)")
+    parser.add_argument("-s", "--segments", default=None, help="segments JSON path (overrides match output)")
     parser.add_argument(
         "-m", "--mode", default="separate",
         choices=["separate", "merge", "inverse-merge"],
