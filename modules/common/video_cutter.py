@@ -31,7 +31,9 @@ def parse_segments(json_path: str) -> list[dict]:
     data = read_segments(json_path)
     segments = []
 
-    for i, record in enumerate(data["segments"], start=1):
+    # index is 0-based to match segments.json position and scores.json's
+    # segment_index everywhere else in the pipeline (so clip seg0000 == segment_index 0).
+    for i, record in enumerate(data["segments"]):
         try:
             start_sec = float(record["start_sec"])
             end_sec = float(record["end_sec"])
@@ -135,11 +137,11 @@ def mode_separate(video_path: str, segments: list[dict], output_dir: str) -> Non
     print(f"\n[mode A] separate output -> folder: {output_dir}")
     print(f"{total} segment(s)\n")
 
-    for seg in segments:
+    for pos, seg in enumerate(segments, start=1):
         idx, start, end, dur = seg["index"], seg["start_sec"], seg["end_sec"], seg["duration_sec"]
         out = os.path.join(output_dir, f"{video_stem}_seg{idx:04d}.mp4")
 
-        print(f"  [{idx}/{total}] {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
+        print(f"  [{pos}/{total}] seg {idx}: {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
         if run_ffmpeg(_cut_segment_cmd(video_path, start, end, out), f"write {os.path.basename(out)}"):
             print(f"    ok: {out}")
             success += 1
@@ -158,10 +160,10 @@ def mode_merge(video_path: str, segments: list[dict], output_path: str) -> None:
     tmp_dir = tempfile.mkdtemp(prefix="ffmpeg_merge_")
     tmp_files: list[str] = []
     try:
-        for seg in segments:
+        for pos, seg in enumerate(segments, start=1):
             idx, start, end, dur = seg["index"], seg["start_sec"], seg["end_sec"], seg["duration_sec"]
             tmp = os.path.join(tmp_dir, f"seg{idx:04d}.mp4")
-            print(f"  [{idx}/{total}] {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
+            print(f"  [{pos}/{total}] seg {idx}: {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
             if run_ffmpeg(_cut_segment_cmd(video_path, start, end, tmp), f"stage segment {idx}"):
                 tmp_files.append(tmp)
                 print("    ok")
