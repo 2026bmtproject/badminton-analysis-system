@@ -36,7 +36,9 @@ Envelope convention (every artifact JSON is an object, never a bare array)::
     {"<record_key>": [ {<record fields>}, ... ], ...optional metadata... }
 
 so producers can add top-level metadata (fps, model version, ...) without
-breaking consumers.
+breaking consumers. ``StageSpec.record_key`` names that list, and the generic
+reader/writer in ``modules.artifacts`` uses it to serialize any stage's
+artifact from its ``record_type`` dataclass — no per-stage I/O module needed.
 """
 
 from __future__ import annotations
@@ -98,8 +100,8 @@ class Segment:
     """One video segment (the slice for one candidate rally). Artifact:
     ``segments.json`` (key ``segments``).
 
-    Envelope also carries top-level ``fps``. This is the only contract that is
-    already produced/consumed in code — see ``modules.common.segments_io``.
+    Envelope also carries top-level ``fps``. The frame->second derivation lives
+    with its producer in ``modules.match_segmentation.segments``.
     """
 
     start_frame: int
@@ -213,45 +215,46 @@ class StageSpec:
     dependencies: list[str]
     output_filename: str
     record_type: type                       # the dataclass documenting a record
+    record_key: str                         # envelope key holding the record list
 
 
 PIPELINE: dict[str, StageSpec] = {
     "match_segmentation": StageSpec(
         "match_segmentation", "回合切割 — split the match into rally segments",
-        [], "segments.json", Segment,
+        [], "segments.json", Segment, "segments",
     ),
     "score_recognition": StageSpec(
         "score_recognition", "比分辨識 (Gemini API)",
-        ["match_segmentation"], "scores.json", RallyScore,
+        ["match_segmentation"], "scores.json", RallyScore, "rallies",
     ),
     "court_detection": StageSpec(
         "court_detection", "球場邊界辨識",
-        ["match_segmentation"], "court.json", CourtCalibration,
+        ["match_segmentation"], "court.json", CourtCalibration, "courts",
     ),
     "shuttle_tracking": StageSpec(
         "shuttle_tracking", "羽球軌跡 (TrackNetV3)",
-        ["match_segmentation"], "shuttle.json", ShuttlePoint,
+        ["match_segmentation"], "shuttle.json", ShuttlePoint, "points",
     ),
     "audio_highlight": StageSpec(
         "audio_highlight", "精彩片段偵測 (YAMNet)",
-        ["match_segmentation"], "highlights.json", HighlightScore,
+        ["match_segmentation"], "highlights.json", HighlightScore, "highlights",
     ),
     "pose": StageSpec(
         "pose", "骨架標記 (mmpose)",
-        ["match_segmentation", "court_detection"], "pose.json", PoseFrame,
+        ["match_segmentation", "court_detection"], "pose.json", PoseFrame, "frames",
     ),
     "event_detection": StageSpec(
         "event_detection", "擊球偵測",
-        ["shuttle_tracking", "pose"], "events.json", HitEvent,
+        ["shuttle_tracking", "pose"], "events.json", HitEvent, "events",
     ),
     "stroke_classification": StageSpec(
         "stroke_classification", "球種辨識 (BST)",
-        ["event_detection", "pose", "shuttle_tracking"], "strokes.json", StrokeLabel,
+        ["event_detection", "pose", "shuttle_tracking"], "strokes.json", StrokeLabel, "strokes",
     ),
     "commentary": StageSpec(
         "commentary", "賽評生成",
         ["stroke_classification", "score_recognition", "audio_highlight"],
-        "commentary.json", CommentaryLine,
+        "commentary.json", CommentaryLine, "lines",
     ),
 }
 

@@ -17,23 +17,24 @@ import tempfile
 import shutil
 from pathlib import Path
 
+from modules.artifacts import read_records
 from modules.common.ffmpeg_utils import (
     check_ffmpeg,
     get_video_duration,
     run_ffmpeg,
     sec_to_ts,
 )
-from modules.common.segments_io import read_segments
+from modules.contracts import PIPELINE
 
 
 def parse_segments(json_path: str) -> list[dict]:
     """Read the segments JSON and return the list of valid segments."""
-    data = read_segments(json_path)
+    records = read_records(PIPELINE["match_segmentation"], json_path)
     segments = []
 
     # index is 0-based to match segments.json position and scores.json's
     # segment_index everywhere else in the pipeline (so segment seg0000 == segment_index 0).
-    for i, record in enumerate(data["segments"]):
+    for i, record in enumerate(records):
         try:
             start_sec = float(record["start_sec"])
             end_sec = float(record["end_sec"])

@@ -10,12 +10,14 @@ import json
 
 import pytest
 
-from modules.contracts import resolve_input_video
-from modules.common.segments_io import read_segments, write_segments
+from modules.artifacts import read_artifact
+from modules.contracts import PIPELINE, resolve_input_video
 from modules.match_segmentation.module import MatchSegmentationModule
 from modules.match_segmentation.segmenter import pick_default_video
-from modules.match_segmentation.segments import load_excluded_frames
+from modules.match_segmentation.segments import load_excluded_frames, write_segments
 from modules.runner import run_pipeline
+
+_SEGMENTS_SPEC = PIPELINE["match_segmentation"]
 
 
 # --------------------------------------------------------------------------- #
@@ -46,27 +48,27 @@ def test_resolve_input_video_picks_first_video_and_ignores_non_video(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# read_segments / load_excluded_frames
+# read_artifact / load_excluded_frames
 # --------------------------------------------------------------------------- #
 
 
 def test_read_segments_missing_file(tmp_path):
-    with pytest.raises(FileNotFoundError, match="segments JSON not found"):
-        read_segments(tmp_path / "does_not_exist.json")
+    with pytest.raises(FileNotFoundError, match="artifact not found"):
+        read_artifact(_SEGMENTS_SPEC, tmp_path / "does_not_exist.json")
 
 
 def test_read_segments_rejects_non_object_json(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps([1, 2, 3]))  # a bare array, not the envelope
-    with pytest.raises(ValueError, match="invalid segments JSON"):
-        read_segments(bad)
+    with pytest.raises(ValueError, match="invalid match_segmentation artifact"):
+        read_artifact(_SEGMENTS_SPEC, bad)
 
 
 def test_read_segments_rejects_missing_segments_key(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"fps": 30.0}))
-    with pytest.raises(ValueError, match="invalid segments JSON"):
-        read_segments(bad)
+    with pytest.raises(ValueError, match="invalid match_segmentation artifact"):
+        read_artifact(_SEGMENTS_SPEC, bad)
 
 
 def test_load_excluded_frames_missing_file(tmp_path):

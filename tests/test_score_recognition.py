@@ -277,8 +277,11 @@ def test_recognize_scores_empty_segments_returns_empty(monkeypatch):
 
 
 def test_recognized_rallies_round_trip_through_scores_io(monkeypatch, tmp_path):
-    """A recognized rally is a RallyScore and survives the scores.json writer."""
-    from modules.common.scores_io import read_scores, write_scores
+    """A recognized rally is a RallyScore and survives the artifact writer."""
+    from modules.artifacts import read_artifact, write_artifact
+    from modules.contracts import PIPELINE
+
+    spec = PIPELINE["score_recognition"]
 
     _stub_score_segment(monkeypatch)
     segments = [{"start_frame": 10, "end_frame": 20}]
@@ -286,8 +289,9 @@ def test_recognized_rallies_round_trip_through_scores_io(monkeypatch, tmp_path):
 
     assert isinstance(rallies[0], RallyScore)
     out = tmp_path / "scores.json"
-    write_scores(out, rallies, model="gemini-2.5-flash")
+    write_artifact(spec, rallies, out, extra={"model": "gemini-2.5-flash"})
 
-    data = read_scores(out)
+    data = read_artifact(spec, out)
+    assert data["model"] == "gemini-2.5-flash"
     assert data["rallies"][0]["segment_index"] == 0
     assert data["rallies"][0]["score_a"] == 10

@@ -11,10 +11,9 @@ from modules.base import (
     _now_iso,
     write_status,
 )
+from modules.artifacts import read_records, write_artifact
 from modules.common.config import GEMINI_API_KEY_ENV, get_gemini_api_key
 from modules.common.downscale import pick_cached_downscaled_video
-from modules.common.scores_io import write_scores
-from modules.common.segments_io import read_segments
 from modules.contracts import PIPELINE, resolve_input_video, stage_path
 from modules.score_recognition.recognizer import (
     ScoreRecognitionConfig,
@@ -92,7 +91,7 @@ class ScoreRecognitionModule(BaseModule):
 
             original_video = self._resolve_input_video(match_path)
             downscaled_video = self._resolve_downscaled_video(match_path, original_video)
-            segments = read_segments(self._segments_path(match_path))["segments"]
+            segments = read_records(PIPELINE["match_segmentation"], self._segments_path(match_path))
             output_json.parent.mkdir(parents=True, exist_ok=True)
 
             rallies, meta = recognize_scores(
@@ -106,7 +105,12 @@ class ScoreRecognitionModule(BaseModule):
                 meta["downscaled_video"] = str(downscaled_video.relative_to(match_path))
             except ValueError:
                 meta["downscaled_video"] = str(downscaled_video)
-            write_scores(output_json, rallies, self.config.model, extra=meta)
+            write_artifact(
+                PIPELINE["score_recognition"],
+                rallies,
+                output_json,
+                extra={"model": self.config.model, **meta},
+            )
 
             state.status = StageStatus.COMPLETED
             state.finished_at = _now_iso()

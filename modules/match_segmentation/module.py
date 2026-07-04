@@ -11,8 +11,8 @@ from modules.base import (
     _now_iso,
     write_status,
 )
-from modules.common.segments_io import write_segments
 from modules.contracts import PIPELINE, cache_path, resolve_input_video, stage_path
+from modules.match_segmentation.segments import write_segments
 from modules.match_segmentation.segmenter import (
     SegmentationConfig,
     segment_video,

@@ -15,14 +15,14 @@ import json
 import numpy as np
 import pytest
 
+from modules.artifacts import read_artifact
 from modules.contracts import PIPELINE, Segment
-from modules.common.segments_io import (
+from modules.match_segmentation.segments import (
     SEGMENT_FIELDS,
     build_segment_records,
-    read_segments,
+    build_segments_from_mask,
     write_segments,
 )
-from modules.match_segmentation.segments import build_segments_from_mask
 
 
 def test_segment_dataclass_fields_match_the_io_schema():
@@ -37,7 +37,7 @@ def test_segment_is_the_declared_record_type_for_the_stage():
 
 
 def test_build_segment_records_converts_frames_to_seconds():
-    # fps=30, matches the example in the segments_io docstring.
+    # fps=30, matches the example in the segments.json contract docstring.
     records = build_segment_records([(1, 19)], fps=30.0)
 
     assert len(records) == 1
@@ -78,7 +78,7 @@ def test_write_then_read_segments_round_trip(tmp_path):
     write_segments(out, segments, fps=30.0)
 
     assert out.is_file()  # parent dirs were created
-    data = read_segments(out)
+    data = read_artifact(PIPELINE["match_segmentation"], out)
     assert data["fps"] == 30.0
     assert [(r["start_frame"], r["end_frame"]) for r in data["segments"]] == segments
 

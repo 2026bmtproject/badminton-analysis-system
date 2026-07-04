@@ -1,14 +1,57 @@
-"""Pure segment math: GMM thresholding, building, merging and filtering.
+"""Segment math plus the segments.json contract this stage produces.
 
-None of these functions touch video or disk (except ``load_excluded_frames``
-which only reads a JSON), so they are deterministic and cheap to reason about.
+The math functions (GMM thresholding, building, merging, filtering) touch
+neither video nor disk, so they are deterministic and cheap to reason about.
+The I/O helpers own the frame->second derivation that turns raw
+``(start_frame, end_frame)`` pairs into :class:`Segment`-shaped records; the
+envelope plumbing itself is delegated to the generic ``modules.artifacts``.
 """
 
 from __future__ import annotations
 
+import dataclasses
+from pathlib import Path
+
 import numpy as np
 
-from modules.common.segments_io import read_segments
+from modules.artifacts import read_artifact, write_artifact
+from modules.contracts import PIPELINE, Segment
+
+_SPEC = PIPELINE["match_segmentation"]
+
+# The record field order, taken straight from the Segment contract so the
+# writer and the dataclass can never drift apart.
+SEGMENT_FIELDS = tuple(f.name for f in dataclasses.fields(Segment))
+
+
+def build_segment_records(segments: list[tuple[int, int]], fps: float) -> list[dict]:
+    """Turn (start_frame, end_frame) pairs into JSON-ready segment records.
+
+    This is the stage's own derivation (frame indices -> seconds), not generic
+    serialization, so it lives with the producer rather than in the shared I/O.
+    """
+    records: list[dict] = []
+    for start_frame, end_frame in segments:
+        start_sec = start_frame / fps
+        end_sec = end_frame / fps
+        records.append({
+            "start_frame": int(start_frame),
+            "end_frame": int(end_frame),
+            "start_sec": round(start_sec, 3),
+            "end_sec": round(end_sec, 3),
+            "duration_sec": round(end_sec - start_sec, 3),
+        })
+    return records
+
+
+def write_segments(path: str | Path, segments: list[tuple[int, int]], fps: float) -> None:
+    """Write the segments artifact (envelope carries top-level ``fps``)."""
+    write_artifact(
+        _SPEC,
+        build_segment_records(segments, fps),
+        path,
+        extra={"fps": float(fps)},
+    )
 
 
 def round_to_int(value: float) -> int:
@@ -27,7 +70,7 @@ def load_excluded_frames(json_path: str) -> set[int]:
     skips those frames and looks for stable segments among the rest. Each
     record must carry start_frame / end_frame (this stage's own output).
     """
-    data = read_segments(json_path)
+    data = read_artifact(_SPEC, json_path)
 
     excluded: set[int] = set()
     for record in data["segments"]:

@@ -26,7 +26,6 @@ from typing import Callable
 import numpy as np
 
 from modules.common.downscale import ensure_max_height
-from modules.common.segments_io import write_segments
 from modules.match_segmentation.cross_compare import (
     DEFAULT_COMPARE_SIZE,
     compute_cross_segment_scores,
@@ -44,6 +43,7 @@ from modules.match_segmentation.segments import (
     load_excluded_frames,
     merge_close_segments,
     merge_segments_by_gap,
+    write_segments,
 )
 
 DEFAULT_MERGE_MIN_RATIO = 0.5
