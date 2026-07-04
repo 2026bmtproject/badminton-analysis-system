@@ -108,17 +108,11 @@ uv run python -m modules.common.video_cutter -v MATCH.mp4 -s segments.json -m se
 # 需先設定 GEMINI_API_KEY 環境變數
 uv run python -m modules.score_recognition matches/MK_vs_CT_2019
 
+# 預設會跳出視窗讓你拖曳四個角點微調（Enter 確認 / ESC 用自動結果 / R 重設）
+uv run python -m modules.court_detection matches/MK_vs_CT_2019
+# 不做人工確認、直接寫入自動偵測結果（無顯示器環境用；runner 跑管線時一律走此模式）
+uv run python -m modules.court_detection matches/MK_vs_CT_2019 --no-confirm
+
 # 影格合成工具（單獨使用；把影片抽樣的 frame 合成以凸顯靜態元素如記分板）
 uv run python -m modules.common.frame_composite MATCH.mp4 -n 30 -o composites/
-```
-
-片段 JSON 格式：
-
-```json
-{
-  "fps": 30.0,
-  "segments": [
-    {"start_frame": 1, "end_frame": 19, "start_sec": 0.033, "end_sec": 0.633, "duration_sec": 0.6}
-  ]
-}
 ```
