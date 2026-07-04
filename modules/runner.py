@@ -19,6 +19,7 @@ from pathlib import Path
 
 from modules.base import BaseModule, StageStatus, read_status
 from modules.contracts import stage_path, topological_order
+from modules.court_detection import CourtDetectionModule
 from modules.match_segmentation import MatchSegmentationModule
 from modules.score_recognition import ScoreRecognitionModule
 
@@ -32,6 +33,7 @@ def available_modules() -> dict[str, BaseModule]:
     modules: list[BaseModule] = [
         MatchSegmentationModule(),
         ScoreRecognitionModule(),
+        CourtDetectionModule(),
     ]
     return {m.name: m for m in modules}
 
