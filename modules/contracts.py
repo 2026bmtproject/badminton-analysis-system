@@ -27,10 +27,6 @@ analysis stages must agree on **before** they are individually built:
    pinned by a dataclass below. Downstream stages are written against these
    dataclasses, so nailing them down now keeps the later wiring cheap.
 
-Only ``match_segmentation`` is implemented today; the other eight schemas are
-DRAFTs — refine the fields as each stage is built, but keep the file name,
-dependency list, and envelope stable so the runner and consumers keep working.
-
 Envelope convention (every artifact JSON is an object, never a bare array)::
 
     {"<record_key>": [ {<record fields>}, ... ], ...optional metadata... }
