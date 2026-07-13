@@ -8,13 +8,32 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2",
     "opencv-python",
+    "pillow",
     "pyyaml>=6.0.3",
+    "scipy>=1.14",
+    "torch>=2.6",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
 ]
+
+# PyPI ships CPU-only torch wheels on Windows, and shuttle_tracking is ~8x slower
+# without a GPU — so on Windows and Linux torch comes from PyTorch's CUDA 12.8 index
+# instead (RTX 20-series and newer). That index has no macOS wheels, so macOS is left
+# on PyPI, where torch already ships with Metal support. A machine with no NVIDIA GPU
+# still resolves fine here: the CUDA build simply falls back to the CPU at runtime,
+# and the stage says so loudly when it does.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

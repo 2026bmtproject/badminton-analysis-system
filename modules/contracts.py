@@ -148,15 +148,35 @@ class PoseFrame:
     keypoints: list[list[float]]            # Nx [x, y, confidence]
 
 
+#: The two trajectory-extraction methods ``shuttle_tracking`` runs over the same
+#: TrackNet heatmaps. Both are written to ``shuttle.json``; ``event_detection``
+#: consumes both, so this is not an either/or choice.
+SHUTTLE_METHODS = ("inpaint", "viterbi")
+
+
 @dataclass
 class ShuttlePoint:
     """DRAFT — shuttle_tracking (TrackNetV3). Artifact: ``shuttle.json``
-    (key ``points``)."""
+    (key ``points``).
+
+    One record per (method, frame). ``frame`` is an **absolute** frame index into
+    the raw match video — the same coordinate system as ``Segment.start_frame``
+    and ``PoseFrame.frame`` — so downstream stages can align without consulting
+    ``segments.json``. Only frames inside a segment are emitted; dead time
+    between rallies is never tracked.
+
+    ``x``/``y`` are in original-video pixels and are None exactly when
+    ``visible`` is False. ``confidence`` is the heatmap peak backing the point
+    (0 for interpolated/inpainted positions, None when the method cannot say).
+    """
 
     frame: int
+    segment_index: int
+    method: str                             # one of SHUTTLE_METHODS
     x: float | None                         # None when not visible
     y: float | None
     visible: bool
+    confidence: float | None = None
 
 
 @dataclass
