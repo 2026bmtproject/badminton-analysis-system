@@ -70,7 +70,7 @@ uv sync
 cp config.yaml.example config.yaml   # 填入你的設定
 ```
 
-> 註：Python 固定使用 3.10（`requires-python = ">=3.10,<3.11"`），numpy 鎖在 <2，`uv sync` 會自動挑對版本。
+> 註：Python 固定使用 3.12，`uv sync` 會自動挑對版本。
 
 ## 執行管線
 
