@@ -22,6 +22,7 @@ from modules.contracts import stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.match_segmentation import MatchSegmentationModule
 from modules.score_recognition import ScoreRecognitionModule
+from modules.shuttle_tracking import ShuttleTrackingModule
 
 
 def available_modules() -> dict[str, BaseModule]:
@@ -34,6 +35,7 @@ def available_modules() -> dict[str, BaseModule]:
         MatchSegmentationModule(),
         ScoreRecognitionModule(),
         CourtDetectionModule(),
+        ShuttleTrackingModule(),
     ]
     return {m.name: m for m in modules}
 
