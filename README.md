@@ -2,6 +2,9 @@
 
 > 本地端系統：輸入一整場羽球比賽轉播影片，自動切割回合、逐球分析、挑選精彩片段，並產生 AI 賽評播報後合成成精華影片。
 
+TrackNetV3 權重下載：https://drive.google.com/file/d/1CfzE87a0f6LhBp0kniSl1-89zaLCZ8cA/view?usp=sharing
+下載後解壓縮檔案並把 `TrackNet_best.pt` 與 `InpaintNet_best.pt` 放進 `models/`。
+
 ## 架構概覽
 
 一條分析管線，逐階段處理，最終在 UI 呈現結果。各模組對應一個處理階段：
@@ -36,7 +39,10 @@ matches/MK_vs_CT_2019/          # = match_path
 ├── input/
 │   └── match.mp4               # 原始轉播影片（第一個影片檔即為輸入）
 ├── cache/                      # 共用衍生媒體（可刪可重建，不進 repo）
-│   └── match_480p.mp4          # 若原片 > 480p，降解析度快取；多個階段可共用
+│   ├── match_480p.mp4          # 若原片 > 480p，降解析度快取；多個階段可共用
+│   └── heatmaps/               # shuttle_tracking 的 TrackNet heatmap，一個 segment 一個 .npz
+│       ├── meta.json           # heatmap 依賴的來源（權重、eval mode、segments…），用於失效判斷
+│       └── seg0000.npz
 └── stages/
     └── match_segmentation/
         ├── status.json         # 該階段執行狀態（pending/running/completed/failed）
@@ -113,6 +119,63 @@ uv run python -m modules.court_detection matches/MK_vs_CT_2019
 # 不做人工確認、直接寫入自動偵測結果（無顯示器環境用；runner 跑管線時一律走此模式）
 uv run python -m modules.court_detection matches/MK_vs_CT_2019 --no-confirm
 
+# 羽球軌跡：對每個 segment 跑 TrackNet 產生 heatmap（存 cache），再跑兩種軌跡萃取
+uv run python -m modules.shuttle_tracking matches/MK_vs_CT_2019
+# 只做 GPU 的 heatmap 推論（之後調整軌跡萃取就不必再動 GPU）
+uv run python -m modules.shuttle_tracking matches/MK_vs_CT_2019 --only-heatmap
+# 用既有的 heatmap cache 重跑單一 tracker（換補洞方式試效果，不重算 heatmap）
+uv run python -m modules.shuttle_tracking matches/MK_vs_CT_2019 --method viterbi --fill kalman
+
 # 影格合成工具（單獨使用；把影片抽樣的 frame 合成以凸顯靜態元素如記分板）
 uv run python -m modules.common.frame_composite MATCH.mp4 -n 30 -o composites/
 ```
+
+## 羽球軌跡（shuttle_tracking）
+
+TrackNetV3。權重放在 `models/`（不進 repo，下載連結見本文件開頭）：
+
+```
+models/
+├── TrackNet_best.pt      # heatmap 網路（seq_len=8, bg_mode=concat）
+└── InpaintNet_best.pt    # 軌跡修補網路（seq_len=16）
+```
+
+分兩個階段跑：
+
+1. **Heatmap**：每個回合 segment 直接從原片讀 frame（不必先切成 segment mp4），TrackNet 產生逐幀信心
+   heatmap，存進 `cache/heatmaps/seg{NNNN}.npz`。這是唯一吃 GPU 的部分，可中斷續跑；cache 完整時
+   不會建立網路、不碰 GPU（權重檔仍會被讀取以計算雜湊做失效判斷）。
+2. **軌跡**：兩種方法各自從同一批 heatmap 萃取軌跡，**兩份結果都寫進 `shuttle.json`**（以 `method` 欄位區分），
+   因為 `event_detection` 兩者都要。它們共用第一步（取最大連通塊當基準點），之後分道揚鑣：
+
+   | method | 作法 | 性格 |
+   |---|---|---|
+   | `inpaint` | TrackNetV3 原生：每幀取最強的一顆 blob，缺口交給 InpaintNet 修補 | 積極，補得多 |
+   | `viterbi` | 低閾值抽出多個候選，用最小成本路徑選出最合理的一條飛行軌跡，再剪枝、補洞 | 保守，寧缺勿濫 |
+
+heatmap 屬於 `cache/` 而非 `stages/`：它是可重建的衍生媒體，只有本模組讀它。存檔前會把低於閾值的雜訊歸零
+（所有下游都不讀那個範圍），實測非零像素僅約 0.1%，壓縮率因此高出兩個數量級。`cache/heatmaps/meta.json`
+記錄 heatmap 依賴的一切（權重雜湊、eval mode、來源影片、各 segment 起訖），任一項改變即自動重建，
+不會讀到對不上的舊資料。
+
+> TrackNet 的 `--eval-mode` 預設 `nonoverlap`：每幀只推論一次。`weight` / `average` 會以滑動窗逐幀重複推論並
+> 加權平均，準確度略升但運算量是 `seq_len` 倍。
+
+### GPU、記憶體與其他人的電腦
+
+執行時第一行就會印出實際用到的裝置，**沒吃到 GPU 會大聲警告**，不會讓你跑了 40 分鐘才發現：
+
+```
+  device:   cuda (NVIDIA GeForce RTX 3060 Ti, 7.3 of 8.6 GB VRAM free)
+  TrackNet: seq_len=8 bg_mode='concat' eval_mode=nonoverlap batch_size=8 (auto)
+```
+
+- **GPU**：`pyproject.toml` 讓 Windows / Linux 從 PyTorch 的 CUDA 12.8 index 取 torch（PyPI 的 Windows wheel 只有
+  CPU 版），macOS 則走 PyPI。沒有 NVIDIA 顯卡也能安裝，執行時自動退回 CPU 並警告。實測 CPU 約 12 fps
+  （GPU 約 90 fps）。
+- **VRAM**：`--batch-size` 預設**依剩餘 VRAM 自動決定**（每個 sample 約 0.65 GB）。就算估得太樂觀也不會崩：
+  批次遇到 CUDA OOM 會自動對半拆再試，最差退到一次一張。4 GB 的顯卡也能跑完，只是慢一點。
+- **主記憶體**：實測峰值 **約 1.0 GB**（本專案最長的回合，1011 幀／40 秒）。最大宗是 frame buffer，由
+  `--chunk-frames` 封頂（預設 1200 幀 ≈ 530 MB），更長的回合會分塊推論，所以再長的回合也不會讓它爆掉；
+  剩下的輸出 heatmap 陣列仍會隨回合長度線性成長（每幀 147 KB），但斜率只有 frame 的 1/3。記憶體吃緊的
+  機器把 `--chunk-frames` 調低即可（例如 600 → 峰值約 0.7 GB）。
