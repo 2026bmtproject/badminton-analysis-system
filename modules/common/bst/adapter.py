@@ -61,17 +61,29 @@ def _artifact(match_path: str | Path, stage: str) -> Path:
     return stage_path(match_path, stage) / spec.output_filename
 
 
-def read_fps(match_path: str | Path) -> float:
-    """The match's fps, from ``segments.json``'s envelope.
+def read_segments(match_path: str | Path) -> tuple[list[dict], float]:
+    """``segments.json``: the rally segments and the fps they were cut at.
 
-    Both consumers need it — it sets the window half-width — and neither should be
-    re-probing the video for something a stage already recorded.
+    Both BST stages need both halves — the segments to know which frames a rally covers,
+    the fps to size the windows — so they read them here rather than each opening the same
+    envelope. The fps in particular must be the one *segmentation measured*, not one
+    re-probed from the video: it is the only way fps reaches the model, and two stages
+    disagreeing about it by a hundredth would size their windows differently.
     """
-    envelope = read_artifact(PIPELINE["match_segmentation"], _artifact(match_path, "match_segmentation"))
+    spec = PIPELINE["match_segmentation"]
+    envelope = read_artifact(spec, _artifact(match_path, "match_segmentation"))
+    segments = envelope[spec.record_key]
+    if not segments:
+        raise RuntimeError("no segments in match_segmentation output")
     fps = envelope.get("fps")
     if not fps:
         raise RuntimeError("match_segmentation output carries no fps")
-    return float(fps)
+    return segments, float(fps)
+
+
+def read_fps(match_path: str | Path) -> float:
+    """Just the fps from ``segments.json`` — see :func:`read_segments`."""
+    return read_segments(match_path)[1]
 
 
 def read_image_to_court(match_path: str | Path) -> np.ndarray:
@@ -104,9 +116,7 @@ def load_segment_features(
     match_path = Path(match_path)
     width, height = video_size_px or video_size(str(resolve_input_video(match_path)))
 
-    segments = read_records(PIPELINE["match_segmentation"], _artifact(match_path, "match_segmentation"))
-    if not segments:
-        raise RuntimeError("no segments in match_segmentation output")
+    segments, _ = read_segments(match_path)
     image_to_court = read_image_to_court(match_path)
 
     poses = _pose_by_segment(read_records(PIPELINE["pose"], _artifact(match_path, "pose")))

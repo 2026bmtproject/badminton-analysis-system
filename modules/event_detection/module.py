@@ -25,9 +25,9 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modules.artifacts import read_artifact, read_records, write_artifact
+from modules.artifacts import read_records, write_artifact
 from modules.base import BaseModule, StageState, StageStatus, _now_iso, stage_completed, write_status
-from modules.common.bst import centered_windows, predict_windows
+from modules.common.bst import Window, predict_windows
 from modules.common.bst import adapter
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
 from modules.contracts import COCO_KEYPOINTS, PIPELINE, HitEvent, stage_path
@@ -43,6 +43,27 @@ from modules.event_detection.trajectory import Traj, build_trajectories
 OUTPUT_FILENAME = PIPELINE["event_detection"].output_filename
 
 ProgressFn = Callable[[float], None]
+
+
+def scan_windows(n_frames: int, half: int, stride: int = 1) -> list[Window]:
+    """The dense scan's windows: one per frame, ``[f - half, f + half]``, clipped.
+
+    This stage's own choice, not the model's. BST is happy to read any window, and the one
+    it was *trained* on is ``bst.between_hits_windows`` — but that needs the hits, which is
+    the very thing this stage is trying to find. So it asks a different question of the same
+    weights ("does frame f look like the middle of a hit?"), and ``half`` and ``stride`` are
+    the knobs of that question. They live here, with the code that has an opinion about
+    them, rather than beside a window scheme that must never be tuned.
+
+    ``half`` is ``int(fps // 2)`` — the half-second either side of a candidate hit. Windows
+    near the ends of a rally are shorter rather than shifted: padding is something the model
+    understands (``bst.features.make_seq_len_same``), a window centred somewhere other than
+    the frame being asked about is not.
+    """
+    return [
+        (max(0, f - half), min(n_frames, f + half + 1))
+        for f in range(0, n_frames, stride)
+    ]
 
 
 class SegmentResult:
@@ -135,7 +156,7 @@ class EventDetectionModule(BaseModule):
         done = 0
         for index in pending:
             segment_features = features[index]
-            windows = centered_windows(len(segment_features), half)
+            windows = scan_windows(len(segment_features), half)
             probabilities = predict_windows(
                 model,
                 segment_features,
@@ -270,7 +291,7 @@ class EventDetectionModule(BaseModule):
         write_status(out_dir, state)
 
         try:
-            segments, fps = self._read_segments(match_path)
+            segments, fps = adapter.read_segments(match_path)
             scores = self._read_scores(match_path)
 
             # The scan dominates the runtime, so it owns most of the progress bar.
@@ -342,17 +363,6 @@ class EventDetectionModule(BaseModule):
     def _artifact(self, match_path: Path, stage: str) -> Path:
         spec = PIPELINE[stage]
         return stage_path(match_path, stage) / spec.output_filename
-
-    def _read_segments(self, match_path: Path) -> tuple[list[dict], float]:
-        spec = PIPELINE["match_segmentation"]
-        envelope = read_artifact(spec, self._artifact(match_path, "match_segmentation"))
-        segments = envelope[spec.record_key]
-        if not segments:
-            raise RuntimeError("no segments in match_segmentation output")
-        fps = envelope.get("fps")
-        if not fps:
-            raise RuntimeError("match_segmentation output carries no fps")
-        return segments, float(fps)
 
     def _read_scores(self, match_path: Path) -> dict[int, tuple[int, int] | None] | None:
         """``{segment_index: (a, b) | None}``, or None when the rule is not running.

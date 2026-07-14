@@ -1,12 +1,15 @@
 """Unit tests for the shared BST module.
 
 No weight file, no GPU: the network is built with random weights, which is enough for
-everything that can actually break here. The risk in this module is not the architecture
-— that is a verbatim port, and ``test_bst_equivalence`` pins it against the reference —
-but the two seams around it: the artifacts -> features adapter (where a court flipped
-upside down would swap Top and Bottom in every prediction and still look like a working
-model), and the windowing/batching (where an off-by-one shifts every prediction by a
-frame).
+everything that can actually break here. The risk in this module is not the architecture —
+that is a verbatim port of the reference implementation, and nothing about it is a
+judgement call — but the two seams around it: the artifacts -> features adapter (where a
+court flipped upside down would swap Top and Bottom in every prediction and still look like
+a working model), and the windowing/batching (where an off-by-one shifts every prediction
+by a frame).
+
+``between_hits_windows`` is exercised in ``tests/test_stroke_classification.py``, next to
+its only caller and to the frozen reference it is pinned against.
 """
 
 from __future__ import annotations
@@ -27,7 +30,6 @@ from modules.common.bst import (
     SegmentFeatures,
     build_bst_model,
     build_window,
-    centered_windows,
     predict_windows,
     to8,
     to_base,
@@ -166,14 +168,6 @@ def test_a_long_window_is_strided_down_rather_than_cropped():
     assert strided[video_len - 1][0] > shuttle[SEQ_LEN][0]
 
 
-def test_windows_are_centered_on_their_frame_and_clipped_at_the_rally_edges():
-    windows = centered_windows(n_frames=10, half=3)
-    assert len(windows) == 10
-    assert windows[0] == (0, 4)          # clipped at the start, not shifted right
-    assert windows[5] == (2, 9)          # a full window in the middle
-    assert windows[9] == (6, 10)         # clipped at the end
-
-
 # --------------------------------------------------------------------------- #
 # Inference
 # --------------------------------------------------------------------------- #
@@ -182,7 +176,7 @@ def test_windows_are_centered_on_their_frame_and_clipped_at_the_rally_edges():
 def test_predictions_do_not_depend_on_how_they_were_batched():
     model = build_bst_model().eval()
     features = random_features(60)
-    windows = centered_windows(len(features), half=15)
+    windows = [(max(0, f - 15), min(60, f + 16)) for f in range(60)]
 
     one_batch = predict_windows(model, features, windows, batch_size=256)
     many_batches = predict_windows(model, features, windows, batch_size=7)

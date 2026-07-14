@@ -24,13 +24,14 @@ import pytest
 
 from modules.artifacts import read_artifact, write_artifact
 from modules.base import StageStatus, StageState, write_status
+from modules.common.bst import adapter
 from modules.common.bst.classes import N_CLASSES, STROKE_CLASSES, UNKNOWN_INDEX
 from modules.contracts import COCO_KEYPOINTS, PIPELINE, pipeline_order, stage_path
 from modules.event_detection import dense_cache
 from modules.event_detection.complete import complete_segment
 from modules.event_detection.config import EventDetectionConfig
 from modules.event_detection.evidence import Dense
-from modules.event_detection.module import EventDetectionModule
+from modules.event_detection.module import EventDetectionModule, scan_windows
 from modules.event_detection.prune import dead_segments, prune_segment, rally_span
 from modules.event_detection.sides import SideOf, skeletons_by_segment
 from modules.event_detection.streams import run_stream
@@ -155,6 +156,22 @@ def test_first_rise_finds_the_serve():
     ys = falling + climbing + [350.0] * 21
     traj = Traj(frames, [True] * 60, [900.0] * 60, ys)
     assert traj.first_rise(min_len=6, min_rise=60) == 9
+
+
+# --------------------------------------------------------------------------- #
+# dense scan
+# --------------------------------------------------------------------------- #
+
+
+def test_scan_windows_are_centered_on_their_frame_and_clipped_at_the_rally_edges():
+    """The scan asks "is frame f a hit?", so a window that is not centred on f is asking
+    about a different frame. At the rally's edges it is shortened, never shifted."""
+    windows = scan_windows(n_frames=10, half=3)
+
+    assert len(windows) == 10
+    assert windows[0] == (0, 4)          # clipped at the start, not shifted right
+    assert windows[5] == (2, 9)          # a full window in the middle
+    assert windows[9] == (6, 10)         # clipped at the end
 
 
 # --------------------------------------------------------------------------- #
@@ -412,7 +429,7 @@ def test_offset_is_applied_once_and_clamped(match):
     config = EventDetectionConfig(bst_checkpoint=str(checkpoint))
     module = EventDetectionModule(config)
 
-    segments, fps = module._read_segments(tmp_path)
+    segments, fps = adapter.read_segments(tmp_path)
     results = module.detect(tmp_path, segments, None)
     raw = sorted(results[0].hits)
 
