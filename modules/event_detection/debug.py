@@ -5,9 +5,9 @@ terrible debugging surface. This writes the whole state of the decision instead:
 candidate, what fired it, the measurements behind it, the side, and — for the ones that did
 not survive — which gate or prune rule took it out.
 
-The layout is v632's, column for column, so a run of this stage and a run of the reference
-can be diffed directly. ``tests/test_event_detection_reference.py`` does exactly that
-against ``ASG_vs_AA_2020_hitevent/``.
+The layout is v632's, column for column. While that reference still existed, a migration
+test diffed the two runs against each other directly; both are gone now, but the columns
+are kept as they were — they are a good layout, and re-inventing them would buy nothing.
 
 One thing to know when reading it: the ``Hit`` flag is written at ``frame + offset`` while
 everything else stays on the detector's native frame, so a hit row is usually a couple of
