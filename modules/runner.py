@@ -25,6 +25,7 @@ from modules.match_segmentation import MatchSegmentationModule
 from modules.pose import PoseModule
 from modules.score_recognition import ScoreRecognitionModule
 from modules.shuttle_tracking import ShuttleTrackingModule
+from modules.stroke_classification import StrokeClassificationModule
 
 
 def available_modules() -> dict[str, BaseModule]:
@@ -40,6 +41,7 @@ def available_modules() -> dict[str, BaseModule]:
         ShuttleTrackingModule(),
         PoseModule(),
         EventDetectionModule(),
+        StrokeClassificationModule(),
     ]
     return {m.name: m for m in modules}
 

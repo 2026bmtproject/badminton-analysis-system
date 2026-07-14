@@ -234,11 +234,33 @@ class HitEvent:
 
 @dataclass
 class StrokeLabel:
-    """DRAFT — stroke_classification (BST). Artifact: ``strokes.json``
-    (key ``strokes``). One per HitEvent, aligned by ``event_index``."""
+    """DRAFT — stroke_classification (BST). Artifact: ``strokes.json`` (key ``strokes``).
+
+    One record per :class:`HitEvent`, in the same order: ``event_index`` is the hit's
+    position in ``events.json``, so the two artifacts zip together without a join.
+
+    ``player`` is the half of the contract ``HitEvent`` deliberately leaves out. BST's
+    25-class head answers "which stroke" and "who hit it" in one forward pass (``Top_*`` /
+    ``Bottom_*``), so this is where the hitter is recorded for the whole pipeline — nothing
+    upstream asserts it. It names a court position, not an identity, and matches
+    :data:`POSE_PLAYERS`.
+
+    ``segment_index`` *is* carried here, unlike in ``HitEvent``, because this stage has to
+    resolve it anyway — BST's windows run between consecutive hits *of the same rally* — so
+    writing it down asserts nothing new and saves every consumer from redoing the lookup.
+
+    ``stroke_type`` is one of ``modules.common.bst.classes.CLASSES_8``, the Chinese
+    8-class merge users are shown (小球, 高遠球, 殺球, ...). When the model's own answer is
+    ``未知球種`` that is what is written, with ``player`` None: the stage reports what BST
+    said rather than picking the best of the 24 real strokes, because a confident-looking
+    label invented for a hit the model could not read is worse than an honest blank.
+    """
 
     event_index: int
-    stroke_type: str                        # e.g. "clear", "smash", "net"
+    frame: int                              # absolute, same as the HitEvent's
+    segment_index: int
+    player: str | None                      # one of POSE_PLAYERS; None for 未知球種
+    stroke_type: str                        # one of CLASSES_8, or "未知球種"
     confidence: float
 
 
