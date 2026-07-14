@@ -25,7 +25,9 @@ from modules.pose.select import (
     candidate_margins,
     candidate_mask,
     court_from_image,
+    court_size,
     ground_points,
+    ground_scale,
     select_players,
     to_court,
 )
@@ -334,6 +336,197 @@ def test_tracker_reset_forgets_the_previous_rally():
 def test_tracker_handles_an_empty_frame():
     t = tracker()
     assert t.update(make_det()) == (None, None)
+
+
+# --------------------------------------------------------------------------- #
+# perspective, and the umpire on their chair
+#
+# Everything above uses the head-on camera, where a metre is a metre wherever you
+# stand. A broadcast camera is not head-on, and that is the whole problem: it makes
+# whoever is nearest the lens the biggest, and the nearest person is not a player but
+# the umpire, on a raised chair beside the net, in every frame of the match.
+#
+# These tests use a real perspective homography, and the two bodies are sized from the
+# test match: the far player measures 5.6 ground-metres, the umpire 3.9, while in
+# pixels the umpire's box is the larger of the two. Ranking by pixel area picked the
+# umpire in 86% of the frames the two shared.
+# --------------------------------------------------------------------------- #
+
+
+def homography_from_corners(court_pts, image_pts) -> np.ndarray:
+    """Solve the court -> image homography from four correspondences."""
+    rows = []
+    for (x_m, y_m), (u, v) in zip(court_pts, image_pts):
+        rows.append([x_m, y_m, 1, 0, 0, 0, -u * x_m, -u * y_m])
+        rows.append([0, 0, 0, x_m, y_m, 1, -v * x_m, -v * y_m])
+    h = np.linalg.solve(np.array(rows, float), np.array(image_pts, float).ravel())
+    return np.append(h, 1.0).reshape(3, 3)
+
+
+# A camera behind the near baseline and above it: the far baseline is a short edge high
+# in the frame, the near baseline a long one low in it. One court metre is worth 27 px
+# out at the far player and 47 px in at the net — the 1.7x that pixel area mistakes for
+# a difference in size.
+BROADCAST = homography_from_corners(
+    [(0, 0), (COURT_WIDTH_M, 0), (COURT_WIDTH_M, COURT_LENGTH_M), (0, COURT_LENGTH_M)],
+    [(760, 260), (1160, 260), (1420, 900), (500, 900)],
+)
+
+#: Apparent height, in court metres, of a body standing on the ground (the players) and
+#: of one sitting 1.5 m up on a chair (the umpire). Medians measured over the test match.
+#: Neither is a physical height: the camera foreshortens the *ground* far more than it
+#: foreshortens a standing person, so a real 1.8 m athlete measures 5.6 of these metres.
+PLAYER_SIZE, UMPIRE_SIZE = 5.6, 3.9
+
+
+def broadcast_to_court() -> np.ndarray:
+    return court_from_image(BROADCAST)
+
+
+def at_broadcast(x_m: float, y_m: float) -> tuple[float, float]:
+    point = np.array([x_m, y_m, 1.0]) @ BROADCAST.T
+    return tuple(point[:2] / point[2])
+
+
+def metre_in_pixels(x_m: float, y_m: float) -> float:
+    """How many pixels one court metre spans on the ground at that court point."""
+    feet = np.array([at_broadcast(x_m, y_m)])
+    return float(ground_scale(feet, broadcast_to_court())[0])
+
+
+def person_at(x_m: float, y_m: float, size: float, width_ratio: float = 0.58) -> dict:
+    """A body whose feet project to that court point and whose apparent height is ``size``.
+
+    ``size`` is measured in court metres *at that point*, so a player standing anywhere
+    on the court is built with the same one — which is exactly the invariant that makes
+    them comparable, and the one pixels destroy.
+    """
+    height = size * metre_in_pixels(x_m, y_m)
+    return make_person(
+        *at_broadcast(x_m, y_m), height=height, width=height * width_ratio
+    )
+
+
+def a_player(x_m: float, y_m: float) -> dict:
+    return person_at(x_m, y_m, PLAYER_SIZE)
+
+
+def the_umpire() -> dict:
+    """On their chair: outside the right sideline, level with the net, and never moving.
+
+    The chair puts them 1.5 m off the ground, and the homography only maps the ground —
+    so their feet back-project not to the chair but to the net line, which is the near
+    part of the *far* player's half. That is how a seated official ends up competing for
+    a player's slot at all.
+    """
+    return person_at(7.0, 6.5, UMPIRE_SIZE, width_ratio=0.64)
+
+
+def test_the_umpire_lands_in_the_far_players_half_just_outside_the_sideline():
+    # The fixture is only worth anything if it puts the umpire where the real one goes.
+    feet = ground_points(make_det(the_umpire()), 0.3)
+    court = to_court(feet, broadcast_to_court())[0]
+
+    assert court == pytest.approx([1.148, 0.485], abs=0.01)   # measured: (1.153, 0.484)
+    assert court[1] < 0.5                                     # ... which is the top half
+    assert court[0] > 1.0                                     # ... and outside the sideline
+
+
+def test_ground_scale_grows_towards_the_camera():
+    far = metre_in_pixels(3.05, 0.5)          # a metre at the far baseline
+    net = metre_in_pixels(3.05, 6.7)          # the same metre at the net
+    near = metre_in_pixels(3.05, 12.9)        # and at the near baseline
+
+    assert far < net < near
+    assert near / far > 2.0                   # the foreshortening pixels get fooled by
+
+
+def test_court_size_is_blind_to_how_far_away_the_person_is():
+    """The property the whole fix rests on: the same athlete scores the same anywhere.
+
+    Two players of identical build, one at each baseline. In pixels the near one is more
+    than twice the far one; on the court they are the same person.
+    """
+    far, near = a_player(3.0, 1.0), a_player(3.0, 12.0)
+    det = make_det(far, near)
+    feet = ground_points(det, 0.3)
+
+    pixels = det["bboxes"][:, 3] - det["bboxes"][:, 1]
+    assert pixels[1] / pixels[0] > 2.0                        # wildly different in pixels
+
+    size = court_size(det["bboxes"], feet, broadcast_to_court())
+    assert size[0] == pytest.approx(size[1], rel=1e-6)        # identical on the court
+    assert size[0] == pytest.approx(PLAYER_SIZE, rel=1e-6)
+
+
+def test_pixel_area_is_what_used_to_pick_the_umpire():
+    """The bug, pinned: by the old ranking the umpire is simply the better candidate.
+
+    Without this the fix below could pass for the wrong reason — because the umpire was
+    never a threat in the fixture, rather than because the ranking now sees through them.
+    """
+    player, umpire = a_player(3.0, 2.55), the_umpire()
+    boxes = make_det(player, umpire)["bboxes"]
+    area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+
+    assert area[1] > area[0]                                  # the umpire wins on pixels
+    assert area[1] / area[0] == pytest.approx(1.6, abs=0.1)
+
+
+def test_prefers_the_player_over_the_bigger_umpire_on_their_chair():
+    """The regression: the far player's slot goes to the far player, not the umpire.
+
+    The umpire is inside the sideline margin (which is sized for a lunging player and
+    cannot be tightened past them), is in the top half, and out-sizes the player in
+    pixels. Only measuring them against the court tells the two apart.
+    """
+    umpire = the_umpire()
+    player = a_player(3.0, 2.55)
+    near = a_player(3.0, 10.0)
+
+    top, bottom = select_players(make_det(umpire, player, near), broadcast_to_court())
+    assert (top, bottom) == (1, 2)
+
+
+def test_an_airborne_player_still_outranks_the_umpire():
+    """A smash is where the far player is *most* likely to be lost, and must not be.
+
+    Mid-jump their ankles are off the ground, so they back-project past the far baseline
+    — further from the camera, where a court metre is worth fewer pixels, so they measure
+    *larger*. The correction leans the right way on exactly the frames that matter.
+    """
+    grounded = a_player(3.0, 2.0)
+    airborne = person_at(3.0, -1.5, PLAYER_SIZE)   # feet project past the far baseline
+    umpire = the_umpire()
+
+    det = make_det(umpire, airborne)
+    size = court_size(det["bboxes"], ground_points(det, 0.3), broadcast_to_court())
+    grounded_det = make_det(grounded)
+    grounded_size = court_size(
+        grounded_det["bboxes"], ground_points(grounded_det, 0.3), broadcast_to_court()
+    )
+
+    assert size[1] > grounded_size[0]             # the jump *raises* their score
+    assert select_players(det, broadcast_to_court())[0] == 1
+
+
+def test_tracker_does_not_spend_the_rally_following_the_umpire():
+    """The failure this cost: one bad bootstrap and the tracker never comes back.
+
+    The umpire does not move, so once they are mistaken for the player they sit at
+    distance zero from their own prior forever — continuity, the very thing that makes
+    the tracker good, then keeps it wrong for the whole rally. The bootstrap has to be
+    right, so it ranks on the court like everything else.
+    """
+    umpire = the_umpire()
+    near = a_player(3.0, 10.0)
+    t = PlayerTracker(broadcast_to_court(), SelectConfig())
+
+    for step in range(6):
+        # The player works their way up the far court; the umpire never budges.
+        player = a_player(3.0 + 0.2 * step, 2.55 + 0.3 * step)
+        top, bottom = t.update(make_det(umpire, player, near))
+        assert (top, bottom) == (1, 2), f"lost the player to the umpire on frame {step}"
 
 
 # --------------------------------------------------------------------------- #

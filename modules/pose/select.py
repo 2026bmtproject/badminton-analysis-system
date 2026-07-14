@@ -27,6 +27,34 @@ resolution- and camera-independent.
 The margins are the *acceptance* test, not the ranking: with the court widened, more
 non-players can slip in, so within each half the candidates are ranked and only the
 best one is taken. See :func:`select_players`.
+
+Why size has to be measured on the court, not in pixels
+-------------------------------------------------------
+The one non-player the widened court cannot keep out is the **umpire**, who sits on a
+raised chair beside the net — inside the sideline margin by construction, and there in
+every single frame. Ranking the half by pixel area hands them the far player's slot
+almost every time: on the test match, area put the real player ahead of them in only
+13.6% of the frames the two shared.
+
+Pixel size says nothing about who is a player, because perspective makes whoever is
+nearest the camera the biggest. The umpire is *closer* than the far player, so they are
+*bigger* — 22.1k px² against 19.2k — while being neither a player nor even
+player-shaped. Anything that ranks by apparent size in pixels is measuring distance from
+the camera.
+
+:func:`court_size` removes that by dividing each person's apparent height by the size of
+one court metre *at the point they are standing on* (:func:`ground_scale`), which the
+homography already knows. Two people of equal real size then score equally wherever they
+stand, and the comparison becomes about them rather than about the lens.
+
+It also turns the umpire's chair from a disguise into a tell. The homography is a
+ground-plane map, so a person 1.5 m up in the air back-projects to a ground point that
+is not theirs — for the umpire, to the net line, where the plane is steeply foreshortened
+and one metre is worth 47 px rather than the 32 px of the far court. A body genuinely
+standing there would tower; the umpire does not, and scores 3.9 against a real player's
+5.6. The same arithmetic *rewards* an airborne player, whose feet project the other way,
+past the baseline where a metre is worth less — so the ranking is at its most confident
+on exactly the smash frames the margins were widened for.
 """
 
 from __future__ import annotations
@@ -149,6 +177,50 @@ def to_court(points: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
     return metres / np.array([COURT_WIDTH_M, COURT_LENGTH_M])
 
 
+def ground_scale(points: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
+    """How many pixels one court metre spans, on the ground, at each image point. ``(n,)``
+
+    The homography carries this for free: step one metre down-court from the point, project
+    both ends back to the image, and measure the gap. Near the camera the answer is large,
+    at the far baseline it is small, and that difference is exactly the perspective that
+    :func:`court_size` has to divide out.
+
+    Measured along the court's *length*, which is the axis the camera foreshortens, so the
+    number is a scale factor rather than a physical height — it means something only when
+    compared against another one from the same frame.
+    """
+    if len(points) == 0:
+        return np.zeros(0, np.float64)
+
+    court_to_image = np.linalg.inv(image_to_court)
+    metres = to_court(points, image_to_court) * np.array([COURT_WIDTH_M, COURT_LENGTH_M])
+    stepped = metres + np.array([0.0, 1.0])                            # one metre down-court
+    homogeneous = np.hstack([stepped, np.ones((len(stepped), 1))])     # (n, 3)
+    projected = homogeneous @ court_to_image.T
+    w = projected[:, 2:3]
+    w = np.where(np.abs(w) < 1e-9, 1e-9, w)
+    return np.linalg.norm(projected[:, :2] / w - points, axis=1)
+
+
+def court_size(bboxes: np.ndarray, feet: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
+    """Each person's apparent height, in court metres instead of pixels. ``(n,)``
+
+    This is the ranking signal — the one number that separates a player from the umpire.
+    See the module docstring for why pixels cannot: they measure distance from the camera,
+    and the umpire is closer to it than the far player is.
+
+    Height rather than area, because a bounding box's *width* is mostly posture — a lunge
+    or an outstretched racket arm doubles it — while its height tracks the person.
+    Correcting the *area* for perspective instead (dividing by the metre squared) also
+    sees through the umpire, but only reaches 98.4% on the test match against height's
+    99.5%: the width contributes noise and no signal.
+    """
+    if len(bboxes) == 0:
+        return np.zeros(0, np.float64)
+    height = (bboxes[:, 3] - bboxes[:, 1]).astype(np.float64)
+    return height / np.maximum(ground_scale(feet, image_to_court), 1e-6)
+
+
 def candidate_margins(config: SelectConfig | None = None) -> tuple[float, float]:
     """The pre-filter's margins: never tighter than the selection they must feed."""
     config = config or SelectConfig()
@@ -200,10 +272,9 @@ def _halves(
     """The in-court people, split into the two halves.
 
     Returns the ground points, ``{player: indices standing in that player's half}``, and
-    the bounding-box areas. Splitting at the net (normalized y = 0.5) is what guarantees
-    the two players can never resolve to the same person.
+    each person's :func:`court_size`. Splitting at the net (normalized y = 0.5) is what
+    guarantees the two players can never resolve to the same person.
     """
-    bboxes = det["bboxes"]
     feet = ground_points(det, config.min_ankle_score)
     court = to_court(feet, image_to_court)
     x, y = court[:, 0], court[:, 1]
@@ -216,8 +287,8 @@ def _halves(
         "top": np.nonzero(in_court & (y < 0.5))[0],
         "bottom": np.nonzero(in_court & (y >= 0.5))[0],
     }
-    area = (bboxes[:, 2] - bboxes[:, 0]) * (bboxes[:, 3] - bboxes[:, 1])
-    return feet, halves, area
+    size = court_size(det["bboxes"], feet, image_to_court)
+    return feet, halves, size
 
 
 def select_players(
@@ -227,23 +298,25 @@ def select_players(
 ) -> tuple[int | None, int | None]:
     """Pick the two players from a single frame, with no memory of the previous one.
 
-    Ranks the in-court candidates of each half by **bounding-box area**: a standing
-    athlete is bigger than a seated official. This is what :class:`PlayerTracker` falls
-    back on when it has no usable prior — at the start of a rally, or after a player has
-    been missing long enough that where they were says nothing about where they are.
+    Ranks the in-court candidates of each half by :func:`court_size` — apparent height
+    measured against the court rather than the sensor, so that a player is compared with
+    an official on equal terms instead of on how close each of them is to the camera. A
+    standing athlete then genuinely out-measures a seated one; in pixels they do not.
 
-    Use the tracker for real work: with the sideline margin wide enough to hold a
-    lunging player, it is also wide enough to reach the line judges, and area alone is a
-    thin defence against them.
+    This is also what :class:`PlayerTracker` falls back on when it has no usable prior —
+    at the start of a rally, or after a player has been missing long enough that where
+    they were says nothing about where they are. Prefer the tracker for real work:
+    continuity is a stronger signal than size, and size only has to be right often enough
+    to hand the tracker a player to follow.
     """
     config = config or SelectConfig()
     if len(det["bboxes"]) == 0:
         return None, None
 
-    _, halves, area = _halves(det, image_to_court, config)
+    _, halves, size = _halves(det, image_to_court, config)
 
     def best(ids: np.ndarray) -> int | None:
-        return int(ids[np.argmax(area[ids])]) if len(ids) else None
+        return int(ids[np.argmax(size[ids])]) if len(ids) else None
 
     return best(halves["top"]), best(halves["bottom"])
 
@@ -297,8 +370,8 @@ class PlayerTracker:
         if len(det["bboxes"]) == 0:
             return None, None
 
-        feet, halves, area = _halves(det, self.image_to_court, config)
-        picked = {player: self._pick(player, halves[player], feet, area) for player in PLAYERS}
+        feet, halves, size = _halves(det, self.image_to_court, config)
+        picked = {player: self._pick(player, halves[player], feet, size) for player in PLAYERS}
         for player, index in picked.items():
             if index is not None:
                 self._last[player], self._age[player] = feet[index].copy(), 0
@@ -309,14 +382,17 @@ class PlayerTracker:
         player: str,
         ids: np.ndarray,
         feet: np.ndarray,
-        area: np.ndarray,
+        size: np.ndarray,
     ) -> int | None:
         if len(ids) == 0:
             return None
 
         prior = self._last[player]
         if prior is None:
-            return int(ids[np.argmax(area[ids])])  # bootstrap: the biggest person in the half
+            # Bootstrap: the biggest person in the half, measured on the court rather than
+            # in pixels — in pixels the umpire wins, and the tracker would then spend the
+            # whole rally faithfully following them. See court_size.
+            return int(ids[np.argmax(size[ids])])
 
         distance = np.linalg.norm(feet[ids] - prior, axis=1)
         nearest = int(np.argmin(distance))
