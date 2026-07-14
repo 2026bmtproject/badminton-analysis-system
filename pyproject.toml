@@ -10,14 +10,36 @@ dependencies = [
     "opencv-python",
     "pillow",
     "pyyaml>=6.0.3",
+    "rtmlib>=0.0.13",
     "scipy>=1.14",
     "torch>=2.6",
+    # The pose stage runs RTMPose through onnxruntime. onnxruntime and onnxruntime-gpu
+    # install the same `onnxruntime` package and must never share an environment, so
+    # exactly one of them is selected per platform: the CUDA build where an NVIDIA GPU
+    # is possible, the plain build on macOS (where there is no CUDA wheel at all).
+    #
+    # The <1.23 pin is what makes the GPU work at all. onnxruntime-gpu 1.23+ is built
+    # against CUDA 13, while torch above is the CUDA 12.8 build — so the newer wheel
+    # looks for cublasLt64_13.dll, fails to create the CUDA provider, and silently runs
+    # the whole stage on the CPU (~2.5x slower). Pinned to the CUDA 12 generation it
+    # loads the cuDNN/cuBLAS DLLs torch already ships in torch/lib (see
+    # modules.pose.estimator), so any machine whose torch sees the GPU gets a GPU here
+    # too, with nothing extra to install. Lift this pin only together with torch's CUDA
+    # version.
+    "onnxruntime-gpu>=1.22,<1.23; sys_platform == 'win32' or sys_platform == 'linux'",
+    "onnxruntime>=1.22; sys_platform == 'darwin'",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
 ]
+
+# rtmlib depends on plain `onnxruntime`, which would collide with the onnxruntime-gpu
+# above. Overriding it with a marker that is only true on macOS drops that requirement
+# everywhere else, leaving our own platform split (see dependencies) in charge.
+[tool.uv]
+override-dependencies = ["onnxruntime; sys_platform == 'darwin'"]
 
 # PyPI ships CPU-only torch wheels on Windows, and shuttle_tracking is ~8x slower
 # without a GPU — so on Windows and Linux torch comes from PyTorch's CUDA 12.8 index
