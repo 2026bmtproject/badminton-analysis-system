@@ -3,7 +3,8 @@
 > 本地端系統：輸入一整場羽球比賽轉播影片，自動切割回合、逐球分析、挑選精彩片段，並產生 AI 賽評播報後合成成精華影片。
 
 TrackNetV3 權重下載：https://drive.google.com/file/d/1CfzE87a0f6LhBp0kniSl1-89zaLCZ8cA/view?usp=sharing
-下載後解壓縮檔案並把 `TrackNet_best.pt` 與 `InpaintNet_best.pt` 放進 `models/`。
+BST 權重下載：https://drive.google.com/drive/folders/1D4172WZDJWPvpJdpaHDhy_cA-s8F-zR5?usp=sharing(請下載 bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt)
+下載後解壓縮檔案並把 `TrackNet_best.pt` 與 `InpaintNet_best.pt` 與 `bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt` 放進 `models/`。
 
 ## 架構概覽
 
@@ -21,6 +22,7 @@ modules/
 ├── audio_highlight/      # 精彩片段偵測 (YAMNet)
 ├── commentary/           # 賽評生成
 ├── common/               # 共用工具
+│   └── bst/              # BST 球種模型（event_detection 與 stroke_classification 共用）
 ├── base.py               # BaseModule 介面 + 階段狀態 (status.json)
 ├── contracts.py          # 階段間資料契約 + 依賴圖 (single source of truth)
 └── runner.py             # 管線 runner：拓樸排序、跳過已完成、失敗即停
@@ -271,3 +273,53 @@ GPU 的機器，這裡就吃得到 GPU**。要解除這個 pin，必須連同 to
 
 沒有 NVIDIA 顯卡的機器會自動退回 CPU 並印出警告，**仍然跑得完**。若你希望「拿不到 GPU 就當作錯誤」
 （例如在你自己確定有卡的機器上跑，不想被默默降速），加 `--device cuda` 即可讓它直接失敗。
+
+## 球種模型（common/bst）
+
+BST（Badminton Stroke-type Transformer）**同時被兩個階段用到**，所以它不住在任何一個階段裡，而住在
+`modules/common/bst/`：
+
+- **event_detection** 逐幀掃描整個回合，從 25 類機率裡讀出**擊球方**的證據（誰打的、什麼時候打的）；
+- **stroke_classification** 拿前者找到的擊球點，從同一組機率裡讀出**球種**。
+
+權重是**合併過的 25 類**：`0=未知球種`、`1–12=Top_<球種>`、`13–24=Bottom_<球種>`。也就是說**一次推論同時
+回答「哪一種球」和「誰打的」**——側邊不是另一顆模型的輸出，而是直接編在類別名稱裡。這正是兩個階段能共用同一次
+forward 的原因。對使用者呈現時 12 種再併成 8 種（`長球/挑球 → 高遠球`、`發短球/發長球 → 發球`…），artifact 存
+中文 8 類。
+
+```
+modules/common/bst/
+├── classes.py     # 25 類標籤、Top/Bottom 索引、8 類合併、COCO 骨架與骨頭定義
+├── model.py       # BST_CG_AP 網路 + 權重載入
+├── features.py    # 正規化、切窗、補幀 —— 與訓練完全一致的幾何前處理
+├── inference.py   # predict_windows()：批次跑一串窗，回傳 (n_windows, 25) 機率
+└── adapter.py     # artifacts（segments/court/pose/shuttle）→ SegmentFeatures
+```
+
+用法只有一種形狀：**先把一個回合的幾何抽出來一次，再對它切出想問的窗**。
+
+```python
+from modules.common.bst import adapter, centered_windows, load_bst_model, predict_windows
+
+features = adapter.load_segment_features(match_path)[0]      # 一個 segment 的幾何
+model = load_bst_model(device="cuda")
+half = int(adapter.read_fps(match_path) // 2)                # ±0.5 秒
+probs = predict_windows(model, features, centered_windows(len(features), half), device="cuda")
+```
+
+`event_detection` 要的是「每一幀一個窗」，`stroke_classification` 要的是「兩拍之間一個窗」——差別只在**窗的清單**，
+所以兩者走同一個 `predict_windows`。窗怎麼切、機率怎麼融合成擊球事件（side 融合、鎖定區、dead-time），
+是**各階段自己的啟發式**，刻意不放進 common。
+
+權重：`models/bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt`（不進 repo，下載連結見本文件開頭）。
+
+### 三個坑
+
+- **球場方向**：`court.json` 存的是「球場公尺 → 影像」，BST 要的是反過來、而且正規化到 `[0,1]`（y 從**遠**底線 0
+  到**近**底線 1）。方向弄反，模型照樣吐出漂亮的機率，只是每一拍的 Top/Bottom 全部相反。所以這裡直接複用
+  `pose.select` 的 `court_from_image` / `to_court`，不另寫第三份球場數學。
+- **缺失＝0**：artifact 用 `None` 表示「這一幀沒找到這個球員 / 球不可見」，BST 訓練時讀到的是 0。adapter 負責翻譯，
+  所以這裡永遠不會寫出 NaN。（唯一的例外是單一關節缺失，`normalize_joints` 的 center-align 會把它移到 `-centre`——
+  這是訓練時就有的行為，原樣保留。）
+- **球軌跡有兩份**：`shuttle.json` 對同一批幀存了 `inpaint` 與 `viterbi` 兩條軌跡，BST 只吃一條，預設 `inpaint`
+  （最接近訓練時餵的 TrackNetV3 輸出）。要求一條不存在的軌跡會直接報錯，而不是安靜地讀到一整場都靜止的球。
