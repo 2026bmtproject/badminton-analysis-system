@@ -358,8 +358,7 @@ def hough_lines(binary):
     out = []
     if segs is None:
         return out
-    for s in segs:
-        x1,y1,x2,y2 = s[0]
+    for x1, y1, x2, y2 in np.asarray(segs).reshape(-1, 4):
         ang = np.degrees(np.arctan2(y2-y1, x2-x1))
         out.append((x1,y1,x2,y2,ang,np.hypot(x2-x1,y2-y1)))
     return out
