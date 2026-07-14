@@ -125,27 +125,59 @@ class RallyScore:
 class CourtCalibration:
     """DRAFT — court_detection. Artifact: ``court.json`` (key ``courts``).
 
-    Court corners in image space plus the homography to a top-down metric
-    plane. Emitted per segment (camera may cut) or once globally when
+    Court corners in image space plus the homography relating them to a top-down
+    metric plane. Emitted per segment (camera may cut) or once globally when
     ``segment_index`` is None.
+
+    **Direction matters:** ``homography`` maps **court metres -> image pixels**
+    (``modules.court_detection.detector`` fits it that way, and ``project_16``
+    uses it in that direction to draw the key points). Consumers that need to ask
+    "where on the court is this pixel?" — ``pose`` picking the two players — must
+    invert it first; see ``modules.pose.select.court_from_image``.
     """
 
     corners: list[list[float]]              # 4x [x, y], clockwise from top-left
-    homography: list[list[float]]           # 3x3 image -> court-plane matrix
+    homography: list[list[float]]           # 3x3 court-metres -> image matrix
     segment_index: int | None = None
+
+
+#: The COCO-17 keypoints RTMPose emits, in index order. ``PoseFrame.keypoints``
+#: is aligned to this list, so a consumer can look a joint up by name.
+COCO_KEYPOINTS = (
+    "nose", "L_eye", "R_eye", "L_ear", "R_ear",
+    "L_shoulder", "R_shoulder", "L_elbow", "R_elbow",
+    "L_wrist", "R_wrist", "L_hip", "R_hip",
+    "L_knee", "R_knee", "L_ankle", "R_ankle",
+)
+
+#: How ``pose`` names the two players. These are *court positions*, not identities:
+#: "top" is the player in the far half of the court (smaller image y), "bottom" the
+#: near one. Which is derivable from geometry alone, whereas an identity ("player a")
+#: is not — so downstream stages key off these and map them to identities only where
+#: they actually have that information (e.g. ``score_recognition``).
+POSE_PLAYERS = ("top", "bottom")
 
 
 @dataclass
 class PoseFrame:
-    """DRAFT — pose (mmpose). Artifact: ``pose.json`` (key ``frames``).
+    """DRAFT — pose (RTMPose). Artifact: ``pose.json`` (key ``frames``).
 
-    Per-frame skeletons. Heavy; a stage may instead write ``pose.npz`` and use
-    this dataclass only to document the logical shape.
+    One record per (frame, player), like ``ShuttlePoint``. ``frame`` is an
+    **absolute** index into the raw match video, and only frames inside a rally
+    segment are emitted — dead time between rallies has no skeletons.
+
+    ``keypoints`` is 17 x ``[x, y, score]`` in original-video pixels, aligned to
+    :data:`COCO_KEYPOINTS`. It and ``bbox`` are None exactly when that player could
+    not be found in the frame, which is the same convention as
+    ``ShuttlePoint.x``/``y``: the record still exists, so consumers can iterate
+    frames without consulting ``segments.json``.
     """
 
     frame: int
-    player: str                             # "a" | "b"
-    keypoints: list[list[float]]            # Nx [x, y, confidence]
+    segment_index: int
+    player: str                             # one of POSE_PLAYERS
+    keypoints: list[list[float]] | None     # 17x [x, y, score]; None if not found
+    bbox: list[float] | None = None         # [x1, y1, x2, y2]; None if not found
 
 
 #: The two trajectory-extraction methods ``shuttle_tracking`` runs over the same
@@ -184,7 +216,7 @@ class HitEvent:
     """DRAFT — event_detection. Artifact: ``events.json`` (key ``events``)."""
 
     frame: int
-    player: str                             # "a" | "b"
+    player: str                             # one of POSE_PLAYERS ("top" | "bottom")
     segment_index: int
 
 
@@ -256,7 +288,7 @@ PIPELINE: dict[str, StageSpec] = {
         ["match_segmentation"], "highlights.json", HighlightScore, "highlights",
     ),
     "pose": StageSpec(
-        "pose", "骨架標記 (mmpose)",
+        "pose", "骨架標記 (RTMPose)",
         ["match_segmentation", "court_detection"], "pose.json", PoseFrame, "frames",
     ),
     "event_detection": StageSpec(
