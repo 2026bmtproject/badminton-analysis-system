@@ -213,11 +213,23 @@ class ShuttlePoint:
 
 @dataclass
 class HitEvent:
-    """DRAFT — event_detection. Artifact: ``events.json`` (key ``events``)."""
+    """DRAFT — event_detection. Artifact: ``events.json`` (key ``events``).
+
+    One record per hit, in frame order. ``frame`` is an **absolute** frame index into the
+    raw match video, like ``ShuttlePoint.frame`` and ``PoseFrame.frame``.
+
+    That single field is the whole contract, deliberately. The stage does derive a side
+    for every hit — it has to, alternation between the two players is one of the signals
+    it detects with — but ``stroke_classification`` reads the hitter straight out of BST's
+    own 25-class head (``Top_*`` / ``Bottom_*``), so a ``player`` here would be a second,
+    weaker answer to a question already answered downstream. Likewise a ``segment_index``:
+    the frame is absolute, so which rally it falls in is a lookup in ``segments.json``, not
+    a fact this stage gets to assert. The per-hit evidence that *was* used (side, source
+    rule, signal measurements) is debugging material and goes to the CSVs behind
+    ``--debug-csv``, not into the contract.
+    """
 
     frame: int
-    player: str                             # one of POSE_PLAYERS ("top" | "bottom")
-    segment_index: int
 
 
 @dataclass
@@ -256,7 +268,15 @@ class CommentaryLine:
 
 @dataclass(frozen=True)
 class StageSpec:
-    """Contract for one stage: what it depends on and what it emits."""
+    """Contract for one stage: what it depends on and what it emits.
+
+    ``dependencies`` are hard: the stage cannot run without them, and ``check_ready``
+    refuses until they are all completed. ``optional_dependencies`` are stages whose
+    output the stage *uses if it is there* and works without otherwise. They still
+    constrain the running order — an optional input that a full pipeline run happens to
+    produce afterwards would never be picked up, which is exactly the kind of silent
+    no-op this field exists to prevent — but they never block a run.
+    """
 
     name: str
     description: str
@@ -264,6 +284,7 @@ class StageSpec:
     output_filename: str
     record_type: type                       # the dataclass documenting a record
     record_key: str                         # envelope key holding the record list
+    optional_dependencies: list[str] = field(default_factory=list)
 
 
 PIPELINE: dict[str, StageSpec] = {
@@ -294,6 +315,11 @@ PIPELINE: dict[str, StageSpec] = {
     "event_detection": StageSpec(
         "event_detection", "擊球偵測",
         ["shuttle_tracking", "pose"], "events.json", HitEvent, "events",
+        # scores.json only powers one precision rule (drop the warm-up and time-out
+        # footage sitting between rallies at an unchanged score). Making it a hard
+        # dependency would put a Gemini API key between the user and hit detection,
+        # which is far too much to charge for one rule.
+        optional_dependencies=["score_recognition"],
     ),
     "stroke_classification": StageSpec(
         "stroke_classification", "球種辨識 (BST)",
@@ -340,6 +366,15 @@ def topological_order(dependencies: dict[str, list[str]]) -> list[str]:
     return order
 
 
+def ordering_dependencies(spec: StageSpec) -> list[str]:
+    """Everything that must *run* before ``spec`` — hard and optional alike.
+
+    Readiness asks a different question (see ``BaseModule.check_ready``) and looks only at
+    ``spec.dependencies``.
+    """
+    return [*spec.dependencies, *spec.optional_dependencies]
+
+
 def pipeline_order() -> list[str]:
     """Topological order of the full :data:`PIPELINE`."""
-    return topological_order({n: s.dependencies for n, s in PIPELINE.items()})
+    return topological_order({n: ordering_dependencies(s) for n, s in PIPELINE.items()})

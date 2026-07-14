@@ -20,6 +20,7 @@ from pathlib import Path
 from modules.base import BaseModule, StageStatus, read_status
 from modules.contracts import stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
+from modules.event_detection import EventDetectionModule
 from modules.match_segmentation import MatchSegmentationModule
 from modules.pose import PoseModule
 from modules.score_recognition import ScoreRecognitionModule
@@ -38,6 +39,7 @@ def available_modules() -> dict[str, BaseModule]:
         CourtDetectionModule(),
         ShuttleTrackingModule(),
         PoseModule(),
+        EventDetectionModule(),
     ]
     return {m.name: m for m in modules}
 
@@ -62,7 +64,12 @@ def run_pipeline(
         raise FileNotFoundError(f"match path not found: {match_path}")
 
     modules = available_modules() if modules is None else modules
-    order = topological_order({name: m.dependencies for name, m in modules.items()})
+    # Optional dependencies order the run without gating it: a stage that reads
+    # score_recognition's output when it exists must still be scheduled after it, or a
+    # full-pipeline run would produce that output one stage too late to ever be read.
+    order = topological_order(
+        {name: [*m.dependencies, *m.optional_dependencies] for name, m in modules.items()}
+    )
 
     print(f"pipeline: {match_path}")
     print(f"stages ({len(order)}): {' -> '.join(order)}\n")

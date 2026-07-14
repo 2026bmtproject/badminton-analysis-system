@@ -91,13 +91,17 @@ def write_status(stage_path: Path, state: StageState) -> None:
 class BaseModule:
     name: str
     dependencies: list[str] = []  # which modules must finish first
+    #: Stages this one reads *if they have run*, and works without otherwise. They order
+    #: the pipeline (see modules.contracts.ordering_dependencies) but never gate it.
+    optional_dependencies: list[str] = []
 
     def check_ready(self, match_path) -> bool:
         """Return True only when every dependency's status is completed.
 
         Default gate for a stage whose only precondition is that its upstream
         stages finished. Stages with extra preconditions (e.g. the first stage
-        needing a raw video) override this.
+        needing a raw video) override this. ``optional_dependencies`` are deliberately
+        not checked — an absent one is a normal, supported way to run.
         """
         return all(stage_completed(Path(match_path), d) for d in self.dependencies)
     def run(self, match_path, on_progress=None):
