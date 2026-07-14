@@ -45,8 +45,11 @@ matches/MK_vs_CT_2019/          # = match_path
 │   ├── heatmaps/               # shuttle_tracking 的 TrackNet heatmap，一個 segment 一個 .npz
 │   │   ├── meta.json           # heatmap 依賴的來源（權重、eval mode、segments…），用於失效判斷
 │   │   └── seg0000.npz
-│   └── pose/                   # pose 的逐幀人體偵測（畫面上所有人），一個 segment 一個 .npz
-│       ├── meta.json           # 同理：模型、來源影片、segments 任一項變了就重建
+│   ├── pose/                   # pose 的逐幀人體偵測（畫面上所有人），一個 segment 一個 .npz
+│   │   ├── meta.json           # 同理：模型、來源影片、segments 任一項變了就重建
+│   │   └── seg0000.npz
+│   └── dense_scan/             # event_detection 的 BST 逐幀 25 類機率，一個 segment 一個 .npz
+│       ├── meta.json           # 同理：BST 權重、視窗半寬、球軌跡方法、segments
 │       └── seg0000.npz
 └── stages/
     └── match_segmentation/
@@ -141,6 +144,13 @@ uv run python -m modules.pose matches/MK_vs_CT_2019 --y-margin 0.35
 uv run python -m modules.pose matches/MK_vs_CT_2019 --debug-overlay overlays/
 # 另外匯出 BST 吃的逐 segment 骨架 CSV
 uv run python -m modules.pose matches/MK_vs_CT_2019 --csv-dir skeletons/
+
+# 擊球偵測：先跑 BST 逐幀 dense scan（存 cache），再跑四階段偵測
+uv run python -m modules.event_detection matches/ASG_vs_AA_2020
+# 用既有的 dense scan cache 重跑偵測（調參零 GPU 成本），並輸出 18 欄除錯 CSV
+uv run python -m modules.event_detection matches/ASG_vs_AA_2020 --debug-csv hitevents/
+# 關掉計分板死時間規則（即使 scores.json 存在）
+uv run python -m modules.event_detection matches/ASG_vs_AA_2020 --no-scores
 
 # 影格合成工具（單獨使用；把影片抽樣的 frame 合成以凸顯靜態元素如記分板）
 uv run python -m modules.common.frame_composite MATCH.mp4 -n 30 -o composites/
@@ -356,3 +366,40 @@ probs = predict_windows(model, features, centered_windows(len(features), half), 
   這是訓練時就有的行為，原樣保留。）
 - **球軌跡有兩份**：`shuttle.json` 對同一批幀存了 `inpaint` 與 `viterbi` 兩條軌跡，BST 只吃一條，預設 `inpaint`
   （最接近訓練時餵的 TrackNetV3 輸出）。要求一條不存在的軌跡會直接報錯，而不是安靜地讀到一整場都靜止的球。
+
+## 擊球偵測（event_detection）
+
+輸出 `events.json`：**一場比賽裡每一次擊球的幀號**，就這樣，沒有別的欄位。球員是誰不寫——BST 的 25 類頭
+（`Top_*` / `Bottom_*`）本來就會在 `stroke_classification` 回答，這裡再寫一份只會是個比較弱的第二意見；
+segment 也不寫——幀號是絕對的，落在哪個回合是去 `segments.json` 查，不是這個階段有資格宣稱的事。
+偵測過程用到的證據（side、補球來源、各項訊號量測）是除錯材料，走 `--debug-csv`，不進契約。
+
+分兩相，跟 `shuttle_tracking` / `pose` 同一個切法、同一個理由：
+
+1. **Dense scan**：對每個回合的**每一幀**跑一次 BST，把 25 類機率存進 `cache/dense_scan/`。唯一吃 GPU 的部分，
+   可中斷續跑。
+2. **偵測**：四個階段的純幾何 + 門檻，跑在那些機率和兩條球軌跡上。
+
+**存的是完整 25 類機率，不是 argmax。** 這個階段幾乎每個參數都是「機率上的門檻」（side margin、鎖定區信心、
+onset 閘），而它們正是要反覆調的東西。存機率＝第一次之後的每一次調參都**完全不用 GPU**。代價也不大：一場 25 fps、
+約 3 萬個回合幀 ≈ **2.9 MB**（上游 heatmap 是好幾 GB）。實測 ASG_vs_AA_2020：dense scan 約 25 秒，
+之後每次重跑偵測 **4.6 秒、不碰 GPU**。
+
+### 兩條球軌跡
+
+`base`（`inpaint`）是**真正拿來偵測**的那條，峰值、振幅、轉折都讀它，除錯 CSV 也是照它的幀排版；
+`aux`（`viterbi`）**只當救援池**——第三階段在「結構上一定漏了球」的位置才去翻它。所以 base 要那條比較密、
+比較好看的曲線（inpaint 補滿 96% 的幀），aux 要那條看到了 base 沒看到的東西（viterbi 只有 56%，性格保守）。
+
+### 四個階段：
+
+| 階段 | 做什麼 |
+|---|---|
+| 1 候選訊號 | 五種訊號（serve-drop / serve-rise / ypeak / accel / ramp），刻意寬鬆 |
+| 2 三段閘門 | 振幅閘、同側去重、回合脈絡閘（羽球會輪流打，孤立的候選幾乎都是雜訊） |
+| 3 結構補洞 | **唯一加球的地方**：同側交替洞、未認領鎖定區、上游救回、發球補拍 |
+| 4 修剪 | **唯一刪球的地方**：回合區間、尾段落地球、計分板死時間 |
+
+前身把加球散在三層七處、刪球散在四處，而且互相交錯——同一個洞誰先搶到算誰的，剛刪掉的球又被後面的規則補回來。
+這裡補完才刪，刪完不再補。**每條刪除規則都 fail-open**：找不到自己的錨（例如整段沒有發球證據）就什麼都不做，
+而不是憑猜測開始刪。
