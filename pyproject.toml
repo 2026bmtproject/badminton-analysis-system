@@ -33,6 +33,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest",
+    # Only so tests/test_bst_equivalence.py can import the reference implementation still
+    # sitting in the repo root (bst_infer_standalone.py), which reads its inputs with
+    # pandas. Nothing under modules/ uses it. Remove both together.
+    "pandas",
 ]
 
 # rtmlib depends on plain `onnxruntime`, which would collide with the onnxruntime-gpu
