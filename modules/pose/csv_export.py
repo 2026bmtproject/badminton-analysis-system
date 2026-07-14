@@ -1,8 +1,8 @@
 """Export ``pose.json`` as the per-segment skeleton CSV that BST consumes.
 
 This is a *view* of the stage's artifact, not the artifact itself: the contract is
-``pose.json`` (see :mod:`modules.contracts`), and this renders it into the column
-layout ``bst_infer_standalone.py`` already reads, one CSV per rally segment::
+``pose.json`` (see :mod:`modules.contracts`), and this renders it into the column layout
+BST's reference tooling reads, one CSV per rally segment::
 
     frame, player, det_idx, bbox_x1, bbox_y1, bbox_x2, bbox_y2,
     <joint>_x, <joint>_y, <joint>_s          x17 COCO joints
