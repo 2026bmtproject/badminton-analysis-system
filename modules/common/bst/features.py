@@ -2,16 +2,18 @@
 
 A :class:`SegmentFeatures` holds one rally segment, already normalized, as three
 parallel per-frame arrays (both players' joints, both players' court positions, the
-shuttle). It is *not* a model input by itself: BST reads a fixed-length **window**, and
-what a window is depends on the caller —
+shuttle). It is *not* a model input by itself: BST reads a fixed-length **window**, and a
+caller says which windows it wants by handing :func:`build_window` a list of them. That is
+why the expensive part (extracting a rally's geometry once) is separated from the cheap
+part (slicing windows out of it).
 
-* ``event_detection`` asks "was there a hit at frame f?" for every f, so its windows are
-  ±0.5 s around each frame (:func:`centered_windows`);
-* ``stroke_classification`` already knows where the hits are, so its windows run between
-  consecutive hits — the segmentation BST was trained on.
-
-Both end up in :func:`build_window`, which is why the expensive part (extracting a
-rally's geometry once) is separated from the cheap part (slicing windows out of it).
+Only **one** way of choosing those windows lives here — :func:`between_hits_windows`, the
+segmentation the checkpoint was *trained* under. It is not a policy any stage gets to have
+an opinion about: it is part of the weights' contract, which is why it sits with the model
+rather than with the one stage that calls it. A stage that scans on its own terms (as
+``event_detection`` does, one window per frame) is choosing a *strategy*, not honouring a
+constraint, so it cuts its own windows and keeps them next to the code that has the
+opinion.
 
 Everything here is normalization-critical: these are the exact transforms the checkpoint
 was trained with, and a plausible-looking "improvement" to any of them silently degrades
@@ -24,6 +26,7 @@ true after normalization is an individual missing joint; see :func:`normalize_jo
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Sequence
 
 import numpy as np
 
@@ -149,18 +152,49 @@ def make_seq_len_same(target_len: int, joints: np.ndarray, pos: np.ndarray, shut
 Window = tuple[int, int]
 
 
-def centered_windows(n_frames: int, half: int, stride: int = 1) -> list[Window]:
-    """One window per frame, ``[f - half, f + half]``, clipped to the segment.
+def between_hits_windows(hits: Sequence[int], n_frames: int, fps: float) -> list[Window]:
+    """One window per hit, running **between the neighbouring hits** — BST's own segmentation.
 
-    ``half`` is normally ``int(fps // 2)`` — the half-second on either side of a candidate
-    hit. Windows near the ends of a rally are shorter rather than shifted: padding is
-    something the model understands (see :func:`make_seq_len_same`), a window centred
-    somewhere other than the frame being asked about is not.
+    This is ``between_2_hits_with_max_limits``, the scheme named in the checkpoint's own
+    filename and the one it was trained under. A stroke is not a fixed slice of time: it
+    starts when the previous shot arrives and ends once the reply is on its way, so each
+    hit's window spans from the *previous hit* to a quarter-second past the *next* one. The
+    first and last hit of a rally have no such neighbour and fall back to ±0.5 s.
+
+    Two rules keep that from swallowing a whole rally when the shuttle is slow:
+
+    * a **max limit** of ±1.5 s from the hit, so a long lull before the serve or after the
+      last shot is not dragged in;
+    * the tail ``eps`` of 0.25 s past the next hit, which is what lets the model see the
+      shuttle actually *leave* — the hit itself is only legible from what happens after it.
+
+    The three constants (0.5 s, 1.5 s, 0.25 s) are derived from ``fps`` here and nowhere
+    else. They are not tuning knobs: they define the input distribution the weights were
+    fitted on, so a "better" window is a window the model has never seen.
+
+    ``hits`` are local frame indices into the segment, each in ``[0, n_frames)``; the
+    returned windows are local ``[start, end)`` pairs in the same order as the sorted hits,
+    clipped to the segment. Every window strictly contains its own hit.
     """
-    return [
-        (max(0, f - half), min(n_frames, f + half + 1))
-        for f in range(0, n_frames, stride)
-    ]
+    frames = sorted(hits)
+    if frames and (frames[0] < 0 or frames[-1] >= n_frames):
+        raise ValueError(
+            f"hit frames {frames[0]}..{frames[-1]} fall outside the segment's "
+            f"[0, {n_frames}) frames"
+        )
+
+    lead = int(fps // 2)             # 0.5 s — the fallback reach of an unpaired hit
+    limit = int(fps * 3 // 2)        # 1.5 s — how far a neighbour may pull the window
+    eps = lead // 2                  # 0.25 s — the tail past the next hit
+
+    windows: list[Window] = []
+    for index, hit in enumerate(frames):
+        start = frames[index - 1] if index > 0 else hit - lead
+        end = frames[index + 1] + eps if index < len(frames) - 1 else hit + lead
+        start = max(start, hit - limit)
+        end = min(end, hit + limit + eps)
+        windows.append((max(0, start), min(n_frames, end + 1)))
+    return windows
 
 
 def build_window(features: SegmentFeatures, start: int, end: int):
