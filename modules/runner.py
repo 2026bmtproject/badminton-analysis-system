@@ -21,6 +21,7 @@ from modules.base import BaseModule, StageStatus, read_status
 from modules.contracts import stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.match_segmentation import MatchSegmentationModule
+from modules.pose import PoseModule
 from modules.score_recognition import ScoreRecognitionModule
 from modules.shuttle_tracking import ShuttleTrackingModule
 
@@ -36,6 +37,7 @@ def available_modules() -> dict[str, BaseModule]:
         ScoreRecognitionModule(),
         CourtDetectionModule(),
         ShuttleTrackingModule(),
+        PoseModule(),
     ]
     return {m.name: m for m in modules}
 
