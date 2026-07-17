@@ -59,6 +59,13 @@ DEFAULT_SIGMA_CLIP_K = 2.0
 DEFAULT_SIGMA_CLIP_ITER = 3
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_MIN_SCAN_HEIGHT = 480
+DEFAULT_MIN_SPLIT_SEC = 2.0
+
+REFINE_METHODS = [
+    ("dominant_cluster", composite_dominant_cluster),
+    ("sigma_clip", composite_sigma_clip),
+    ("median", composite_median),
+]
 
 ProgressCallback = Callable[[float], None]
 
@@ -112,6 +119,14 @@ class ScoreRecognitionConfig:
     # resolution is cheaper to decode without hurting Gemini's scoreboard read.
     # Nothing in cache -> read the source as-is (never generate a downscale).
     min_scan_height: int = DEFAULT_MIN_SCAN_HEIGHT
+    # After the first pass, bisect any segment whose score jumps by >1 against the
+    # previous one (a merged multi-rally segment) to recover the intermediate
+    # rally(ies). Only anomalous segments pay for this, so it is nearly free.
+    refine_merged_segments: bool = True
+    # Smallest window (seconds) the refine bisection will resolve down to — also
+    # the precision of the recovered split time. Kept coarse on purpose: the
+    # scoreboard needs a few frames composited to read reliably.
+    min_split_sec: float = DEFAULT_MIN_SPLIT_SEC
 
 
 # ── Image helpers ─────────────────────────────────────────────────────────────
@@ -408,6 +423,197 @@ def score_segment(
     return best, attempts
 
 
+# ── Merged-segment refine (bisection) ──────────────────────────────────────────
+#
+# match_segmentation can merge two rallies into one segment when the dead time
+# between them is too short to cut on. The scoreboard then changes mid-segment,
+# and a single composite of the whole segment only recovers the *last* rally's
+# score — the intermediate rally silently vanishes. We catch this at the match
+# level (the score jumps by >1 against the previous segment) and bisect the
+# offending segment to recover every rally it holds, plus the second each score
+# change happened at.
+#
+# The core resolver below is a pure function: it takes a ``read_fn(a, b)`` that
+# returns the dominant ``(score_a, score_b)`` of a frame window (or None), so it
+# can be unit-tested against a synthetic scoreboard timeline with no video or
+# network. ``refine_merged_segment`` supplies the real, Gemini-backed reader.
+
+
+def _resolve_runs(
+    read_fn: "Callable[[int, int], tuple[int, int] | None]",
+    start: int,
+    end: int,
+    window: int,
+    _depth: int = 0,
+) -> list[tuple[tuple[int, int], int]]:
+    """Split ``[start, end]`` into contiguous constant-score runs by bisection."""
+    half = max(1, window // 2)
+
+    def local(mid: int) -> "tuple[int, int] | None":
+        lo = max(start, mid - half)
+        hi = min(end, mid + half)
+        return read_fn(lo, hi)
+
+    # Guard against pathological recursion on a noisy read stream.
+    if _depth > 24 or end - start < 2:
+        whole = read_fn(start, end)
+        return [(whole, start)] if whole is not None else []
+
+    s_start = local(start + half)
+    s_end = local(end - half)
+    if s_start is None or s_end is None:
+        whole = read_fn(start, end)
+        return [(whole, start)] if whole is not None else []
+    if s_start == s_end:
+        return [(s_start, start)]
+
+    # Binary-search the first frame where the score leaves s_start.
+    lo, hi = start, end
+    while hi - lo > window:
+        mid = (lo + hi) // 2
+        if local(mid) == s_start:
+            lo = mid
+        else:
+            hi = mid
+    boundary = hi
+    if boundary <= start:  # degenerate; cannot make progress
+        return [(s_start, start)]
+
+    runs: list[tuple[tuple[int, int], int]] = [(s_start, start)]
+    runs.extend(_resolve_runs(read_fn, boundary, end, window, _depth + 1))
+    return _dedup_runs(runs)
+
+
+def _dedup_runs(
+    runs: list[tuple[tuple[int, int], int]]
+) -> list[tuple[tuple[int, int], int]]:
+    """Coalesce adjacent runs that carry the same score (keeps the earliest start)."""
+    out: list[tuple[tuple[int, int], int]] = []
+    for score, frame in runs:
+        if out and out[-1][0] == score:
+            continue
+        out.append((score, frame))
+    return out
+
+
+def _read_window_score(
+    video_path: str,
+    start: int,
+    end: int,
+    api_key: str,
+    config: ScoreRecognitionConfig,
+    rate_limiter: "RateLimiter | None" = None,
+    stop_event: "threading.Event | None" = None,
+) -> "tuple[int, int] | None":
+    """Composite ``[start, end]`` and read its dominant scoreboard, or None."""
+    if end - start < 2:
+        return None
+    try:
+        frames = extract_frames_in_range(
+            video_path, start, end,
+            config.n_frames, config.resize_width, config.max_frames,
+        )
+    except Exception:
+        return None
+    if len(frames) < 3:
+        return None
+
+    for name, func in REFINE_METHODS:
+        if stop_event is not None and stop_event.is_set():
+            return None
+        if name == "sigma_clip":
+            composite = func(frames, sigma=config.sigma_clip_k, iterations=config.sigma_clip_iter)
+        else:
+            composite = func(frames)
+        parsed = call_gemini_for_bytes(
+            image_to_jpeg_bytes(composite), api_key, config.model,
+            config.max_retries, rate_limiter, stop_event,
+        )
+        sa, sb = parsed.get("score_a"), parsed.get("score_b")
+        if sa is not None and sb is not None:
+            return (int(sa), int(sb))
+    return None
+
+
+def refine_merged_segment(
+    read_fn: "Callable[[int, int], tuple[int, int] | None]",
+    start_frame: int,
+    end_frame: int,
+    fps: float,
+    min_split_sec: float = DEFAULT_MIN_SPLIT_SEC,
+) -> "tuple[list[list[int]] | None, list[float] | None]":
+    """Recover the rally scores inside one merged segment."""
+    window = max(3, int(min_split_sec * fps))
+    runs = _resolve_runs(read_fn, int(start_frame), int(end_frame), window)
+    if len(runs) < 2:
+        return None, None
+    sub_scores = [[int(s[0]), int(s[1])] for s, _ in runs]
+    split_secs = [round(frame / fps, 2) for _, frame in runs[1:]]
+    return sub_scores, split_secs
+
+
+def _is_score_jump(prev: "tuple[int, int]", cur: "tuple[int, int]") -> bool:
+    """True when ``cur`` is more than one rally ahead of ``prev`` (a merged segment)."""
+    if cur == (0, 0):
+        return False
+    da, db = cur[0] - prev[0], cur[1] - prev[1]
+    return da >= 0 and db >= 0 and (da + db) >= 2
+
+
+def _refine_merged_segments(
+    rallies: "list[RallyScore]",
+    infos: "list[dict]",
+    segments: list[dict],
+    video_path: str,
+    fps: float,
+    api_key: str,
+    config: ScoreRecognitionConfig,
+    rate_limiter: "RateLimiter | None" = None,
+    stop_event: "threading.Event | None" = None,
+) -> None:
+    """Second pass: bisect every jump-flagged segment to recover its rallies."""
+    info_by_index = {info.get("segment_index"): info for info in infos}
+
+    def read_fn(a: int, b: int) -> "tuple[int, int] | None":
+        return _read_window_score(
+            video_path, a, b, api_key, config, rate_limiter, stop_event,
+        )
+
+    prev: "tuple[int, int] | None" = None
+    for rally in rallies:
+        cur = (
+            (rally.score_a, rally.score_b)
+            if rally.score_a is not None and rally.score_b is not None
+            else None
+        )
+        if prev is not None and cur is not None and _is_score_jump(prev, cur):
+            if stop_event is not None and stop_event.is_set():
+                break
+            seg = segments[rally.segment_index]
+            try:
+                sub_scores, split_secs = refine_merged_segment(
+                    read_fn, int(seg["start_frame"]), int(seg["end_frame"]),
+                    fps, config.min_split_sec,
+                )
+            except Exception as e:  # never let a refine crash the stage
+                sub_scores, split_secs, err = None, None, str(e)[:120]
+            else:
+                err = None
+
+            info = info_by_index.get(rally.segment_index)
+            if sub_scores and len(sub_scores) >= 2:
+                rally.sub_scores = sub_scores
+                rally.split_secs = split_secs
+                if info is not None:
+                    info["refine"] = f"merged -> {sub_scores} @ {split_secs}s"
+                print(f"  seg {rally.segment_index}: merged rally recovered "
+                      f"-> {sub_scores} @ {split_secs}s")
+            elif info is not None:
+                info["refine"] = f"jump seen but not resolved{f' ({err})' if err else ''}"
+        if cur is not None:
+            prev = cur
+
+
 def recognize_scores(
     video_path: str,
     segments: list[dict],
@@ -415,6 +621,7 @@ def recognize_scores(
     config: ScoreRecognitionConfig | None = None,
     on_progress: ProgressCallback | None = None,
     stop_event: "threading.Event | None" = None,
+    fps: float | None = None,
 ) -> tuple[list[RallyScore], dict]:
     """Read the scoreboard for every segment of ``video_path``.
 
@@ -422,6 +629,13 @@ def recognize_scores(
     ``start_frame``/``end_frame``). Returns ``(rallies, meta)`` where ``rallies``
     is one :class:`RallyScore` per segment in segment order, and ``meta`` carries
     per-segment debug info (attempt trail, notes, errors).
+
+    When ``fps`` is given and ``config.refine_merged_segments`` is on, a second
+    pass bisects any segment whose score jumps by more than one rally against the
+    previous segment, recovering the merged rally(ies) into ``sub_scores`` /
+    ``split_secs`` (see :class:`~modules.contracts.RallyScore`). ``fps`` is
+    required only because the split times are reported in seconds; without it the
+    refine pass is skipped and the first-pass scalar scores are returned as-is.
     """
     config = config or ScoreRecognitionConfig()
     total = len(segments)
@@ -491,5 +705,17 @@ def recognize_scores(
                 f.cancel()
 
     kept_rallies = [r for r in rallies if r is not None]
-    meta = {"attempts": [info for info in infos if info is not None]}
+    kept_infos = [info for info in infos if info is not None]
+
+    if (
+        config.refine_merged_segments
+        and fps
+        and not (stop_event is not None and stop_event.is_set())
+    ):
+        _refine_merged_segments(
+            kept_rallies, kept_infos, segments, video_path, float(fps),
+            api_key, config, rate_limiter=rate_limiter, stop_event=stop_event,
+        )
+
+    meta = {"attempts": kept_infos}
     return kept_rallies, meta

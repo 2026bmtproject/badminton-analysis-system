@@ -65,7 +65,7 @@ class ScoreRecognitionModule(BaseModule):
 
         original_video = self._resolve_input_video(match_path)
         downscaled_video = self._resolve_downscaled_video(match_path, original_video)
-        segments, _ = read_segments(match_path)
+        segments, fps = read_segments(match_path)
         output_json.parent.mkdir(parents=True, exist_ok=True)
 
         rallies, meta = recognize_scores(
@@ -74,6 +74,7 @@ class ScoreRecognitionModule(BaseModule):
             api_key,
             self.config,
             on_progress=on_progress,
+            fps=fps,
         )
         try:
             meta["downscaled_video"] = str(downscaled_video.relative_to(match_path))
