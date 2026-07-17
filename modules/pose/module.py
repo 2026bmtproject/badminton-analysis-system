@@ -37,6 +37,7 @@ from modules.pose import detection_cache
 from modules.pose.select import (
     PlayerTracker,
     SelectConfig,
+    build_static_anchors,
     candidate_margins,
     candidate_mask,
     read_image_to_court,
@@ -162,13 +163,25 @@ class PoseModule(BaseModule):
     ) -> list[PoseFrame]:
         """Select the two players in every cached frame."""
         records: list[PoseFrame] = []
-        tracker = PlayerTracker(image_to_court, self.config.select)
-        for index, segment in enumerate(segments):
+
+        # Load every segment once, up front: the static-anchor pass needs the whole match
+        # to tell a fixture (umpire, line judge — present in a large fraction of frames,
+        # never moving) from a player, and the selection loop then reuses the same
+        # detections. See select.build_static_anchors.
+        per_segment: list[list[dict]] = []
+        for index in range(len(segments)):
             path = detection_cache.segment_file(match_path, index)
             if not path.is_file():
                 raise RuntimeError(f"pose cache is missing seg{index:04d}: {path}")
+            per_segment.append(detection_cache.load_segment(path))
 
-            detections = detection_cache.load_segment(path)
+        anchors = build_static_anchors(
+            (det for detections in per_segment for det in detections),
+            self.config.select,
+        )
+        tracker = PlayerTracker(image_to_court, self.config.select, anchors=anchors)
+        for index, segment in enumerate(segments):
+            detections = per_segment[index]
             start_frame = int(segment["start_frame"])
             # Rallies are not continuous with each other: where a player stood at the end
             # of the last one says nothing about where they start the next.

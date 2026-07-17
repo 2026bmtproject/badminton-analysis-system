@@ -124,7 +124,9 @@ def _write_overlays(module: PoseModule, match_path: Path, out_dir: Path, count: 
 
     from modules.common.video import iter_segment_frames
     from modules.pose import detection_cache, overlay
-    from modules.pose.select import PlayerTracker, read_image_to_court
+    from modules.pose.select import (
+        PlayerTracker, build_static_anchors, read_image_to_court,
+    )
 
     video = resolve_input_video(match_path)
     segments, _ = read_segments(match_path)
@@ -133,12 +135,22 @@ def _write_overlays(module: PoseModule, match_path: Path, out_dir: Path, count: 
 
     # One frame from the middle of each of `count` segments spread across the match:
     # mid-rally is where players are actually moving (and lunging), unlike the edges.
-    tracker = PlayerTracker(image_to_court, module.config.select)
     step = max(1, len(segments) // count)
+    sampled = list(range(0, len(segments), step))[:count]
+    loaded = {
+        i: detection_cache.load_segment(detection_cache.segment_file(match_path, i))
+        for i in sampled
+    }
+    # The umpire is in nearly every frame, so the anchor pass finds it even from this
+    # spread of sampled segments — enough for the overlay to mirror the real selection.
+    anchors = build_static_anchors(
+        (det for dets in loaded.values() for det in dets), module.config.select
+    )
+    tracker = PlayerTracker(image_to_court, module.config.select, anchors=anchors)
     written = 0
-    for index in range(0, len(segments), step)[:count]:
+    for index in sampled:
         segment = segments[index]
-        detections = detection_cache.load_segment(detection_cache.segment_file(match_path, index))
+        detections = loaded[index]
         if not detections:
             continue
         offset = len(detections) // 2

@@ -1,64 +1,25 @@
 """Pick the two players out of everyone the detector found.
 
-A broadcast frame contains line judges, the umpire, ball kids and the crowd. What
-separates the players is *where they stand*: on the court. So each detected person is
-reduced to a ground point (their feet), that point is mapped through the court
-homography into court metres, and only people standing on the court survive. The
-survivor in the far half is ``top``, the one in the near half is ``bottom``.
+Each detected person is reduced to a ground point (their feet), projected through the
+court homography into court metres; only people within a margin of the court survive.
+The survivor in the far half is ``top``, the one in the near half is ``bottom``.
 
-Why the court has to be enlarged
---------------------------------
-The homography is a mapping of the **ground plane**. It is only correct for points
-that are actually on the ground — and a player mid-smash is not. Their ankles are up
-in the air, so back-projecting through the ground plane does not return where they
-jumped from: the ray from the camera through raised ankles hits the ground plane
-*beyond* the player, pushing them further up-court. For the far (``top``) player that
-means their feet land past the far baseline — outside the court, ``y < 0`` — and a
-strict in-court test would drop the player exactly on the frames a smash happens,
-which are the frames that matter most.
+The court is enlarged asymmetrically (:attr:`SelectConfig.x_margin` / ``y_margin``)
+because the homography only holds on the ground plane — a player mid-smash has their
+ankles in the air, so back-projecting pushes them past the far baseline. Margins are
+the acceptance test; within each half, candidates are then ranked and only the best is
+kept (see :func:`select_players`).
 
-The fix is to accept a band around the court rather than the court itself, and to make
-it asymmetric: generous along the baselines (:attr:`SelectConfig.y_margin`), where the
-jump artifact points, and tight across the sidelines
-(:attr:`SelectConfig.x_margin`), where the line judges sit and where a jump barely
-moves anything. Both are fractions of the court's own size, so they are
-resolution- and camera-independent.
-
-The margins are the *acceptance* test, not the ranking: with the court widened, more
-non-players can slip in, so within each half the candidates are ranked and only the
-best one is taken. See :func:`select_players`.
-
-Why size has to be measured on the court, not in pixels
--------------------------------------------------------
-The one non-player the widened court cannot keep out is the **umpire**, who sits on a
-raised chair beside the net — inside the sideline margin by construction, and there in
-every single frame. Ranking the half by pixel area hands them the far player's slot
-almost every time: on the test match, area put the real player ahead of them in only
-13.6% of the frames the two shared.
-
-Pixel size says nothing about who is a player, because perspective makes whoever is
-nearest the camera the biggest. The umpire is *closer* than the far player, so they are
-*bigger* — 22.1k px² against 19.2k — while being neither a player nor even
-player-shaped. Anything that ranks by apparent size in pixels is measuring distance from
-the camera.
-
-:func:`court_size` removes that by dividing each person's apparent height by the size of
-one court metre *at the point they are standing on* (:func:`ground_scale`), which the
-homography already knows. Two people of equal real size then score equally wherever they
-stand, and the comparison becomes about them rather than about the lens.
-
-It also turns the umpire's chair from a disguise into a tell. The homography is a
-ground-plane map, so a person 1.5 m up in the air back-projects to a ground point that
-is not theirs — for the umpire, to the net line, where the plane is steeply foreshortened
-and one metre is worth 47 px rather than the 32 px of the far court. A body genuinely
-standing there would tower; the umpire does not, and scores 3.9 against a real player's
-5.6. The same arithmetic *rewards* an airborne player, whose feet project the other way,
-past the baseline where a metre is worth less — so the ranking is at its most confident
-on exactly the smash frames the margins were widened for.
+Ranking uses :func:`court_size` — apparent height in court metres — instead of pixel
+size, because pixel size just reflects distance from the camera: the umpire, seated
+closer than the far player, reads as bigger in pixels despite not being a player.
+Dividing by metres-per-pixel at the ground point (:func:`ground_scale`) removes that
+bias.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,11 +41,9 @@ L_ANKLE, R_ANKLE = 15, 16
 PLAYERS = POSE_PLAYERS
 
 #: How far outside the court someone can be and still be *worth posing*. See
-#: :func:`candidate_mask`. These must stay strictly looser than the selection margins,
-#: not merely equal to them: the pre-filter judges from the bounding box while the
-#: selection judges from the ankles, so the two disagree by a few pixels — and a
-#: candidate wrongly discarded here has no skeleton left to reconsider. The gap is the
-#: room for that disagreement.
+#: :func:`candidate_mask`. Must stay looser than the selection margins below — the
+#: pre-filter judges from the bounding box while selection judges from the ankles, and
+#: a candidate dropped here has no skeleton left to reconsider.
 CANDIDATE_X_MARGIN = 0.35
 CANDIDATE_Y_MARGIN = 0.45
 
@@ -93,37 +52,40 @@ CANDIDATE_Y_MARGIN = 0.45
 class SelectConfig:
     """Knobs for turning detections into two players.
 
-    Both margins are sized from measurements on real footage, not guessed:
-
-    * ``x_margin`` 0.25 (~1.5 m outside a sideline). Players lunge well clear of the
-      court chasing a wide shot — measured up to 1.74 m out, median 0.84 m — and a tight
-      sideline is what loses them. This is the margin that matters, and it is *not*
-      free: the line judges sit at roughly this distance, which is why the selection is
-      ranked by :class:`PlayerTracker` rather than by proximity alone.
-    * ``y_margin`` 0.25 (~3.4 m past a baseline). Sized for the jump artifact described
-      above; measured airborne players reach -0.21. Widening it further buys nothing —
-      on the test match, no player was ever lost to the baseline margin.
-
-    ``min_ankle_score`` decides when the ankles are too unreliable to stand on and the
-    bottom edge of the bounding box is used as the ground point instead.
-
-    ``max_step_px`` and ``prior_max_age`` gate the tracker; see :class:`PlayerTracker`.
+    * ``x_margin`` 0.25 (~1.5 m outside a sideline) covers lunges (measured up to
+      1.74 m out). ``y_margin`` 0.25 (~3.4 m past a baseline) covers the jump
+      artifact described in the module docstring.
+    * ``min_ankle_score`` — below this, ankles are too unreliable and the bounding
+      box's bottom edge is used as the ground point instead.
+    * ``min_bootstrap_size`` — floor on :func:`court_size`, applied only when
+      (re-)acquiring a player from scratch, not during continuity tracking. Measured
+      4.0: standing players score 5.5-9, a deep player dips to 3.9-4.4. Does **not**
+      keep the umpire out — they score 4.5-4.9, above a deep player — that's what
+      ``build_static_anchors`` is for.
+    * ``anchor_grid`` / ``anchor_min_occupancy`` / ``anchor_max_pxstd`` /
+      ``anchor_radius`` — parameterise static-distractor exclusion; see
+      :func:`build_static_anchors`.
+    * ``max_step_px`` / ``prior_max_age`` — gate :class:`PlayerTracker`.
     """
 
     x_margin: float = 0.25           # fraction of court width, outside each sideline
     y_margin: float = 0.25           # fraction of court length, outside each baseline
     min_ankle_score: float = 0.3
+    min_bootstrap_size: float = 4.0  # court_size floor when acquiring a player from scratch
     max_step_px: float = 120.0       # how far a player may move per frame of prior age
     prior_max_age: int = 5           # frames after which a prior is stale and dropped
 
+    # Static-distractor exclusion (see build_static_anchors). A fixture is a ground
+    # point occupied in a large fraction of the match's frames while barely moving —
+    # the umpire and line judges are exactly that; a player never is.
+    anchor_grid: float = 25.0        # px cell for the occupancy histogram
+    anchor_min_occupancy: float = 0.25  # a cell this fraction of frames or more is a fixture
+    anchor_max_pxstd: float = 6.0    # ...provided its points barely scatter (players jitter more)
+    anchor_radius: float = 30.0      # a candidate this close to a fixture is refused
+
 
 def court_from_image(homography) -> np.ndarray:
-    """Invert ``court.json``'s homography into the image -> court-metres direction.
-
-    ``court_detection`` fits and stores court -> image (that is the direction it needs
-    to draw key points); asking "which court position is this pixel?" is the other way
-    round.
-    """
+    """Invert ``court.json``'s homography into the image -> court-metres direction."""
     matrix = np.asarray(homography, dtype=np.float64)
     if matrix.shape != (3, 3):
         raise ValueError(f"homography must be 3x3, got {matrix.shape}")
@@ -146,10 +108,8 @@ def read_image_to_court(match_path: str | Path) -> np.ndarray:
 def ground_points(det: dict, min_ankle_score: float) -> np.ndarray:
     """The ``(n, 2)`` image point each person is standing on.
 
-    Normally the midpoint of the two ankles. When neither ankle is confidently placed —
-    occluded by the net, cut off at the frame edge, lost in a lunge — the midpoint is
-    garbage and would project somewhere arbitrary, so the bottom-centre of the bounding
-    box is used instead: less precise, but it is at least on the person.
+    Ankle midpoint normally; falls back to the bounding box's bottom-centre when
+    neither ankle is confidently placed (occlusion, frame edge, a lunge).
     """
     kps, scores, bboxes = det["kps"], det["scores"], det["bboxes"]
     if len(kps) == 0:
@@ -190,16 +150,11 @@ def to_court(points: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
 
 
 def ground_scale(points: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
-    """How many pixels one court metre spans, on the ground, at each image point. ``(n,)``
+    """Pixels spanned by one court metre on the ground, at each image point. ``(n,)``
 
-    The homography carries this for free: step one metre down-court from the point, project
-    both ends back to the image, and measure the gap. Near the camera the answer is large,
-    at the far baseline it is small, and that difference is exactly the perspective that
-    :func:`court_size` has to divide out.
-
-    Measured along the court's *length*, which is the axis the camera foreshortens, so the
-    number is a scale factor rather than a physical height — it means something only when
-    compared against another one from the same frame.
+    Steps one metre down-court from the point and measures the image-space gap via the
+    homography. Larger near the camera, smaller at the far baseline — that difference
+    is exactly the perspective :func:`court_size` divides out.
     """
     if len(points) == 0:
         return np.zeros(0, np.float64)
@@ -217,15 +172,8 @@ def ground_scale(points: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
 def court_size(bboxes: np.ndarray, feet: np.ndarray, image_to_court: np.ndarray) -> np.ndarray:
     """Each person's apparent height, in court metres instead of pixels. ``(n,)``
 
-    This is the ranking signal — the one number that separates a player from the umpire.
-    See the module docstring for why pixels cannot: they measure distance from the camera,
-    and the umpire is closer to it than the far player is.
-
-    Height rather than area, because a bounding box's *width* is mostly posture — a lunge
-    or an outstretched racket arm doubles it — while its height tracks the person.
-    Correcting the *area* for perspective instead (dividing by the metre squared) also
-    sees through the umpire, but only reaches 98.4% on the test match against height's
-    99.5%: the width contributes noise and no signal.
+    Height rather than area: a bounding box's width is mostly posture (a lunge or
+    outstretched racket arm doubles it) and adds noise rather than signal.
     """
     if len(bboxes) == 0:
         return np.zeros(0, np.float64)
@@ -249,17 +197,11 @@ def candidate_mask(
 ) -> np.ndarray:
     """Which detections are worth estimating a skeleton for, judged from the box alone.
 
-    A broadcast frame holds nine to twelve people — the crowd, the umpire on their
-    chair, line judges, coaches — and posing all of them costs about five times what
-    posing the two players does. None of them can win the selection that follows, so
-    this throws them out *before* RTMPose ever sees them, using the only ground point
-    available at that stage: the bottom-centre of the bounding box.
-
-    That point is cruder than the ankle midpoint the real selection uses, and a person
-    dropped here is gone for good — there will be no skeleton to reconsider. So the
-    band is much wider than the selection's own (:data:`CANDIDATE_X_MARGIN`,
-    :data:`CANDIDATE_Y_MARGIN`), and it always contains it. It is a coarse "could this
-    conceivably be a player?", not a decision.
+    Cheap pre-filter so RTMPose only runs on people who could plausibly be a player,
+    using the bounding-box bottom-centre — cruder than the ankle midpoint the real
+    selection uses. A person dropped here is gone for good, so the band is much wider
+    than the selection's own (:data:`CANDIDATE_X_MARGIN`, :data:`CANDIDATE_Y_MARGIN`)
+    and always contains it.
     """
     if len(bboxes) == 0:
         return np.zeros(0, dtype=bool)
@@ -303,32 +245,97 @@ def _halves(
     return feet, halves, size
 
 
+def build_static_anchors(
+    detections: "Iterable[dict]",
+    config: SelectConfig | None = None,
+) -> np.ndarray:
+    """The fixed ground points a whole match keeps a body standing on. ``(m, 2)`` image px.
+
+    Finds people who don't move — the umpire beside the net, any line judge inside the
+    sideline margin — since size alone can't separate them from a deep player (see
+    :attr:`SelectConfig.min_bootstrap_size`), but motion can: a player sweeps across
+    the court, an official's feet land on the same pixel all match long.
+
+    Quantises every candidate's ground point into a coarse grid over the whole match
+    and returns the centre of each cell that is occupied in at least
+    ``anchor_min_occupancy`` of frames and tight (scatter under ``anchor_max_pxstd``
+    px). :class:`PlayerTracker` refuses any candidate within ``anchor_radius`` of one.
+
+    Self-calibrating per match and camera. Pass the same detections the selection will
+    run on (the cache is exactly this).
+    """
+    config = config or SelectConfig()
+    grid = config.anchor_grid
+    cell_frames: dict[tuple[int, int], int] = {}
+    cell_points: dict[tuple[int, int], list[np.ndarray]] = {}
+    n_frames = 0
+    for det in detections:
+        n_frames += 1
+        if len(det["bboxes"]) == 0:
+            continue
+        feet = ground_points(det, config.min_ankle_score)
+        seen: set[tuple[int, int]] = set()
+        for point in feet:
+            cell = (int(point[0] // grid), int(point[1] // grid))
+            cell_points.setdefault(cell, []).append(point)
+            if cell not in seen:                       # count a cell once per frame
+                cell_frames[cell] = cell_frames.get(cell, 0) + 1
+                seen.add(cell)
+
+    if n_frames == 0:
+        return np.zeros((0, 2), np.float64)
+
+    anchors: list[np.ndarray] = []
+    for cell, frames in cell_frames.items():
+        if frames / n_frames < config.anchor_min_occupancy:
+            continue
+        points = np.array(cell_points[cell])
+        if points[:, 0].std() > config.anchor_max_pxstd or points[:, 1].std() > config.anchor_max_pxstd:
+            continue                                   # it moves — a player passing through
+        anchors.append(points.mean(axis=0))
+    return np.array(anchors, np.float64) if anchors else np.zeros((0, 2), np.float64)
+
+
+def _anchor_block(feet: np.ndarray, anchors: np.ndarray | None, radius: float) -> np.ndarray:
+    """Bool per detection: True where its ground point sits on a static anchor."""
+    blocked = np.zeros(len(feet), dtype=bool)
+    if anchors is None or len(anchors) == 0 or len(feet) == 0:
+        return blocked
+    for anchor in anchors:
+        blocked |= np.linalg.norm(feet - anchor, axis=1) < radius
+    return blocked
+
+
 def select_players(
     det: dict,
     image_to_court: np.ndarray,
     config: SelectConfig | None = None,
+    anchors: np.ndarray | None = None,
 ) -> tuple[int | None, int | None]:
     """Pick the two players from a single frame, with no memory of the previous one.
 
     Ranks the in-court candidates of each half by :func:`court_size` — apparent height
-    measured against the court rather than the sensor, so that a player is compared with
-    an official on equal terms instead of on how close each of them is to the camera. A
-    standing athlete then genuinely out-measures a seated one; in pixels they do not.
+    measured against the court rather than the sensor, so a player is compared with an
+    official on equal terms instead of on how close each is to the camera.
 
-    This is also what :class:`PlayerTracker` falls back on when it has no usable prior —
-    at the start of a rally, or after a player has been missing long enough that where
-    they were says nothing about where they are. Prefer the tracker for real work:
-    continuity is a stronger signal than size, and size only has to be right often enough
-    to hand the tracker a player to follow.
+    Also what :class:`PlayerTracker` falls back on when it has no usable prior. Prefer
+    the tracker for real work: continuity is a stronger signal than size.
     """
     config = config or SelectConfig()
     if len(det["bboxes"]) == 0:
         return None, None
 
-    _, halves, size = _halves(det, image_to_court, config)
+    feet, halves, size = _halves(det, image_to_court, config)
+    blocked = _anchor_block(feet, anchors, config.anchor_radius)
 
     def best(ids: np.ndarray) -> int | None:
-        return int(ids[np.argmax(size[ids])]) if len(ids) else None
+        # Drop anyone standing on a static anchor (umpire, line judge).
+        ids = ids[~blocked[ids]]
+        if len(ids) == 0:
+            return None
+        # Bootstrap pick: refuse a candidate too small to be a standing player.
+        winner = int(ids[np.argmax(size[ids])])
+        return winner if size[winner] >= config.min_bootstrap_size else None
 
     return best(halves["top"]), best(halves["bottom"])
 
@@ -336,30 +343,34 @@ def select_players(
 class PlayerTracker:
     """Selection with a short memory: each player is the person nearest to where they were.
 
-    The in-court test is geometry and stays exactly as it is; this only changes how the
-    survivors are *ranked*. Continuity is a far stronger signal than size — a player
-    moves a few pixels between frames (measured: median 3 px, 99th percentile 19 px),
-    while a line judge who wanders into the widened court is a long way from where the
-    player last stood.
+    The in-court test is unchanged; this only changes how survivors are *ranked*.
+    Continuity is a far stronger signal than size — a player moves a few pixels
+    between frames (measured: median 3 px, 99th percentile 19 px).
 
-    Two rules keep it honest:
+    Three rules keep it honest:
 
     * **A gate, not a search.** If nobody is within ``max_step_px`` per frame of age of
-      where the player was, the answer is None. It never widens its reach until it finds
-      *someone* — the frames with no player visible are exactly the frames where the
-      nearest remaining body is an official, and a confidently wrong skeleton is worse
-      than an honest gap: nothing downstream can tell it apart from a real one.
+      where the player was, the answer is None rather than the nearest wrong body.
     * **A stale prior is no prior.** After ``prior_max_age`` frames the memory is
-      dropped and the next frame bootstraps from :func:`select_players` again, so a
-      player who is genuinely lost is re-acquired rather than chased forever.
+      dropped and the next frame bootstraps from :func:`select_players` again.
+    * **No fixtures.** Candidates standing on a static anchor (``anchors``, from
+      :func:`build_static_anchors`) are removed before either rule runs. This is what
+      actually keeps the umpire out: the gate alone doesn't, since a missing player's
+      widening gate eventually reaches the motionless umpire and locks on for good.
 
-    One tracker per rally: call :meth:`reset` between segments, because the last frame of
-    one rally says nothing about the first frame of the next.
+    One tracker per rally: call :meth:`reset` between segments, because the last frame
+    of one rally says nothing about the first frame of the next.
     """
 
-    def __init__(self, image_to_court: np.ndarray, config: SelectConfig | None = None) -> None:
+    def __init__(
+        self,
+        image_to_court: np.ndarray,
+        config: SelectConfig | None = None,
+        anchors: np.ndarray | None = None,
+    ) -> None:
         self.image_to_court = image_to_court
         self.config = config or SelectConfig()
+        self.anchors = anchors            # static distractors; see build_static_anchors
         self._last: dict[str, np.ndarray | None] = {}
         self._age: dict[str, int] = {}
         self.reset()
@@ -383,7 +394,11 @@ class PlayerTracker:
             return None, None
 
         feet, halves, size = _halves(det, self.image_to_court, config)
-        picked = {player: self._pick(player, halves[player], feet, size) for player in PLAYERS}
+        blocked = _anchor_block(feet, self.anchors, config.anchor_radius)
+        picked = {
+            player: self._pick(player, halves[player], feet, size, blocked)
+            for player in PLAYERS
+        }
         for player, index in picked.items():
             if index is not None:
                 self._last[player], self._age[player] = feet[index].copy(), 0
@@ -395,21 +410,28 @@ class PlayerTracker:
         ids: np.ndarray,
         feet: np.ndarray,
         size: np.ndarray,
+        blocked: np.ndarray,
     ) -> int | None:
+        if len(ids) == 0:
+            return None
+
+        # A static anchor is never a player; removing it here is what breaks the
+        # umpire lock (see class docstring).
+        ids = ids[~blocked[ids]]
         if len(ids) == 0:
             return None
 
         prior = self._last[player]
         if prior is None:
-            # Bootstrap: the biggest person in the half, measured on the court rather than
-            # in pixels — in pixels the umpire wins, and the tracker would then spend the
-            # whole rally faithfully following them. See court_size.
-            return int(ids[np.argmax(size[ids])])
+            # Bootstrap: biggest person in the half by court_size, refused if too
+            # small to be a standing player (SelectConfig.min_bootstrap_size).
+            winner = int(ids[np.argmax(size[ids])])
+            return winner if size[winner] >= self.config.min_bootstrap_size else None
 
         distance = np.linalg.norm(feet[ids] - prior, axis=1)
         nearest = int(np.argmin(distance))
-        # The gate grows with the age of the prior: a player missing for three frames has
-        # had three frames in which to move.
+        # The gate grows with the age of the prior: a player missing for three frames
+        # has had three frames in which to move.
         if distance[nearest] > self.config.max_step_px * max(self._age[player], 1):
             return None
         return int(ids[nearest])
