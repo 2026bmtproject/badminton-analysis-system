@@ -39,6 +39,7 @@ artifact from its ``record_type`` dataclass — no per-stage I/O module needed.
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -109,6 +110,22 @@ class Segment:
     start_sec: float
     end_sec: float
     duration_sec: float
+
+
+class SegmentIndex:
+    """Binary-searchable absolute-frame -> segment lookup, built once and reused."""
+
+    def __init__(self, segments: list[dict]) -> None:
+        self._bounds = [(int(s["start_frame"]), int(s["end_frame"])) for s in segments]
+        self._starts = [start for start, _ in self._bounds]
+
+    def locate(self, frame: int) -> tuple[int, int] | None:
+        """``(segment_index, frame - segment.start_frame)``, or ``None`` if in no segment."""
+        i = bisect.bisect_right(self._starts, frame) - 1
+        if i < 0:
+            return None
+        start, end = self._bounds[i]
+        return (i, frame - start) if start <= frame <= end else None
 
 
 @dataclass

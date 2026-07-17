@@ -27,7 +27,7 @@ from modules.base import BaseModule, StageResult
 from modules.common.bst import adapter
 from modules.common.bst.classes import UNKNOWN_CLASS
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
-from modules.contracts import PIPELINE, artifact_path
+from modules.contracts import PIPELINE, SegmentIndex, artifact_path
 from modules.stroke_classification import debug
 from modules.stroke_classification.config import StrokeClassificationConfig
 from modules.stroke_classification.predict import Prediction, classify_segment
@@ -141,15 +141,12 @@ class StrokeClassificationModule(BaseModule):
         spec = PIPELINE["event_detection"]
         events = read_records(spec, artifact_path(match_path, "event_detection"))
 
-        bounds = [(int(s["start_frame"]), int(s["end_frame"])) for s in segments]
+        index = SegmentIndex(segments)
         hits: dict[int, list[tuple[int, int]]] = defaultdict(list)
         for event_index, event in enumerate(events):
             frame = int(event["frame"])
-            for segment_index, (start, end) in enumerate(bounds):
-                if start <= frame <= end:
-                    hits[segment_index].append((event_index, frame - start))
-                    break
-            else:
+            located = index.locate(frame)
+            if located is None:
                 # Not a "skip it and carry on" case: every hit was detected *inside* a
                 # segment, so a frame that now falls in none means events.json and
                 # segments.json are describing different cuts of the match. Anything this
@@ -159,6 +156,8 @@ class StrokeClassificationModule(BaseModule):
                     "events.json is stale with respect to segments.json — re-run "
                     "event_detection for this match."
                 )
+            segment_index, local_frame = located
+            hits[segment_index].append((event_index, local_frame))
         return dict(hits)
 
     def _report(self, records: list) -> None:
