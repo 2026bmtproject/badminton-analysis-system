@@ -36,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
-from modules.artifacts import read_artifact, read_records
+from modules.artifacts import read_artifact, read_records, read_segments
 from modules.common.bst.classes import L_ANKLE, NUM_KEYPOINTS, R_ANKLE
 from modules.common.bst.features import SegmentFeatures, normalize_joints, normalize_shuttle
 from modules.common.video import video_size
@@ -59,26 +59,6 @@ DEFAULT_SHUTTLE_METHOD = "inpaint"
 def _artifact(match_path: str | Path, stage: str) -> Path:
     spec = PIPELINE[stage]
     return stage_path(match_path, stage) / spec.output_filename
-
-
-def read_segments(match_path: str | Path) -> tuple[list[dict], float]:
-    """``segments.json``: the rally segments and the fps they were cut at.
-
-    Both BST stages need both halves — the segments to know which frames a rally covers,
-    the fps to size the windows — so they read them here rather than each opening the same
-    envelope. The fps in particular must be the one *segmentation measured*, not one
-    re-probed from the video: it is the only way fps reaches the model, and two stages
-    disagreeing about it by a hundredth would size their windows differently.
-    """
-    spec = PIPELINE["match_segmentation"]
-    envelope = read_artifact(spec, _artifact(match_path, "match_segmentation"))
-    segments = envelope[spec.record_key]
-    if not segments:
-        raise RuntimeError("no segments in match_segmentation output")
-    fps = envelope.get("fps")
-    if not fps:
-        raise RuntimeError("match_segmentation output carries no fps")
-    return segments, float(fps)
 
 
 def read_fps(match_path: str | Path) -> float:

@@ -27,7 +27,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from modules.contracts import StageSpec
+from modules.contracts import PIPELINE, StageSpec, stage_path
 
 
 def _as_record(item: Any) -> dict:
@@ -80,3 +80,17 @@ def read_artifact(spec: StageSpec, path: str | Path) -> dict:
 def read_records(spec: StageSpec, path: str | Path) -> list[dict]:
     """Convenience: just the record list from ``spec``'s artifact."""
     return read_artifact(spec, path)[spec.record_key]
+
+
+def read_segments(match_path: str | Path) -> tuple[list[dict], float]:
+    """``segments.json``: the rally segments and the fps they were cut at.
+    """
+    spec = PIPELINE["match_segmentation"]
+    envelope = read_artifact(spec, stage_path(match_path, spec.name) / spec.output_filename)
+    segments = envelope[spec.record_key]
+    if not segments:
+        raise RuntimeError("no segments in match_segmentation output")
+    fps = envelope.get("fps")
+    if not fps:
+        raise RuntimeError("match_segmentation output carries no fps")
+    return segments, float(fps)

@@ -26,7 +26,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modules.artifacts import read_artifact, write_artifact
+from modules.artifacts import read_segments, write_artifact
 from modules.base import BaseModule, StageState, StageStatus, _now_iso, write_status
 from modules.common.config import repo_root
 from modules.contracts import (
@@ -110,17 +110,6 @@ class ShuttleTrackingModule(BaseModule):
         """Resolve a checkpoint path, relative paths being relative to the repo root."""
         path = Path(configured)
         return path if path.is_absolute() else repo_root() / path
-
-    def _read_segments(self, match_path: Path) -> tuple[list[dict], float]:
-        dep = PIPELINE["match_segmentation"]
-        envelope = read_artifact(dep, stage_path(match_path, dep.name) / dep.output_filename)
-        segments = envelope[dep.record_key]
-        if not segments:
-            raise RuntimeError("no segments in match_segmentation output")
-        fps = envelope.get("fps")
-        if not fps:
-            raise RuntimeError("match_segmentation output carries no fps")
-        return segments, float(fps)
 
     # ---------------------------------------------------------------- phase 1
     def build_heatmaps(
@@ -298,7 +287,7 @@ class ShuttleTrackingModule(BaseModule):
 
         try:
             video = resolve_input_video(match_path)
-            segments, fps = self._read_segments(match_path)
+            segments, fps = read_segments(match_path)
 
             # The GPU pass dominates the runtime, so it owns most of the progress bar.
             self.build_heatmaps(

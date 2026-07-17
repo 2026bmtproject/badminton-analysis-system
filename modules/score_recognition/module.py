@@ -11,7 +11,7 @@ from modules.base import (
     _now_iso,
     write_status,
 )
-from modules.artifacts import read_records, write_artifact
+from modules.artifacts import read_segments, write_artifact
 from modules.common.config import GEMINI_API_KEY_ENV, get_gemini_api_key
 from modules.common.downscale import pick_cached_downscaled_video
 from modules.contracts import PIPELINE, resolve_input_video, stage_path
@@ -64,10 +64,6 @@ class ScoreRecognitionModule(BaseModule):
         cached = pick_cached_downscaled_video(match_path, original, self.config.min_scan_height)
         return cached if cached is not None else original
 
-    def _segments_path(self, match_path: Path) -> Path:
-        dep = PIPELINE["match_segmentation"]
-        return stage_path(match_path, dep.name) / dep.output_filename
-
     def get_output_path(self, match_path) -> Path:
         return stage_path(match_path, self.name) / OUTPUT_FILENAME
 
@@ -91,7 +87,7 @@ class ScoreRecognitionModule(BaseModule):
 
             original_video = self._resolve_input_video(match_path)
             downscaled_video = self._resolve_downscaled_video(match_path, original_video)
-            segments = read_records(PIPELINE["match_segmentation"], self._segments_path(match_path))
+            segments, _ = read_segments(match_path)
             output_json.parent.mkdir(parents=True, exist_ok=True)
 
             rallies, meta = recognize_scores(

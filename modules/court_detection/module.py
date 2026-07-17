@@ -15,7 +15,7 @@ from modules.base import (
     _now_iso,
     write_status,
 )
-from modules.artifacts import read_records, write_artifact
+from modules.artifacts import read_segments, write_artifact
 from modules.common.frame_composite import composite_median, extract_frames_in_range
 from modules.contracts import (
     PIPELINE,
@@ -85,10 +85,6 @@ class CourtDetectionModule(BaseModule):
             return candidate
         return resolve_input_video(match_path)
 
-    def _segments_path(self, match_path: Path) -> Path:
-        dep = PIPELINE["match_segmentation"]
-        return stage_path(match_path, dep.name) / dep.output_filename
-
     def get_output_path(self, match_path) -> Path:
         return stage_path(match_path, self.name) / OUTPUT_FILENAME
 
@@ -145,9 +141,7 @@ class CourtDetectionModule(BaseModule):
 
         try:
             video = self._resolve_input_video(match_path)
-            segments = read_records(PIPELINE["match_segmentation"], self._segments_path(match_path))
-            if not segments:
-                raise RuntimeError("no segments in match_segmentation output")
+            segments, _ = read_segments(match_path)
             output_json.parent.mkdir(parents=True, exist_ok=True)
 
             if on_progress:

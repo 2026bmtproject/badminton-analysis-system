@@ -25,7 +25,7 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 
-from modules.artifacts import read_records
+from modules.artifacts import read_records, read_segments
 from modules.common.progress import SmoothProgress
 from modules.contracts import PIPELINE, resolve_input_video, stage_path
 from modules.pose.estimator import POSE_MODES
@@ -107,7 +107,7 @@ def main() -> None:
 
         spec = PIPELINE["pose"]
         records = read_records(spec, module.get_output_path(match_path))
-        segments = module._read_segments(match_path)
+        segments, _ = read_segments(match_path)
         paths = csv_export.export(
             Path(args.csv_dir), records, segments, stem=match_path.name
         )
@@ -127,7 +127,7 @@ def _write_overlays(module: PoseModule, match_path: Path, out_dir: Path, count: 
     from modules.pose.select import PlayerTracker
 
     video = resolve_input_video(match_path)
-    segments = module._read_segments(match_path)
+    segments, _ = read_segments(match_path)
     image_to_court = module._read_court(match_path)
     out_dir.mkdir(parents=True, exist_ok=True)
 

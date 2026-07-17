@@ -23,7 +23,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modules.artifacts import read_artifact, read_records, write_artifact
+from modules.artifacts import read_artifact, read_segments, write_artifact
 from modules.base import BaseModule, StageState, StageStatus, _now_iso, write_status
 from modules.common.video import iter_segment_frames
 from modules.contracts import (
@@ -82,13 +82,6 @@ class PoseModule(BaseModule):
 
     def get_output_path(self, match_path) -> Path:
         return stage_path(match_path, self.name) / OUTPUT_FILENAME
-
-    def _read_segments(self, match_path: Path) -> list[dict]:
-        dep = PIPELINE["match_segmentation"]
-        segments = read_records(dep, stage_path(match_path, dep.name) / dep.output_filename)
-        if not segments:
-            raise RuntimeError("no segments in match_segmentation output")
-        return segments
 
     def _read_court(self, match_path: Path) -> np.ndarray:
         """The image -> court-metres matrix, inverted from what court_detection stored."""
@@ -227,7 +220,7 @@ class PoseModule(BaseModule):
 
         try:
             video = resolve_input_video(match_path)
-            segments = self._read_segments(match_path)
+            segments, _ = read_segments(match_path)
             image_to_court = self._read_court(match_path)
 
             # The GPU pass dominates the runtime, so it owns most of the progress bar.
