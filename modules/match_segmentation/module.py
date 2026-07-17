@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from modules.base import (
-    BaseModule,
-    StageState,
-    StageStatus,
-    _now_iso,
-    write_status,
-)
+from modules.base import BaseModule, StageResult
 from modules.contracts import PIPELINE, cache_path, resolve_input_video, stage_path
 from modules.match_segmentation.segments import write_segments
 from modules.match_segmentation.segmenter import (
@@ -66,36 +60,18 @@ class MatchSegmentationModule(BaseModule):
     def get_output_path(self, match_path) -> Path:
         return stage_path(match_path, self.name) / OUTPUT_FILENAME
 
-    def run(self, match_path, on_progress=None) -> Path:
-        """Run segmentation, write the JSON, and keep status.json up to date."""
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
+    def _run(self, match_path: Path, *, on_progress=None) -> StageResult:
+        """Run segmentation and write the JSON."""
         output_json = self.get_output_path(match_path)
+        video_path = self._resolve_input_video(match_path)
+        output_json.parent.mkdir(parents=True, exist_ok=True)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
-
-        try:
-            video_path = self._resolve_input_video(match_path)
-            output_json.parent.mkdir(parents=True, exist_ok=True)
-
-            result = segment_video(
-                str(video_path),
-                self.config,
-                exclude_path=self.exclude_path,
-                on_progress=on_progress,
-                workdir=str(cache_path(match_path)),  # shared downscale cache
-            )
-            write_segments(str(output_json), result.segments, result.fps)
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        result = segment_video(
+            str(video_path),
+            self.config,
+            exclude_path=self.exclude_path,
+            on_progress=on_progress,
+            workdir=str(cache_path(match_path)),  # shared downscale cache
+        )
+        write_segments(str(output_json), result.segments, result.fps)
+        return StageResult(output_json)

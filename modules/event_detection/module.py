@@ -26,7 +26,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from modules.artifacts import read_records, write_artifact
-from modules.base import BaseModule, StageState, StageStatus, _now_iso, stage_completed, write_status
+from modules.base import BaseModule, StageResult, stage_completed
 from modules.common.bst import Window, predict_windows
 from modules.common.bst import adapter
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
@@ -276,74 +276,55 @@ class EventDetectionModule(BaseModule):
         return results
 
     # -------------------------------------------------------------------- run
-    def run(
+    def _run(
         self,
-        match_path,
+        match_path: Path,
+        *,
         on_progress: Optional[ProgressFn] = None,
         debug_csv: str | Path | None = None,
-    ) -> Path:
+    ) -> StageResult:
         """Detect every hit in the match. ``debug_csv`` also writes the 18-column details."""
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
         output_json = self.get_output_path(match_path)
+        segments, fps = adapter.read_segments(match_path)
+        scores = self._read_scores(match_path)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
+        # The scan dominates the runtime, so it owns most of the progress bar.
+        self.build_dense_scan(
+            match_path, segments, fps,
+            on_progress=(lambda f: on_progress(0.9 * f)) if on_progress else None,
+        )
+        results = self.detect(
+            match_path, segments, scores,
+            on_progress=(lambda f: on_progress(0.9 + 0.1 * f)) if on_progress else None,
+        )
 
-        try:
-            segments, fps = adapter.read_segments(match_path)
-            scores = self._read_scores(match_path)
-
-            # The scan dominates the runtime, so it owns most of the progress bar.
-            self.build_dense_scan(
-                match_path, segments, fps,
-                on_progress=(lambda f: on_progress(0.9 * f)) if on_progress else None,
+        records = [
+            HitEvent(frame=frame)
+            for frame in sorted(
+                self._offset(frame, source, result.base.traj)
+                for result in results.values()
+                for frame, (source, _) in result.hits.items()
             )
-            results = self.detect(
-                match_path, segments, scores,
-                on_progress=(lambda f: on_progress(0.9 + 0.1 * f)) if on_progress else None,
-            )
+        ]
+        write_artifact(
+            PIPELINE["event_detection"],
+            records,
+            output_json,
+            extra={
+                "fps": fps,
+                "base_method": self.config.base_method,
+                "aux_method": self.config.aux_method,
+                "bst": Path(self.config.bst_checkpoint or DEFAULT_WEIGHT).name,
+                "offsets": self.config.offsets,
+                "scoreboard_rule": scores is not None,
+            },
+        )
 
-            records = [
-                HitEvent(frame=frame)
-                for frame in sorted(
-                    self._offset(frame, source, result.base.traj)
-                    for result in results.values()
-                    for frame, (source, _) in result.hits.items()
-                )
-            ]
-            write_artifact(
-                PIPELINE["event_detection"],
-                records,
-                output_json,
-                extra={
-                    "fps": fps,
-                    "base_method": self.config.base_method,
-                    "aux_method": self.config.aux_method,
-                    "bst": Path(self.config.bst_checkpoint or DEFAULT_WEIGHT).name,
-                    "offsets": self.config.offsets,
-                    "scoreboard_rule": scores is not None,
-                },
-            )
+        if debug_csv:
+            self._write_debug(Path(debug_csv), results)
 
-            if debug_csv:
-                self._write_debug(Path(debug_csv), results)
-
-            print(f"  {len(records)} hit(s) across {len(results)} segment(s)")
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            if on_progress:
-                on_progress(1.0)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        print(f"  {len(records)} hit(s) across {len(results)} segment(s)")
+        return StageResult(output_json)
 
     def _offset(self, frame: int, source: str, traj: Traj) -> int:
         """Apply the systematic offset, once, and keep the hit inside its segment."""

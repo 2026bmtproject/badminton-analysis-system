@@ -24,7 +24,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from modules.artifacts import read_artifact, read_segments, write_artifact
-from modules.base import BaseModule, StageState, StageStatus, _now_iso, write_status
+from modules.base import BaseModule, StageResult
 from modules.common.video import iter_segment_frames
 from modules.contracts import (
     PIPELINE,
@@ -200,75 +200,53 @@ class PoseModule(BaseModule):
         return records
 
     # -------------------------------------------------------------------- run
-    def run(
+    def _run(
         self,
-        match_path,
+        match_path: Path,
+        *,
         on_progress: Optional[ProgressFn] = None,
         only_detect: bool = False,
-    ) -> Path:
+    ) -> StageResult:
         """Extract both players' skeletons through every rally segment.
 
         ``only_detect`` stops after the cache is filled — useful for doing the expensive
         GPU pass once and then iterating on the selection margins.
         """
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
         output_json = self.get_output_path(match_path)
+        video = resolve_input_video(match_path)
+        segments, _ = read_segments(match_path)
+        image_to_court = self._read_court(match_path)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
+        # The GPU pass dominates the runtime, so it owns most of the progress bar.
+        self.build_detections(
+            match_path, video, segments, image_to_court,
+            on_progress=(lambda f: on_progress(0.95 * f)) if on_progress else None,
+        )
+        if only_detect:
+            # The cache is warm but the stage produced no artifact, so it is not
+            # done — leaving it COMPLETED would make the runner skip it forever.
+            print(f"  pose cache ready; stage still PENDING (no {OUTPUT_FILENAME} yet)")
+            return StageResult(detection_cache.pose_dir(match_path), pending=True)
 
-        try:
-            video = resolve_input_video(match_path)
-            segments, _ = read_segments(match_path)
-            image_to_court = self._read_court(match_path)
-
-            # The GPU pass dominates the runtime, so it owns most of the progress bar.
-            self.build_detections(
-                match_path, video, segments, image_to_court,
-                on_progress=(lambda f: on_progress(0.95 * f)) if on_progress else None,
-            )
-            if only_detect:
-                # The cache is warm but the stage produced no artifact, so it is not
-                # done — leaving it COMPLETED would make the runner skip it forever.
-                state.status = StageStatus.PENDING
-                state.finished_at = _now_iso()
-                write_status(out_dir, state)
-                print(f"  pose cache ready; stage still PENDING (no {OUTPUT_FILENAME} yet)")
-                return detection_cache.pose_dir(match_path)
-
-            records = self.build_frames(
-                match_path, segments, image_to_court,
-                on_progress=(lambda f: on_progress(0.95 + 0.05 * f)) if on_progress else None,
-            )
-            found = sum(r.keypoints is not None for r in records)
-            write_artifact(
-                PIPELINE["pose"],
-                records,
-                output_json,
-                extra={
-                    "pose_mode": self.config.pose_mode,
-                    "x_margin": self.config.select.x_margin,
-                    "y_margin": self.config.select.y_margin,
-                    "players_found": found,
-                    "players_expected": len(records),
-                },
-            )
-            print(f"  players found in {found}/{len(records)} (frame, player) slots")
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            if on_progress:
-                on_progress(1.0)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        records = self.build_frames(
+            match_path, segments, image_to_court,
+            on_progress=(lambda f: on_progress(0.95 + 0.05 * f)) if on_progress else None,
+        )
+        found = sum(r.keypoints is not None for r in records)
+        write_artifact(
+            PIPELINE["pose"],
+            records,
+            output_json,
+            extra={
+                "pose_mode": self.config.pose_mode,
+                "x_margin": self.config.select.x_margin,
+                "y_margin": self.config.select.y_margin,
+                "players_found": found,
+                "players_expected": len(records),
+            },
+        )
+        print(f"  players found in {found}/{len(records)} (frame, player) slots")
+        return StageResult(output_json)
 
 
 def _to_record(

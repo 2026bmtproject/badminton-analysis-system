@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from modules.artifacts import read_records, write_artifact
-from modules.base import BaseModule, StageState, StageStatus, _now_iso, write_status
+from modules.base import BaseModule, StageResult
 from modules.common.bst import adapter
 from modules.common.bst.classes import UNKNOWN_CLASS
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
@@ -97,57 +97,38 @@ class StrokeClassificationModule(BaseModule):
         return predictions
 
     # ------------------------------------------------------------------- run
-    def run(
+    def _run(
         self,
-        match_path,
+        match_path: Path,
+        *,
         on_progress: Optional[ProgressFn] = None,
         debug_csv: str | Path | None = None,
-    ) -> Path:
+    ) -> StageResult:
         """Classify every hit in the match. ``debug_csv`` also writes the per-hit details."""
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
         output_json = self.get_output_path(match_path)
+        segments, fps = adapter.read_segments(match_path)
+        hits = self._read_hits(match_path, segments)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
+        predictions = self.classify(match_path, segments, fps, hits, on_progress)
+        records = [p.label for p in predictions]
 
-        try:
-            segments, fps = adapter.read_segments(match_path)
-            hits = self._read_hits(match_path, segments)
+        write_artifact(
+            PIPELINE["stroke_classification"],
+            records,
+            output_json,
+            extra={
+                "fps": fps,
+                "shuttle_method": self.config.shuttle_method,
+                "bst": Path(self.config.bst_checkpoint or DEFAULT_WEIGHT).name,
+            },
+        )
 
-            predictions = self.classify(match_path, segments, fps, hits, on_progress)
-            records = [p.label for p in predictions]
+        if debug_csv:
+            debug.write_csv(Path(debug_csv), predictions, topk=self.config.topk)
+            print(f"  debug csv:  {len(predictions)} hit(s) -> {debug_csv}")
 
-            write_artifact(
-                PIPELINE["stroke_classification"],
-                records,
-                output_json,
-                extra={
-                    "fps": fps,
-                    "shuttle_method": self.config.shuttle_method,
-                    "bst": Path(self.config.bst_checkpoint or DEFAULT_WEIGHT).name,
-                },
-            )
-
-            if debug_csv:
-                debug.write_csv(Path(debug_csv), predictions, topk=self.config.topk)
-                print(f"  debug csv:  {len(predictions)} hit(s) -> {debug_csv}")
-
-            self._report(records)
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            if on_progress:
-                on_progress(1.0)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        self._report(records)
+        return StageResult(output_json)
 
     # ---------------------------------------------------------------- inputs
     def _read_hits(

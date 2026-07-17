@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from typing import Callable
 
 
 class StageStatus(str, Enum):
@@ -88,6 +89,19 @@ def write_status(stage_path: Path, state: StageState) -> None:
         json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
 
 
+ProgressFn = Callable[[float], None]
+
+
+@dataclass
+class StageResult:
+    """What :meth:`BaseModule._run` hands back to the ``run()`` template.
+    ``pending`` marks a deliberately incomplete run.
+    """
+
+    path: Path
+    pending: bool = False
+
+
 class BaseModule:
     name: str
     dependencies: list[str] = []  # which modules must finish first
@@ -104,8 +118,42 @@ class BaseModule:
         not checked — an absent one is a normal, supported way to run.
         """
         return all(stage_completed(Path(match_path), d) for d in self.dependencies)
-    def run(self, match_path, on_progress=None):
-        """Run processing, write results to stages/{name}/, update status.json."""
+
+    def run(self, match_path, on_progress: ProgressFn | None = None, **kwargs) -> Path:
+        """Run the stage and keep status.json up to date.
+        This owns every RUNNING -> COMPLETED/PENDING/FAILED transition.
+        """
+        from modules.contracts import stage_path  # local import avoids a cycle
+
+        match_path = Path(match_path)
+        out_dir = stage_path(match_path, self.name)
+        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
+        write_status(out_dir, state)
+
+        try:
+            result = self._run(match_path, on_progress=on_progress, **kwargs)
+        except Exception as e:
+            state.status = StageStatus.FAILED
+            state.finished_at = _now_iso()
+            state.error = str(e)
+            write_status(out_dir, state)
+            raise
+
+        state.finished_at = _now_iso()
+        if result.pending:
+            state.status = StageStatus.PENDING
+        else:
+            state.status = StageStatus.COMPLETED
+            state.output_path = str(result.path.relative_to(match_path))
+        write_status(out_dir, state)
+        if not result.pending and on_progress:
+            on_progress(1.0)
+        return result.path
+
+    def _run(
+        self, match_path: Path, *, on_progress: ProgressFn | None = None, **kwargs
+    ) -> StageResult:
+        """Do the stage's work and report the result. Implemented by subclasses."""
         raise NotImplementedError
 
     def get_output_path(self, match_path) -> Path:

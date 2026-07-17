@@ -27,7 +27,7 @@ from pathlib import Path
 
 from modules.artifacts import read_records, read_segments
 from modules.common.progress import SmoothProgress
-from modules.contracts import PIPELINE, resolve_input_video, stage_path
+from modules.contracts import PIPELINE, resolve_input_video
 from modules.pose.estimator import POSE_MODES
 from modules.pose.module import PoseConfig, PoseModule
 from modules.pose.select import SelectConfig

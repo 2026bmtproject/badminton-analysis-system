@@ -8,13 +8,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modules.base import (
-    BaseModule,
-    StageState,
-    StageStatus,
-    _now_iso,
-    write_status,
-)
+from modules.base import BaseModule, StageResult
 from modules.artifacts import read_segments, write_artifact
 from modules.common.frame_composite import composite_median, extract_frames_in_range
 from modules.contracts import (
@@ -119,90 +113,71 @@ class CourtDetectionModule(BaseModule):
             )
         return composite_median(frames)
 
-    def run(
+    def _run(
         self,
-        match_path,
+        match_path: Path,
+        *,
         on_progress: Optional[Callable[[float], None]] = None,
         confirm: Optional[ConfirmCallback] = None,
-    ) -> Path:
-        """Detect the court and keep status.json up to date.
+    ) -> StageResult:
+        """Detect the court.
 
         ``confirm`` (optional) receives the composite image, the 16 auto-detected
         points and a ``is_manual_mode`` flag, and returns the confirmed points.
         The pipeline runner never passes it (headless); the CLI passes
         ``interactive.fine_tune``.
         """
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
         output_json = self.get_output_path(match_path)
+        video = self._resolve_input_video(match_path)
+        segments, _ = read_segments(match_path)
+        output_json.parent.mkdir(parents=True, exist_ok=True)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
+        if on_progress:
+            on_progress(0.1)
+        picked = self._pick_segments(segments)
+        picked_idx = [idx for idx, _ in picked]
+        composite = self._build_composite(video, [seg for _, seg in picked])
 
-        try:
-            video = self._resolve_input_video(match_path)
-            segments, _ = read_segments(match_path)
-            output_json.parent.mkdir(parents=True, exist_ok=True)
+        if on_progress:
+            on_progress(0.6)
+        auto = detector.detect(composite)  # (16, 2) ndarray or None
+        manual_mode = auto is None
+        if manual_mode:
+            # Detection failed: fall back to the image corners so the user
+            # (or a later UI) can mark the court manually.
+            pts = recompute_from_corners(get_default_corners(composite.shape))
+        else:
+            pts = [(float(x), float(y)) for x, y in auto]
 
-            if on_progress:
-                on_progress(0.1)
-            picked = self._pick_segments(segments)
-            picked_idx = [idx for idx, _ in picked]
-            composite = self._build_composite(video, [seg for _, seg in picked])
+        if confirm is not None:
+            pts = confirm(composite, pts, manual_mode)
 
-            if on_progress:
-                on_progress(0.6)
-            auto = detector.detect(composite)  # (16, 2) ndarray or None
-            manual_mode = auto is None
-            if manual_mode:
-                # Detection failed: fall back to the image corners so the user
-                # (or a later UI) can mark the court manually.
-                pts = recompute_from_corners(get_default_corners(composite.shape))
-            else:
-                pts = [(float(x), float(y)) for x, y in auto]
+        if on_progress:
+            on_progress(0.9)
+        # detector emits corners as TL, TR, BL, BR; the CourtCalibration
+        # contract wants them clockwise from top-left -> TL, TR, BR, BL.
+        tl, tr, bl, br = pts[0], pts[1], pts[2], pts[3]
+        corners_cw = [list(tl), list(tr), list(br), list(bl)]
+        homography = detector.homography_from_corners(
+            np.float32([tl, tr, bl, br])
+        )
+        if homography is None:
+            raise RuntimeError("degenerate court corners: cannot build homography")
 
-            if confirm is not None:
-                pts = confirm(composite, pts, manual_mode)
-
-            if on_progress:
-                on_progress(0.9)
-            # detector emits corners as TL, TR, BL, BR; the CourtCalibration
-            # contract wants them clockwise from top-left -> TL, TR, BR, BL.
-            tl, tr, bl, br = pts[0], pts[1], pts[2], pts[3]
-            corners_cw = [list(tl), list(tr), list(br), list(bl)]
-            homography = detector.homography_from_corners(
-                np.float32([tl, tr, bl, br])
-            )
-            if homography is None:
-                raise RuntimeError("degenerate court corners: cannot build homography")
-
-            record = CourtCalibration(
-                corners=corners_cw,
-                homography=homography.tolist(),
-                segment_index=None,  # one global court across the picked segments
-            )
-            write_artifact(
-                PIPELINE["court_detection"],
-                [record],
-                output_json,
-                extra={
-                    "segments_used": picked_idx,
-                    "frames_per_segment": self.config.frames_per_segment,
-                    "detection_failed": manual_mode,
-                    "confirmed": confirm is not None,
-                },
-            )
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            if on_progress:
-                on_progress(1.0)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        record = CourtCalibration(
+            corners=corners_cw,
+            homography=homography.tolist(),
+            segment_index=None,  # one global court across the picked segments
+        )
+        write_artifact(
+            PIPELINE["court_detection"],
+            [record],
+            output_json,
+            extra={
+                "segments_used": picked_idx,
+                "frames_per_segment": self.config.frames_per_segment,
+                "detection_failed": manual_mode,
+                "confirmed": confirm is not None,
+            },
+        )
+        return StageResult(output_json)
