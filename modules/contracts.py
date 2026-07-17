@@ -39,6 +39,7 @@ artifact from its ``record_type`` dataclass — no per-stage I/O module needed.
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -69,12 +70,16 @@ def cache_path(match_path: str | Path) -> Path:
     return Path(match_path) / CACHE_DIRNAME
 
 
-def resolve_input_video(match_path: str | Path) -> Path:
-    """Return the raw match video under ``input/``.
+def resolve_input_video(match_path: str | Path, override: str | Path | None = None) -> Path:
+    """Return the raw match video under ``input/``, or an explicit ``override``."""
+    if override:
+        candidate = Path(override)
+        if not candidate.is_absolute():
+            candidate = Path(match_path) / candidate
+        if not candidate.is_file():
+            raise FileNotFoundError(f"input video not found: {candidate}")
+        return candidate
 
-    Picks the first file (sorted) whose suffix is in :data:`VIDEO_EXTENSIONS`.
-    Raises ``FileNotFoundError`` if the ``input/`` folder or a video is missing.
-    """
     folder = input_path(match_path)
     if not folder.is_dir():
         raise FileNotFoundError(f"input folder not found: {folder}")
@@ -105,6 +110,22 @@ class Segment:
     start_sec: float
     end_sec: float
     duration_sec: float
+
+
+class SegmentIndex:
+    """Binary-searchable absolute-frame -> segment lookup, built once and reused."""
+
+    def __init__(self, segments: list[dict]) -> None:
+        self._bounds = [(int(s["start_frame"]), int(s["end_frame"])) for s in segments]
+        self._starts = [start for start, _ in self._bounds]
+
+    def locate(self, frame: int) -> tuple[int, int] | None:
+        """``(segment_index, frame - segment.start_frame)``, or ``None`` if in no segment."""
+        i = bisect.bisect_right(self._starts, frame) - 1
+        if i < 0:
+            return None
+        start, end = self._bounds[i]
+        return (i, frame - start) if start <= frame <= end else None
 
 
 @dataclass
@@ -400,3 +421,8 @@ def ordering_dependencies(spec: StageSpec) -> list[str]:
 def pipeline_order() -> list[str]:
     """Topological order of the full :data:`PIPELINE`."""
     return topological_order({n: ordering_dependencies(s) for n, s in PIPELINE.items()})
+
+
+def artifact_path(match_path: str | Path, stage: str) -> Path:
+    """``stage``'s primary artifact file: ``stage_path(...) / spec.output_filename``."""
+    return stage_path(match_path, stage) / PIPELINE[stage].output_filename

@@ -38,7 +38,7 @@ from modules.common.bst import (
 from modules.common.bst import adapter
 from modules.common.bst.classes import BASE_STROKES, L_ANKLE, NUM_KEYPOINTS, R_ANKLE
 from modules.common.bst.features import create_bones, make_seq_len_same, normalize_joints
-from modules.contracts import PIPELINE, POSE_PLAYERS, stage_path
+from modules.contracts import PIPELINE, POSE_PLAYERS, artifact_path
 
 # A head-on camera, same one test_pose uses: 100 px per metre, the court's far-left
 # corner at image (200, 100), no perspective. Court metres -> image pixels.
@@ -215,7 +215,7 @@ def write_match(tmp_path, *, pose_records, shuttle_records, segments):
         ("shuttle_tracking", shuttle_records, None),
     ):
         spec = PIPELINE[stage]
-        write_artifact(spec, records, stage_path(tmp_path, stage) / spec.output_filename, extra)
+        write_artifact(spec, records, artifact_path(tmp_path, stage), extra)
     return tmp_path
 
 

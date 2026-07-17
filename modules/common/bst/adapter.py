@@ -36,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
-from modules.artifacts import read_artifact, read_records
+from modules.artifacts import read_records, read_segments
 from modules.common.bst.classes import L_ANKLE, NUM_KEYPOINTS, R_ANKLE
 from modules.common.bst.features import SegmentFeatures, normalize_joints, normalize_shuttle
 from modules.common.video import video_size
@@ -44,10 +44,10 @@ from modules.contracts import (
     PIPELINE,
     POSE_PLAYERS,
     SHUTTLE_METHODS,
+    artifact_path,
     resolve_input_video,
-    stage_path,
 )
-from modules.pose.select import court_from_image, to_court
+from modules.pose.select import read_image_to_court, to_court
 
 #: TrackNet's own output, gap-filled by InpaintNet — the closest thing to the trajectory
 #: BST was trained on. ``viterbi`` is a different trade (smoother, more willing to invent
@@ -56,44 +56,9 @@ from modules.pose.select import court_from_image, to_court
 DEFAULT_SHUTTLE_METHOD = "inpaint"
 
 
-def _artifact(match_path: str | Path, stage: str) -> Path:
-    spec = PIPELINE[stage]
-    return stage_path(match_path, stage) / spec.output_filename
-
-
-def read_segments(match_path: str | Path) -> tuple[list[dict], float]:
-    """``segments.json``: the rally segments and the fps they were cut at.
-
-    Both BST stages need both halves — the segments to know which frames a rally covers,
-    the fps to size the windows — so they read them here rather than each opening the same
-    envelope. The fps in particular must be the one *segmentation measured*, not one
-    re-probed from the video: it is the only way fps reaches the model, and two stages
-    disagreeing about it by a hundredth would size their windows differently.
-    """
-    spec = PIPELINE["match_segmentation"]
-    envelope = read_artifact(spec, _artifact(match_path, "match_segmentation"))
-    segments = envelope[spec.record_key]
-    if not segments:
-        raise RuntimeError("no segments in match_segmentation output")
-    fps = envelope.get("fps")
-    if not fps:
-        raise RuntimeError("match_segmentation output carries no fps")
-    return segments, float(fps)
-
-
 def read_fps(match_path: str | Path) -> float:
     """Just the fps from ``segments.json`` — see :func:`read_segments`."""
     return read_segments(match_path)[1]
-
-
-def read_image_to_court(match_path: str | Path) -> np.ndarray:
-    """The image -> court-metres matrix, inverted out of ``court.json``."""
-    spec = PIPELINE["court_detection"]
-    envelope = read_artifact(spec, _artifact(match_path, "court_detection"))
-    courts = envelope[spec.record_key]
-    if not courts:
-        raise RuntimeError("no court in court_detection output")
-    return court_from_image(courts[0]["homography"])
 
 
 def load_segment_features(
@@ -119,9 +84,9 @@ def load_segment_features(
     segments, _ = read_segments(match_path)
     image_to_court = read_image_to_court(match_path)
 
-    poses = _pose_by_segment(read_records(PIPELINE["pose"], _artifact(match_path, "pose")))
+    poses = _pose_by_segment(read_records(PIPELINE["pose"], artifact_path(match_path, "pose")))
     shuttles = _shuttle_by_segment(
-        read_records(PIPELINE["shuttle_tracking"], _artifact(match_path, "shuttle_tracking")),
+        read_records(PIPELINE["shuttle_tracking"], artifact_path(match_path, "shuttle_tracking")),
         shuttle_method,
     )
 

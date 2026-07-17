@@ -38,7 +38,7 @@ from modules.common.bst.classes import (
     STROKE_CLASSES,
     UNKNOWN_INDEX,
 )
-from modules.contracts import PIPELINE, pipeline_order, stage_path
+from modules.contracts import PIPELINE, artifact_path, pipeline_order, stage_path
 from modules.stroke_classification import predict
 from modules.stroke_classification.config import StrokeClassificationConfig
 from modules.stroke_classification.module import StrokeClassificationModule
@@ -258,7 +258,7 @@ def match(tmp_path, monkeypatch):
     }
     for stage, (records, extra) in artifacts.items():
         spec = PIPELINE[stage]
-        write_artifact(spec, records, stage_path(tmp_path, stage) / spec.output_filename, extra)
+        write_artifact(spec, records, artifact_path(tmp_path, stage), extra)
     return tmp_path
 
 
@@ -344,7 +344,7 @@ def test_a_hit_in_no_rally_means_the_artifacts_disagree_and_the_stage_says_so(ma
     write_artifact(
         spec,
         [{"frame": f} for f in [*HIT_FRAMES, 9999]],
-        stage_path(match, "event_detection") / spec.output_filename,
+        artifact_path(match, "event_detection"),
         {"fps": FPS},
     )
 

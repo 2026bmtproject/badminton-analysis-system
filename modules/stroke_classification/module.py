@@ -23,16 +23,14 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from modules.artifacts import read_records, write_artifact
-from modules.base import BaseModule, StageState, StageStatus, _now_iso, write_status
+from modules.base import BaseModule, StageResult
 from modules.common.bst import adapter
 from modules.common.bst.classes import UNKNOWN_CLASS
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
-from modules.contracts import PIPELINE, stage_path
+from modules.contracts import PIPELINE, SegmentIndex, artifact_path
 from modules.stroke_classification import debug
 from modules.stroke_classification.config import StrokeClassificationConfig
 from modules.stroke_classification.predict import Prediction, classify_segment
-
-OUTPUT_FILENAME = PIPELINE["stroke_classification"].output_filename
 
 ProgressFn = Callable[[float], None]
 
@@ -47,7 +45,7 @@ class StrokeClassificationModule(BaseModule):
         self.config = config or StrokeClassificationConfig()
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     # ------------------------------------------------------------------ work
     def classify(
@@ -97,57 +95,38 @@ class StrokeClassificationModule(BaseModule):
         return predictions
 
     # ------------------------------------------------------------------- run
-    def run(
+    def _run(
         self,
-        match_path,
+        match_path: Path,
+        *,
         on_progress: Optional[ProgressFn] = None,
         debug_csv: str | Path | None = None,
-    ) -> Path:
+    ) -> StageResult:
         """Classify every hit in the match. ``debug_csv`` also writes the per-hit details."""
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
         output_json = self.get_output_path(match_path)
+        segments, fps = adapter.read_segments(match_path)
+        hits = self._read_hits(match_path, segments)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
+        predictions = self.classify(match_path, segments, fps, hits, on_progress)
+        records = [p.label for p in predictions]
 
-        try:
-            segments, fps = adapter.read_segments(match_path)
-            hits = self._read_hits(match_path, segments)
+        write_artifact(
+            PIPELINE["stroke_classification"],
+            records,
+            output_json,
+            extra={
+                "fps": fps,
+                "shuttle_method": self.config.shuttle_method,
+                "bst": Path(self.config.bst_checkpoint or DEFAULT_WEIGHT).name,
+            },
+        )
 
-            predictions = self.classify(match_path, segments, fps, hits, on_progress)
-            records = [p.label for p in predictions]
+        if debug_csv:
+            debug.write_csv(Path(debug_csv), predictions, topk=self.config.topk)
+            print(f"  debug csv:  {len(predictions)} hit(s) -> {debug_csv}")
 
-            write_artifact(
-                PIPELINE["stroke_classification"],
-                records,
-                output_json,
-                extra={
-                    "fps": fps,
-                    "shuttle_method": self.config.shuttle_method,
-                    "bst": Path(self.config.bst_checkpoint or DEFAULT_WEIGHT).name,
-                },
-            )
-
-            if debug_csv:
-                debug.write_csv(Path(debug_csv), predictions, topk=self.config.topk)
-                print(f"  debug csv:  {len(predictions)} hit(s) -> {debug_csv}")
-
-            self._report(records)
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            if on_progress:
-                on_progress(1.0)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        self._report(records)
+        return StageResult(output_json)
 
     # ---------------------------------------------------------------- inputs
     def _read_hits(
@@ -160,17 +139,14 @@ class StrokeClassificationModule(BaseModule):
         windows run between consecutive hits *of the same rally*.
         """
         spec = PIPELINE["event_detection"]
-        events = read_records(spec, stage_path(match_path, "event_detection") / spec.output_filename)
+        events = read_records(spec, artifact_path(match_path, "event_detection"))
 
-        bounds = [(int(s["start_frame"]), int(s["end_frame"])) for s in segments]
+        index = SegmentIndex(segments)
         hits: dict[int, list[tuple[int, int]]] = defaultdict(list)
         for event_index, event in enumerate(events):
             frame = int(event["frame"])
-            for segment_index, (start, end) in enumerate(bounds):
-                if start <= frame <= end:
-                    hits[segment_index].append((event_index, frame - start))
-                    break
-            else:
+            located = index.locate(frame)
+            if located is None:
                 # Not a "skip it and carry on" case: every hit was detected *inside* a
                 # segment, so a frame that now falls in none means events.json and
                 # segments.json are describing different cuts of the match. Anything this
@@ -180,6 +156,8 @@ class StrokeClassificationModule(BaseModule):
                     "events.json is stale with respect to segments.json — re-run "
                     "event_detection for this match."
                 )
+            segment_index, local_frame = located
+            hits[segment_index].append((event_index, local_frame))
         return dict(hits)
 
     def _report(self, records: list) -> None:

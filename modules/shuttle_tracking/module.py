@@ -26,15 +26,15 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modules.artifacts import read_artifact, write_artifact
-from modules.base import BaseModule, StageState, StageStatus, _now_iso, write_status
+from modules.artifacts import read_segments, write_artifact
+from modules.base import BaseModule, StageResult
 from modules.common.config import repo_root
 from modules.contracts import (
     PIPELINE,
     SHUTTLE_METHODS,
     ShuttlePoint,
+    artifact_path,
     resolve_input_video,
-    stage_path,
 )
 from modules.shuttle_tracking import blob, heatmap_cache
 from modules.shuttle_tracking.track_viterbi import ViterbiConfig
@@ -104,23 +104,12 @@ class ShuttleTrackingModule(BaseModule):
                 )
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     def _checkpoint(self, configured: str) -> Path:
         """Resolve a checkpoint path, relative paths being relative to the repo root."""
         path = Path(configured)
         return path if path.is_absolute() else repo_root() / path
-
-    def _read_segments(self, match_path: Path) -> tuple[list[dict], float]:
-        dep = PIPELINE["match_segmentation"]
-        envelope = read_artifact(dep, stage_path(match_path, dep.name) / dep.output_filename)
-        segments = envelope[dep.record_key]
-        if not segments:
-            raise RuntimeError("no segments in match_segmentation output")
-        fps = envelope.get("fps")
-        if not fps:
-            raise RuntimeError("match_segmentation output carries no fps")
-        return segments, float(fps)
 
     # ---------------------------------------------------------------- phase 1
     def build_heatmaps(
@@ -278,75 +267,53 @@ class ShuttleTrackingModule(BaseModule):
         return records
 
     # -------------------------------------------------------------------- run
-    def run(
+    def _run(
         self,
-        match_path,
+        match_path: Path,
+        *,
         on_progress: Optional[ProgressFn] = None,
         only_heatmap: bool = False,
-    ) -> Path:
+    ) -> StageResult:
         """Track the shuttle through every rally segment.
 
         ``only_heatmap`` stops after the cache is filled — useful for doing the
         expensive GPU pass once and then iterating on the trackers.
         """
-        match_path = Path(match_path)
-        out_dir = stage_path(match_path, self.name)
         output_json = self.get_output_path(match_path)
+        video = resolve_input_video(match_path)
+        segments, fps = read_segments(match_path)
 
-        state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
-        write_status(out_dir, state)
+        # The GPU pass dominates the runtime, so it owns most of the progress bar.
+        self.build_heatmaps(
+            match_path, video, segments,
+            on_progress=(lambda f: on_progress(0.85 * f)) if on_progress else None,
+        )
+        if only_heatmap:
+            # The cache is warm but the stage produced no artifact, so it is not
+            # done — leaving it COMPLETED would make the runner skip it forever.
+            cache_dir = heatmap_cache.heatmap_dir(match_path)
+            print(f"  heatmap cache ready; stage still PENDING (no {OUTPUT_FILENAME} yet)")
+            return StageResult(cache_dir, pending=True)
 
-        try:
-            video = resolve_input_video(match_path)
-            segments, fps = self._read_segments(match_path)
-
-            # The GPU pass dominates the runtime, so it owns most of the progress bar.
-            self.build_heatmaps(
-                match_path, video, segments,
-                on_progress=(lambda f: on_progress(0.85 * f)) if on_progress else None,
-            )
-            if only_heatmap:
-                # The cache is warm but the stage produced no artifact, so it is not
-                # done — leaving it COMPLETED would make the runner skip it forever.
-                state.status = StageStatus.PENDING
-                state.finished_at = _now_iso()
-                write_status(out_dir, state)
-                cache_dir = heatmap_cache.heatmap_dir(match_path)
-                print(f"  heatmap cache ready; stage still PENDING (no {OUTPUT_FILENAME} yet)")
-                return cache_dir
-
-            records = self.build_tracks(
-                match_path, segments, fps,
-                on_progress=(lambda f: on_progress(0.85 + 0.15 * f)) if on_progress else None,
-            )
-            write_artifact(
-                PIPELINE["shuttle_tracking"],
-                records,
-                output_json,
-                extra={
-                    "fps": fps,
-                    "methods": list(self.config.methods),
-                    "tracknet": Path(self.config.tracknet_checkpoint).name,
-                    "inpaintnet": Path(self.config.inpaintnet_checkpoint).name,
-                    "eval_mode": self.config.eval_mode,
-                    "threshold": self.config.threshold,
-                    "fill": self.config.viterbi.fill,
-                },
-            )
-
-            state.status = StageStatus.COMPLETED
-            state.finished_at = _now_iso()
-            state.output_path = str(output_json.relative_to(match_path))
-            write_status(out_dir, state)
-            if on_progress:
-                on_progress(1.0)
-            return output_json
-        except Exception as e:
-            state.status = StageStatus.FAILED
-            state.finished_at = _now_iso()
-            state.error = str(e)
-            write_status(out_dir, state)
-            raise
+        records = self.build_tracks(
+            match_path, segments, fps,
+            on_progress=(lambda f: on_progress(0.85 + 0.15 * f)) if on_progress else None,
+        )
+        write_artifact(
+            PIPELINE["shuttle_tracking"],
+            records,
+            output_json,
+            extra={
+                "fps": fps,
+                "methods": list(self.config.methods),
+                "tracknet": Path(self.config.tracknet_checkpoint).name,
+                "inpaintnet": Path(self.config.inpaintnet_checkpoint).name,
+                "eval_mode": self.config.eval_mode,
+                "threshold": self.config.threshold,
+                "fill": self.config.viterbi.fill,
+            },
+        )
+        return StageResult(output_json)
 
 
 def _to_records(
