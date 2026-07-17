@@ -92,14 +92,15 @@ class CourtDetectionModule(BaseModule):
     def get_output_path(self, match_path) -> Path:
         return stage_path(match_path, self.name) / OUTPUT_FILENAME
 
-    def _pick_segments(self, segments: list[dict]) -> list[dict]:
+    def _pick_segments(self, segments: list[dict]) -> list[tuple[int, dict]]:
         """Pick the ``num_segments`` longest segments (most stable court view)."""
-        def span(seg: dict) -> float:
+        def span(item: tuple[int, dict]) -> float:
+            seg = item[1]
             if seg.get("duration_sec") is not None:
                 return float(seg["duration_sec"])
             return float(seg["end_frame"] - seg["start_frame"])
 
-        ordered = sorted(segments, key=span, reverse=True)
+        ordered = sorted(enumerate(segments), key=span, reverse=True)
         return ordered[: max(1, self.config.num_segments)]
 
     def _build_composite(self, video: Path, picked: list[dict]) -> np.ndarray:
@@ -152,8 +153,8 @@ class CourtDetectionModule(BaseModule):
             if on_progress:
                 on_progress(0.1)
             picked = self._pick_segments(segments)
-            picked_idx = [segments.index(seg) for seg in picked]
-            composite = self._build_composite(video, picked)
+            picked_idx = [idx for idx, _ in picked]
+            composite = self._build_composite(video, [seg for _, seg in picked])
 
             if on_progress:
                 on_progress(0.6)

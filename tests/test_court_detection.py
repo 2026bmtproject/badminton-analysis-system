@@ -73,8 +73,9 @@ def test_pick_segments_takes_the_longest_n():
     m = CourtDetectionModule(CourtDetectionConfig(num_segments=3))
     picked = m._pick_segments(segments)
 
-    spans = [s["end_frame"] - s["start_frame"] for s in picked]
+    spans = [s["end_frame"] - s["start_frame"] for _, s in picked]
     assert spans == [200, 100, 60]  # sorted longest-first
+    assert [i for i, _ in picked] == [2, 0, 3]  # original positions ride along
 
 
 def test_pick_segments_returns_all_when_fewer_than_requested():
@@ -90,8 +91,17 @@ def test_pick_segments_falls_back_to_frame_span_without_duration():
         {"start_frame": 100, "end_frame": 400},
     ]
     m = CourtDetectionModule(CourtDetectionConfig(num_segments=1))
-    (picked,) = m._pick_segments(segments)
+    ((idx, picked),) = m._pick_segments(segments)
     assert picked["start_frame"] == 100
+    assert idx == 1
+
+
+def test_pick_segments_keeps_distinct_indices_for_identical_segments():
+    # Two rallies with identical fields compare equal; each must still report
+    # its own position rather than both resolving to the first twin's.
+    segments = [_seg(0, 100), _seg(0, 100)]
+    m = CourtDetectionModule(CourtDetectionConfig(num_segments=2))
+    assert [i for i, _ in m._pick_segments(segments)] == [0, 1]
 
 
 # --------------------------------------------------------------------------- #

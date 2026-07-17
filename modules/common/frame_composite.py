@@ -28,10 +28,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from modules.contracts import VIDEO_EXTENSIONS
+
 
 # ── Frame Extraction ──────────────────────────────────────────────────────────
-
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".m4v"}
 
 DEFAULT_MAX_FRAMES = 120
 
