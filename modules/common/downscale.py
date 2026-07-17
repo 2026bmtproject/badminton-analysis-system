@@ -23,6 +23,7 @@ from pathlib import Path
 import cv2
 
 from modules.common.ffmpeg_utils import ensure_tool, run_ffmpeg
+from modules.contracts import VIDEO_EXTENSIONS
 
 
 def get_video_height(input_path: str) -> int:
@@ -38,10 +39,6 @@ def get_video_height(input_path: str) -> int:
 def downscaled_video_name(stem: str, height: int, with_audio: bool = False) -> str:
     """Cache filename for a downscaled copy, keyed by height and audio track."""
     return f"{stem}_{height}p{'_audio' if with_audio else ''}.mp4"
-
-
-# Video containers we may find sitting in a match's cache/ folder.
-CACHE_VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".avi", ".m4v")
 
 
 def pick_cached_downscaled_video(
@@ -76,7 +73,7 @@ def pick_cached_downscaled_video(
     best: Path | None = None
     best_h: int | None = None
     for entry in sorted(cdir.iterdir()):
-        if not (entry.is_file() and entry.suffix.lower() in CACHE_VIDEO_EXTS):
+        if not (entry.is_file() and entry.suffix.lower() in VIDEO_EXTENSIONS):
             continue
         try:
             h = get_video_height(str(entry))

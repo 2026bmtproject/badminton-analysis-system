@@ -50,8 +50,8 @@ INPUT_DIRNAME = "input"
 STAGES_DIRNAME = "stages"
 CACHE_DIRNAME = "cache"
 
-# Container formats we accept as the raw match video, in priority order.
-VIDEO_EXTENSIONS = (".mp4", ".mkv", ".mov", ".avi")
+# Container formats we accept as a match video, in priority order.
+VIDEO_EXTENSIONS = (".mp4", ".mkv", ".mov", ".avi", ".m4v")
 
 
 def input_path(match_path: str | Path) -> Path:
