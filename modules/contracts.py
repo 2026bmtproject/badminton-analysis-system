@@ -69,12 +69,16 @@ def cache_path(match_path: str | Path) -> Path:
     return Path(match_path) / CACHE_DIRNAME
 
 
-def resolve_input_video(match_path: str | Path) -> Path:
-    """Return the raw match video under ``input/``.
+def resolve_input_video(match_path: str | Path, override: str | Path | None = None) -> Path:
+    """Return the raw match video under ``input/``, or an explicit ``override``."""
+    if override:
+        candidate = Path(override)
+        if not candidate.is_absolute():
+            candidate = Path(match_path) / candidate
+        if not candidate.is_file():
+            raise FileNotFoundError(f"input video not found: {candidate}")
+        return candidate
 
-    Picks the first file (sorted) whose suffix is in :data:`VIDEO_EXTENSIONS`.
-    Raises ``FileNotFoundError`` if the ``input/`` folder or a video is missing.
-    """
     folder = input_path(match_path)
     if not folder.is_dir():
         raise FileNotFoundError(f"input folder not found: {folder}")

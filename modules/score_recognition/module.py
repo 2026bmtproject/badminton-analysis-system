@@ -37,14 +37,7 @@ class ScoreRecognitionModule(BaseModule):
         self.input_video = input_video
 
     def _resolve_input_video(self, match_path: Path) -> Path:
-        if self.input_video:
-            candidate = Path(self.input_video)
-            if not candidate.is_absolute():
-                candidate = match_path / candidate
-            if not candidate.is_file():
-                raise FileNotFoundError(f"input video not found: {candidate}")
-            return candidate
-        return resolve_input_video(match_path)
+        return resolve_input_video(match_path, self.input_video)
 
     def _resolve_downscaled_video(self, match_path: Path, original: Path) -> Path:
         """Read frames from the lightest cached downscale, else the source.

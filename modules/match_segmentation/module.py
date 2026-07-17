@@ -35,16 +35,7 @@ class MatchSegmentationModule(BaseModule):
         self.exclude_path = exclude_path
 
     def _resolve_input_video(self, match_path: Path) -> Path:
-        if self.input_video:
-            candidate = Path(self.input_video)
-            if not candidate.is_absolute():
-                candidate = match_path / candidate
-            if not candidate.is_file():
-                raise FileNotFoundError(f"input video not found: {candidate}")
-            return candidate
-
-        # Default: the raw video under matches/{match}/input/ (see contracts).
-        return resolve_input_video(match_path)
+        return resolve_input_video(match_path, self.input_video)
 
     def check_ready(self, match_path) -> bool:
         """Ready when an input video exists (this stage has no dependencies)."""
