@@ -124,11 +124,11 @@ def _write_overlays(module: PoseModule, match_path: Path, out_dir: Path, count: 
 
     from modules.common.video import iter_segment_frames
     from modules.pose import detection_cache, overlay
-    from modules.pose.select import PlayerTracker
+    from modules.pose.select import PlayerTracker, read_image_to_court
 
     video = resolve_input_video(match_path)
     segments, _ = read_segments(match_path)
-    image_to_court = module._read_court(match_path)
+    image_to_court = read_image_to_court(match_path)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # One frame from the middle of each of `count` segments spread across the match:

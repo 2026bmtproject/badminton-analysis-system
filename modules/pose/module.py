@@ -23,7 +23,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modules.artifacts import read_artifact, read_segments, write_artifact
+from modules.artifacts import read_segments, write_artifact
 from modules.base import BaseModule, StageResult
 from modules.common.video import iter_segment_frames
 from modules.contracts import (
@@ -39,7 +39,7 @@ from modules.pose.select import (
     SelectConfig,
     candidate_margins,
     candidate_mask,
-    court_from_image,
+    read_image_to_court,
 )
 
 OUTPUT_FILENAME = PIPELINE["pose"].output_filename
@@ -82,17 +82,6 @@ class PoseModule(BaseModule):
 
     def get_output_path(self, match_path) -> Path:
         return artifact_path(match_path, self.name)
-
-    def _read_court(self, match_path: Path) -> np.ndarray:
-        """The image -> court-metres matrix, inverted from what court_detection stored."""
-        dep = PIPELINE["court_detection"]
-        envelope = read_artifact(dep, artifact_path(match_path, dep.name))
-        courts = envelope[dep.record_key]
-        if not courts:
-            raise RuntimeError("no court in court_detection output")
-        # court_detection emits one global court (segment_index None); if it ever starts
-        # emitting one per segment, this is the line that has to grow a lookup.
-        return court_from_image(courts[0]["homography"])
 
     # ---------------------------------------------------------------- phase 1
     def build_detections(
@@ -215,7 +204,7 @@ class PoseModule(BaseModule):
         output_json = self.get_output_path(match_path)
         video = resolve_input_video(match_path)
         segments, _ = read_segments(match_path)
-        image_to_court = self._read_court(match_path)
+        image_to_court = read_image_to_court(match_path)
 
         # The GPU pass dominates the runtime, so it owns most of the progress bar.
         self.build_detections(

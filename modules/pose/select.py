@@ -60,10 +60,12 @@ on exactly the smash frames the margins were widened for.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
-from modules.contracts import POSE_PLAYERS
+from modules.artifacts import read_artifact
+from modules.contracts import PIPELINE, POSE_PLAYERS, artifact_path
 from modules.court_detection.detector import H_LINES, V_LINES
 
 #: The court's own dimensions, in metres, as the detector's homography defines them.
@@ -129,6 +131,16 @@ def court_from_image(homography) -> np.ndarray:
         return np.linalg.inv(matrix)
     except np.linalg.LinAlgError as e:
         raise ValueError("court homography is singular and cannot be inverted") from e
+
+
+def read_image_to_court(match_path: str | Path) -> np.ndarray:
+    """The image -> court-metres matrix, read out of ``court.json`` and inverted."""
+    spec = PIPELINE["court_detection"]
+    envelope = read_artifact(spec, artifact_path(match_path, spec.name))
+    courts = envelope[spec.record_key]
+    if not courts:
+        raise RuntimeError("no court in court_detection output")
+    return court_from_image(courts[0]["homography"])
 
 
 def ground_points(det: dict, min_ankle_score: float) -> np.ndarray:
