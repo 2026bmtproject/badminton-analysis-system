@@ -44,8 +44,8 @@ from modules.contracts import (
     PIPELINE,
     POSE_PLAYERS,
     SHUTTLE_METHODS,
+    artifact_path,
     resolve_input_video,
-    stage_path,
 )
 from modules.pose.select import court_from_image, to_court
 
@@ -56,11 +56,6 @@ from modules.pose.select import court_from_image, to_court
 DEFAULT_SHUTTLE_METHOD = "inpaint"
 
 
-def _artifact(match_path: str | Path, stage: str) -> Path:
-    spec = PIPELINE[stage]
-    return stage_path(match_path, stage) / spec.output_filename
-
-
 def read_fps(match_path: str | Path) -> float:
     """Just the fps from ``segments.json`` — see :func:`read_segments`."""
     return read_segments(match_path)[1]
@@ -69,7 +64,7 @@ def read_fps(match_path: str | Path) -> float:
 def read_image_to_court(match_path: str | Path) -> np.ndarray:
     """The image -> court-metres matrix, inverted out of ``court.json``."""
     spec = PIPELINE["court_detection"]
-    envelope = read_artifact(spec, _artifact(match_path, "court_detection"))
+    envelope = read_artifact(spec, artifact_path(match_path, "court_detection"))
     courts = envelope[spec.record_key]
     if not courts:
         raise RuntimeError("no court in court_detection output")
@@ -99,9 +94,9 @@ def load_segment_features(
     segments, _ = read_segments(match_path)
     image_to_court = read_image_to_court(match_path)
 
-    poses = _pose_by_segment(read_records(PIPELINE["pose"], _artifact(match_path, "pose")))
+    poses = _pose_by_segment(read_records(PIPELINE["pose"], artifact_path(match_path, "pose")))
     shuttles = _shuttle_by_segment(
-        read_records(PIPELINE["shuttle_tracking"], _artifact(match_path, "shuttle_tracking")),
+        read_records(PIPELINE["shuttle_tracking"], artifact_path(match_path, "shuttle_tracking")),
         shuttle_method,
     )
 

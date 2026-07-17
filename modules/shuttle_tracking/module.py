@@ -33,8 +33,8 @@ from modules.contracts import (
     PIPELINE,
     SHUTTLE_METHODS,
     ShuttlePoint,
+    artifact_path,
     resolve_input_video,
-    stage_path,
 )
 from modules.shuttle_tracking import blob, heatmap_cache
 from modules.shuttle_tracking.track_viterbi import ViterbiConfig
@@ -104,7 +104,7 @@ class ShuttleTrackingModule(BaseModule):
                 )
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     def _checkpoint(self, configured: str) -> Path:
         """Resolve a checkpoint path, relative paths being relative to the repo root."""

@@ -400,3 +400,8 @@ def ordering_dependencies(spec: StageSpec) -> list[str]:
 def pipeline_order() -> list[str]:
     """Topological order of the full :data:`PIPELINE`."""
     return topological_order({n: ordering_dependencies(s) for n, s in PIPELINE.items()})
+
+
+def artifact_path(match_path: str | Path, stage: str) -> Path:
+    """``stage``'s primary artifact file: ``stage_path(...) / spec.output_filename``."""
+    return stage_path(match_path, stage) / PIPELINE[stage].output_filename

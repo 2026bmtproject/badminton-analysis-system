@@ -30,7 +30,7 @@ from modules.base import BaseModule, StageResult, stage_completed
 from modules.common.bst import Window, predict_windows
 from modules.common.bst import adapter
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
-from modules.contracts import COCO_KEYPOINTS, PIPELINE, HitEvent, stage_path
+from modules.contracts import COCO_KEYPOINTS, PIPELINE, HitEvent, artifact_path
 from modules.event_detection import dense_cache, debug
 from modules.event_detection.complete import complete_segment
 from modules.event_detection.config import EventDetectionConfig
@@ -39,8 +39,6 @@ from modules.event_detection.prune import dead_segments, prune_segment
 from modules.event_detection.sides import SideOf, skeletons_by_segment
 from modules.event_detection.streams import Stream, run_stream
 from modules.event_detection.trajectory import Traj, build_trajectories
-
-OUTPUT_FILENAME = PIPELINE["event_detection"].output_filename
 
 ProgressFn = Callable[[float], None]
 
@@ -105,7 +103,7 @@ class EventDetectionModule(BaseModule):
         self.config = config or EventDetectionConfig()
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     # ---------------------------------------------------------------- phase 1
     def build_dense_scan(
@@ -221,7 +219,7 @@ class EventDetectionModule(BaseModule):
     ) -> dict[int, SegmentResult]:
         """Every segment, then the match-level scoreboard rule."""
         cfg = self.config
-        shuttle = read_records(PIPELINE["shuttle_tracking"], self._artifact(match_path, "shuttle_tracking"))
+        shuttle = read_records(PIPELINE["shuttle_tracking"], artifact_path(match_path, "shuttle_tracking"))
         base_trajectories = build_trajectories(shuttle, cfg.base_method)
         aux_trajectories = build_trajectories(shuttle, cfg.aux_method)
         if not base_trajectories:
@@ -230,7 +228,7 @@ class EventDetectionModule(BaseModule):
                 "with a different method"
             )
 
-        poses = read_records(PIPELINE["pose"], self._artifact(match_path, "pose"))
+        poses = read_records(PIPELINE["pose"], artifact_path(match_path, "pose"))
         skeletons = skeletons_by_segment(poses, COCO_KEYPOINTS)
 
         results: dict[int, SegmentResult] = {}
@@ -341,10 +339,6 @@ class EventDetectionModule(BaseModule):
         print(f"  debug csv:  {len(results)} file(s) -> {out_dir}")
 
     # ----------------------------------------------------------------- inputs
-    def _artifact(self, match_path: Path, stage: str) -> Path:
-        spec = PIPELINE[stage]
-        return stage_path(match_path, stage) / spec.output_filename
-
     def _read_scores(self, match_path: Path) -> dict[int, tuple[int, int] | None] | None:
         """``{segment_index: (a, b) | None}``, or None when the rule is not running.
 
@@ -364,7 +358,7 @@ class EventDetectionModule(BaseModule):
             return None
 
         spec = PIPELINE["score_recognition"]
-        records = read_records(spec, self._artifact(match_path, "score_recognition"))
+        records = read_records(spec, artifact_path(match_path, "score_recognition"))
         scores: dict[int, tuple[int, int] | None] = {}
         for record in records:
             index = int(record["segment_index"])

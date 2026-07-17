@@ -27,12 +27,10 @@ from modules.base import BaseModule, StageResult
 from modules.common.bst import adapter
 from modules.common.bst.classes import UNKNOWN_CLASS
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
-from modules.contracts import PIPELINE, stage_path
+from modules.contracts import PIPELINE, artifact_path
 from modules.stroke_classification import debug
 from modules.stroke_classification.config import StrokeClassificationConfig
 from modules.stroke_classification.predict import Prediction, classify_segment
-
-OUTPUT_FILENAME = PIPELINE["stroke_classification"].output_filename
 
 ProgressFn = Callable[[float], None]
 
@@ -47,7 +45,7 @@ class StrokeClassificationModule(BaseModule):
         self.config = config or StrokeClassificationConfig()
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     # ------------------------------------------------------------------ work
     def classify(
@@ -141,7 +139,7 @@ class StrokeClassificationModule(BaseModule):
         windows run between consecutive hits *of the same rally*.
         """
         spec = PIPELINE["event_detection"]
-        events = read_records(spec, stage_path(match_path, "event_detection") / spec.output_filename)
+        events = read_records(spec, artifact_path(match_path, "event_detection"))
 
         bounds = [(int(s["start_frame"]), int(s["end_frame"])) for s in segments]
         hits: dict[int, list[tuple[int, int]]] = defaultdict(list)

@@ -30,8 +30,8 @@ from modules.contracts import (
     PIPELINE,
     POSE_PLAYERS,
     PoseFrame,
+    artifact_path,
     resolve_input_video,
-    stage_path,
 )
 from modules.pose import detection_cache
 from modules.pose.select import (
@@ -81,12 +81,12 @@ class PoseModule(BaseModule):
         self.config = config or PoseConfig()
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     def _read_court(self, match_path: Path) -> np.ndarray:
         """The image -> court-metres matrix, inverted from what court_detection stored."""
         dep = PIPELINE["court_detection"]
-        envelope = read_artifact(dep, stage_path(match_path, dep.name) / dep.output_filename)
+        envelope = read_artifact(dep, artifact_path(match_path, dep.name))
         courts = envelope[dep.record_key]
         if not courts:
             raise RuntimeError("no court in court_detection output")

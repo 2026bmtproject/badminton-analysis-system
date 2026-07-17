@@ -8,13 +8,11 @@ from modules.base import BaseModule, StageResult
 from modules.artifacts import read_segments, write_artifact
 from modules.common.config import GEMINI_API_KEY_ENV, get_gemini_api_key
 from modules.common.downscale import pick_cached_downscaled_video
-from modules.contracts import PIPELINE, resolve_input_video, stage_path
+from modules.contracts import PIPELINE, artifact_path, resolve_input_video
 from modules.score_recognition.recognizer import (
     ScoreRecognitionConfig,
     recognize_scores,
 )
-
-OUTPUT_FILENAME = PIPELINE["score_recognition"].output_filename
 
 
 class ScoreRecognitionModule(BaseModule):
@@ -59,7 +57,7 @@ class ScoreRecognitionModule(BaseModule):
         return cached if cached is not None else original
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     def _run(self, match_path: Path, *, on_progress=None) -> StageResult:
         """Read scores for every segment."""

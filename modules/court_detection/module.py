@@ -14,16 +14,14 @@ from modules.common.frame_composite import composite_median, extract_frames_in_r
 from modules.contracts import (
     PIPELINE,
     CourtCalibration,
+    artifact_path,
     resolve_input_video,
-    stage_path,
 )
 from modules.court_detection import detector
 from modules.court_detection.interactive import (
     get_default_corners,
     recompute_from_corners,
 )
-
-OUTPUT_FILENAME = PIPELINE["court_detection"].output_filename
 
 # A confirm callback takes (composite_image, 16 auto points, is_manual_mode) and
 # returns the (possibly user-adjusted) 16 points. ``interactive.fine_tune`` fits
@@ -80,7 +78,7 @@ class CourtDetectionModule(BaseModule):
         return resolve_input_video(match_path)
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     def _pick_segments(self, segments: list[dict]) -> list[tuple[int, dict]]:
         """Pick the ``num_segments`` longest segments (most stable court view)."""

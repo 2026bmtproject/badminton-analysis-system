@@ -302,7 +302,7 @@ def resolve_io(args: argparse.Namespace) -> tuple[str, str, str]:
 
     if args.match:
         # Imported here so the standalone tool has no import cost when unused.
-        from modules.contracts import PIPELINE, resolve_input_video, stage_path
+        from modules.contracts import artifact_path, resolve_input_video
 
         match_path = Path(args.match)
         if not match_path.is_dir():
@@ -315,8 +315,7 @@ def resolve_io(args: argparse.Namespace) -> tuple[str, str, str]:
                 print(f"[error] {e}")
                 sys.exit(1)
         if segments is None:
-            spec = PIPELINE["match_segmentation"]
-            segments = str(stage_path(match_path, spec.name) / spec.output_filename)
+            segments = str(artifact_path(match_path, "match_segmentation"))
         if output is None:
             output = _default_output(match_path, args.mode)
     else:

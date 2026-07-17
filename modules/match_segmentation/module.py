@@ -5,14 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from modules.base import BaseModule, StageResult
-from modules.contracts import PIPELINE, cache_path, resolve_input_video, stage_path
+from modules.contracts import PIPELINE, artifact_path, cache_path, resolve_input_video
 from modules.match_segmentation.segments import write_segments
 from modules.match_segmentation.segmenter import (
     SegmentationConfig,
     segment_video,
 )
-
-OUTPUT_FILENAME = PIPELINE["match_segmentation"].output_filename
 
 
 class MatchSegmentationModule(BaseModule):
@@ -58,7 +56,7 @@ class MatchSegmentationModule(BaseModule):
             return False
 
     def get_output_path(self, match_path) -> Path:
-        return stage_path(match_path, self.name) / OUTPUT_FILENAME
+        return artifact_path(match_path, self.name)
 
     def _run(self, match_path: Path, *, on_progress=None) -> StageResult:
         """Run segmentation and write the JSON."""
