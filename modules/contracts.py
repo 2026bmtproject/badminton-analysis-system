@@ -133,6 +133,21 @@ class RallyScore:
     """DRAFT — score_recognition. Artifact: ``scores.json`` (key ``rallies``).
 
     One record per segment, indexing back into ``segments.json`` by position.
+
+    ``score_a``/``score_b`` stay scalar and hold the segment's **final** score —
+    the one thing every consumer can rely on, and correct even when a segment
+    turns out to hold more than one rally. score_recognition detects that from
+    the score jump against the previous segment and bisects the segment to
+    recover the intermediate rally(ies):
+
+    * ``sub_scores`` — every distinct ``[a, b]`` the scoreboard showed inside the
+      segment, in order, e.g. ``[[3, 2], [3, 3]]``. ``None`` for the normal
+      single-rally case (the scalar score is the whole story).
+    * ``split_secs`` — absolute match-time second(s) at which the score changed,
+      localized to ~``min_split_sec`` precision. ``len(split_secs) ==
+      len(sub_scores) - 1``. Frame-accuracy is deliberately not attempted: the
+      scoreboard overlay is not always on screen, so a single frame cannot be
+      trusted and boundaries are found by compositing over a window.
     """
 
     segment_index: int
@@ -140,6 +155,8 @@ class RallyScore:
     score_b: int
     server: str | None = None          # "a" | "b" | None if unknown
     game_index: int | None = None      # which game within the match
+    sub_scores: list[list[int]] | None = None   # e.g. [[3, 2], [3, 3]]; None if single-rally
+    split_secs: list[float] | None = None        # match-time seconds of each score change
 
 
 @dataclass
