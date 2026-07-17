@@ -22,6 +22,7 @@ from modules.pose.select import (
     COURT_WIDTH_M,
     PlayerTracker,
     SelectConfig,
+    build_static_anchors,
     candidate_margins,
     candidate_mask,
     court_from_image,
@@ -57,11 +58,19 @@ def at_court(x_m: float, y_m: float) -> tuple[float, float]:
 def make_person(
     foot_x: float,
     foot_y: float,
-    height: float = 180.0,
+    height: float = 600.0,
     width: float = 70.0,
     ankle_score: float = 0.9,
 ) -> dict:
-    """One detection standing with their feet at the given image point."""
+    """One detection standing with their feet at the given image point.
+
+    The default height is sized so a person on this head-on fixture clears
+    ``SelectConfig.min_bootstrap_size``: the court here is orthographic (100 px/m, no
+    foreshortening), so :func:`court_size` returns height-in-metres directly, and a shorter
+    default would score below the bootstrap floor and never be acquired — a property of the
+    flat fixture, not of the selection. Tests that need an under-sized body (a distant
+    official, a decoy) pass an explicit smaller ``height``.
+    """
     kps = np.zeros((NUM_KEYPOINTS, 2), np.float32)
     scores = np.full(NUM_KEYPOINTS, 0.9, np.float32)
     kps[:] = (foot_x, foot_y - height / 2)          # the rest of the body, roughly
@@ -705,6 +714,96 @@ def test_csv_has_the_columns_bst_expects(tmp_path):
     assert [bottom[0], bottom[1]] == ["0", "bottom"]
     assert all(cell == "" for cell in top[3:])     # the player that was not found
     assert bottom[3] != "" and len(bottom) == len(header)
+
+
+# --------------------------------------------------------------------------- #
+# static-distractor exclusion — the umpire's real tell is that it never moves,   #
+# not its size (which overlaps, and can exceed, a deep player's).                #
+# --------------------------------------------------------------------------- #
+
+
+def _rally_frames(n: int = 24) -> list[dict]:
+    """A rally: the umpire pinned on their chair, the far player sweeping up-court."""
+    umpire = the_umpire()
+    frames = []
+    for step in range(n):
+        # Both players move each frame — ~0.35 m up-court and across — so no single grid
+        # cell of theirs is occupied for long, unlike the motionless umpire.
+        player = a_player(2.0 + 0.12 * step, 1.5 + 0.35 * step)
+        near = a_player(4.0 - 0.1 * step, 11.5 - 0.25 * step)
+        frames.append(make_det(umpire, player, near))
+    return frames
+
+
+def _umpire_feet() -> np.ndarray:
+    return ground_points(make_det(the_umpire()), 0.3)[0]
+
+
+def test_build_static_anchors_finds_the_umpire_and_not_the_moving_player():
+    anchors = build_static_anchors(_rally_frames(), SelectConfig())
+
+    # Exactly one fixture — the umpire — and it sits on their (unmoving) feet.
+    assert len(anchors) == 1
+    assert np.linalg.norm(anchors[0] - _umpire_feet()) < SelectConfig().anchor_grid
+
+    # The player never anchors: they move, so no cell of theirs clears the occupancy
+    # and tightness tests. (A pinned player would be a bug in the test, not the code.)
+    player_feet = ground_points(_rally_frames()[-1], 0.3)[1]
+    assert np.linalg.norm(anchors[0] - player_feet) > 200
+
+
+def test_anchor_refuses_the_umpire_even_when_it_is_the_only_candidate():
+    """The lock's source: player briefly gone, umpire the only body left in the half.
+
+    With the floor set below the umpire's size, only the anchor can keep it out — so this
+    isolates the anchor's contribution from the bootstrap floor's.
+    """
+    anchors = build_static_anchors(_rally_frames(), SelectConfig())
+    only_umpire = make_det(the_umpire(), a_player(3.0, 10.0))
+    cfg = SelectConfig(min_bootstrap_size=0.0)   # floor cannot be what rejects the umpire
+
+    without = PlayerTracker(broadcast_to_court(), cfg)
+    assert without.update(only_umpire)[0] is not None      # bootstraps onto the umpire
+
+    withanchor = PlayerTracker(broadcast_to_court(), cfg, anchors=anchors)
+    assert withanchor.update(only_umpire)[0] is None        # anchor refuses it
+
+
+def test_anchor_breaks_the_stationary_lock_and_re_acquires_the_player():
+    """End to end: the player leaves, the umpire stays, the player returns.
+
+    Without anchors the widening gate latches onto the motionless umpire and the rally
+    never comes back. With anchors the top slot is honestly empty while the player is gone
+    and holds the real player — never the umpire — whenever one is present.
+    """
+    anchors = build_static_anchors(_rally_frames(), SelectConfig())
+    umpire_feet = _umpire_feet()
+    # Floor set below the umpire's size so only the anchor — not the floor — can be what
+    # keeps the umpire out of the slot.
+    cfg = SelectConfig(min_bootstrap_size=0.0)
+
+    def is_umpire(feet, idx):
+        return idx is not None and np.linalg.norm(feet[idx] - umpire_feet) < 30.0
+
+    t = PlayerTracker(broadcast_to_court(), cfg, anchors=anchors)
+    present, umpire_picks = 0, 0
+    for step in range(24):
+        if 8 <= step < 16:
+            det = make_det(the_umpire(), a_player(3.0, 10.0))     # player gone
+        else:
+            det = make_det(the_umpire(), a_player(2.0 + 0.1 * step, 2.0), a_player(3.0, 10.0))
+        feet = ground_points(det, 0.3)
+        top, _ = t.update(det)
+        if is_umpire(feet, top):
+            umpire_picks += 1
+        if 8 <= step < 16:
+            assert top is None, f"top should be empty while the player is gone (step {step})"
+        else:
+            present += 1
+            assert top is not None, f"lost the present player (step {step})"
+
+    assert umpire_picks == 0
+    assert present > 0
 
 
 def test_csv_export_writes_one_file_per_segment(tmp_path):
