@@ -2,13 +2,18 @@
 
 Pipeline:
     1) per-frame FrameDiff(MAD)
+    1b) single-scene guard: if there are no scene cuts, keep the whole video as
+        one segment instead of letting the GMM invent a split
     2) GMM auto-threshold -> low-motion mask
     3) contiguous low-motion frames -> segments, merge close ones
     4) drop too-short segments
     5) two representative frames per segment, cross-segment MAD
     6) filter by Cross_Diff_Avg threshold
-    7) final merge by frame gap
-    8) write a compact segments JSON
+    7) robust replay rejection: drop Cross_Diff_Avg outliers (> k x median)
+    8) final merge by frame gap
+    9) bridge in-rally splits: fuse cut-free short gaps at frame resolution
+   10) snap each boundary onto the true scene cut at frame resolution
+   11) write a compact segments JSON
 
 CLI usage:
     python -m modules.match_segmentation.segmenter IN.mp4 OUT.json
@@ -26,6 +31,11 @@ from typing import Callable
 import numpy as np
 
 from modules.common.downscale import ensure_max_height
+from modules.match_segmentation.boundary_refine import (
+    RefineConfig,
+    bridge_continuous_gaps,
+    refine_boundaries,
+)
 from modules.match_segmentation.cross_compare import (
     DEFAULT_COMPARE_SIZE,
     compute_cross_segment_scores,
@@ -41,8 +51,10 @@ from modules.match_segmentation.segments import (
     filter_short_segments,
     find_threshold_gmm,
     load_excluded_frames,
+    looks_single_scene,
     merge_close_segments,
     merge_segments_by_gap,
+    reject_cross_outliers,
     write_segments,
 )
 
@@ -52,6 +64,9 @@ DEFAULT_AVG_THR_SCALE = 0.7
 DEFAULT_FRAME_STEP = 3
 DEFAULT_FINAL_MERGE_GAP = 5
 DEFAULT_SCAN_MAX_HEIGHT = 480
+DEFAULT_CROSS_OUTLIER_K = 3.0
+DEFAULT_REFINE_BOUNDARIES = True
+DEFAULT_BRIDGE_MAX_GAP = 12
 
 ProgressCallback = Callable[[float], None]
 
@@ -71,6 +86,20 @@ class SegmentationConfig:
     # 0 disables. Downscaling preserves fps and frame count, so the emitted
     # frame/second boundaries still map onto the original video.
     scan_max_height: int = DEFAULT_SCAN_MAX_HEIGHT
+    # Robust replay rejection: after the standard cross filter, drop segments
+    # whose Cross_Diff_Avg exceeds this multiple of the median (0 disables).
+    # Catches synthetic Hawkeye/replay screens that resemble the live court.
+    cross_outlier_k: float = DEFAULT_CROSS_OUTLIER_K
+    # Snap coarse (subsampled) boundaries onto the true scene cut at frame
+    # resolution. Removes the systematic start-late/end-early bias.
+    refine_boundaries: bool = DEFAULT_REFINE_BOUNDARIES
+    # Merge a rally wrongly split by a brief in-rally motion blip: bridge gaps
+    # up to this many frames when no scene cut sits inside them (0 disables).
+    bridge_max_gap: int = DEFAULT_BRIDGE_MAX_GAP
+    # Guard against shredding an already-clean / single-shot video: when the
+    # motion distribution shows no scene cuts, emit one segment instead of
+    # letting the GMM invent a split. Set False to force the old behaviour.
+    single_scene_guard: bool = True
 
 
 @dataclass
@@ -94,6 +123,10 @@ class SegmentationResult:
     filtered_count: int
     excluded_frame_count: int
     key_frame_cache: int
+    outlier_dropped: int = 0
+    gaps_bridged: int = 0
+    boundaries_moved: int = 0
+    single_scene: bool = False
     cross_avgs: list[int] = field(default_factory=list)
 
 
@@ -133,9 +166,17 @@ def segment_video(
         valid_excluded = [f for f in excluded_frames if 0 <= f < scores.size]
         excluded_mask[valid_excluded] = True
 
-    # Fit the GMM threshold only on non-excluded frames so a rerun really
-    # searches within the remaining frames.
-    threshold = find_threshold_gmm(scores[~excluded_mask])
+    # A single continuous shot (already-cut clip or otherwise clean video) has
+    # no dead-time to remove; skip the GMM so it is not shredded by an invented
+    # threshold. A threshold above every score keeps the whole span as one
+    # segment, which then flows through the rest of the pipeline unchanged.
+    single_scene = config.single_scene_guard and looks_single_scene(scores[~excluded_mask])
+    if single_scene:
+        threshold = float(scores.max()) + 1.0 if scores.size else 1.0
+    else:
+        # Fit the GMM threshold only on non-excluded frames so a rerun really
+        # searches within the remaining frames.
+        threshold = find_threshold_gmm(scores[~excluded_mask])
     is_low = scores < threshold
     if is_low.size > 0:
         is_low[0] = False
@@ -161,11 +202,42 @@ def segment_video(
         config.avg_thr_scale,
         config.avg_thr_pct,
     )
-    filtered_segments, _, _, _ = filter_segments_by_cross_avg(
+    filtered_segments, filtered_pairs, _, _ = filter_segments_by_cross_avg(
         candidate_segments, pairs, cross_sums, cross_avgs, avg_threshold
     )
 
-    final_segments = merge_segments_by_gap(filtered_segments, int(config.final_merge_gap))
+    # Robust replay rejection. Recompute Cross_Diff_Avg over just the survivors
+    # (now an almost-pure match-camera cluster) and drop the high outliers; the
+    # frames are already decoded, so this adds no I/O.
+    outlier_dropped = 0
+    if config.cross_outlier_k > 0 and len(filtered_segments) >= 8:
+        _, clean_avgs, _ = compute_cross_segment_scores(
+            filtered_pairs, frame_cache, config.compare_size
+        )
+        filtered_segments, dropped = reject_cross_outliers(
+            filtered_segments, clean_avgs, config.cross_outlier_k
+        )
+        outlier_dropped = len(dropped)
+
+    merged_final = merge_segments_by_gap(filtered_segments, int(config.final_merge_gap))
+
+    refine_cfg = RefineConfig(window=max(int(config.frame_step) + 3, 6))
+
+    # Reunite rallies split by a brief in-rally blip (content-aware: only when
+    # no scene cut sits in the gap), then snap boundaries onto the scene cut.
+    gaps_bridged = 0
+    if config.bridge_max_gap > 0 and len(merged_final) > 1:
+        merged_final, gaps_bridged = bridge_continuous_gaps(
+            scan_path, merged_final, int(config.bridge_max_gap), refine_cfg
+        )
+
+    boundaries_moved = 0
+    if config.refine_boundaries and merged_final:
+        merged_final, boundaries_moved = refine_boundaries(
+            scan_path, merged_final, refine_cfg
+        )
+
+    final_segments = merged_final
     _report(on_progress, 1.0)
 
     return SegmentationResult(
@@ -186,6 +258,10 @@ def segment_video(
         filtered_count=len(filtered_segments),
         excluded_frame_count=int(np.sum(excluded_mask)),
         key_frame_cache=len(frame_cache),
+        outlier_dropped=outlier_dropped,
+        gaps_bridged=gaps_bridged,
+        boundaries_moved=boundaries_moved,
+        single_scene=single_scene,
         cross_avgs=cross_avgs,
     )
 
@@ -218,6 +294,14 @@ def parse_args() -> argparse.Namespace:
                         help="final merge: join adjacent segments with frame gap < this (default 5; <=0 disables)")
     parser.add_argument("--scan-max-height", dest="scan_max_height", type=int, default=DEFAULT_SCAN_MAX_HEIGHT,
                         help="downscale the source to this height before scanning if taller (default 480; 0 disables)")
+    parser.add_argument("--cross-outlier-k", dest="cross_outlier_k", type=float, default=DEFAULT_CROSS_OUTLIER_K,
+                        help="drop segments with Cross_Diff_Avg > k x median (default 3.0; 0 disables replay rejection)")
+    parser.add_argument("--no-refine-boundaries", dest="refine_boundaries", action="store_false",
+                        help="disable frame-accurate boundary refinement (kept on by default)")
+    parser.add_argument("--bridge-max-gap", dest="bridge_max_gap", type=int, default=DEFAULT_BRIDGE_MAX_GAP,
+                        help="merge rallies split by an in-rally blip: bridge cut-free gaps up to this many frames (default 12; 0 disables)")
+    parser.add_argument("--no-single-scene-guard", dest="single_scene_guard", action="store_false",
+                        help="disable the single-shot guard (force GMM split even on a clean/already-cut video)")
     return parser.parse_args()
 
 
@@ -238,6 +322,10 @@ def main() -> None:
         frame_step=max(int(args.frame_step), 1),
         final_merge_gap=int(args.final_merge_gap),
         scan_max_height=int(args.scan_max_height),
+        cross_outlier_k=float(args.cross_outlier_k),
+        refine_boundaries=bool(args.refine_boundaries),
+        bridge_max_gap=int(args.bridge_max_gap),
+        single_scene_guard=bool(args.single_scene_guard),
     )
 
     print("=" * 72)
@@ -263,6 +351,8 @@ def main() -> None:
     print(f"FPS: {result.fps:.3f}")
     print(f"total frames: {result.processed_frames}")
     print(f"duration: {result.duration_sec / 60:.1f} min")
+    if result.single_scene:
+        print("single-scene guard: no scene cuts detected -> emitting one segment")
     print(f"GMM threshold: {result.threshold:.2f}")
     if result.excluded_frame_count:
         print(f"excluded frames: {result.excluded_frame_count}")
@@ -279,6 +369,12 @@ def main() -> None:
         print("Cross_Diff_Avg: no candidate segments")
     print(f"reference segments: {result.compared_segments}")
     print(f"segments after Cross_Diff_Avg filter: {result.filtered_count}")
+    if config.cross_outlier_k > 0:
+        print(f"replay outliers dropped (>{config.cross_outlier_k:g}x median): {result.outlier_dropped}")
+    if config.bridge_max_gap > 0:
+        print(f"in-rally splits bridged (cut-free gap < {config.bridge_max_gap}): {result.gaps_bridged}")
+    if config.refine_boundaries:
+        print(f"boundaries snapped to scene cut: {result.boundaries_moved}")
     if config.final_merge_gap > 0:
         print(f"segments after final merge (gap < {config.final_merge_gap}): {len(result.segments)}")
     else:

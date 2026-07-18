@@ -87,6 +87,34 @@ def load_excluded_frames(json_path: str) -> set[int]:
     return excluded
 
 
+def looks_single_scene(
+    scores: np.ndarray,
+    ratio_p99: float = 3.0,
+    ratio_max: float = 6.0,
+) -> bool:
+    """True when the video is one continuous shot with no scene cuts.
+
+    The GMM always returns a split, even for a video that has no dead-time to
+    remove (an already-cut rally clip, or an inherently clean recording). On
+    such input it invents a threshold inside a single population and shreds the
+    clip. This guard catches that case first.
+
+    A broadcast always contains high-motion frames -- scene cuts, replays, crowd
+    pans -- so the score distribution has a long tail far above the stable
+    match-camera level (measured: p99 4-47x the median, peaks 9-80x). A single
+    continuous shot has none: every frame differs only slightly from the last
+    (measured: p99 ~2x the median, peak ~2-3x). Requiring BOTH the 99th
+    percentile and the maximum to stay close to the median keeps this firmly on
+    the clean-clip side of a very wide gap, so it never fires on real matches.
+    """
+    if scores.size == 0:
+        return False
+    low = max(float(np.median(scores)), 1.0)
+    p99 = float(np.percentile(scores, 99))
+    peak = float(np.max(scores))
+    return p99 < ratio_p99 * low and peak < ratio_max * low
+
+
 def find_threshold_gmm(scores: np.ndarray) -> float:
     """Fit a 2-component GMM in log space and return the split threshold."""
     if scores.size == 0:
@@ -316,6 +344,48 @@ def compute_avg_threshold(
 
     threshold = round_to_int(min_avg * (1.0 + pct))
     return min_avg, threshold, pct
+
+
+def reject_cross_outliers(
+    segments: list[tuple[int, int]],
+    cross_avgs: list[int],
+    k: float,
+    min_segments: int = 8,
+    max_drop_ratio: float = 0.30,
+) -> tuple[list[tuple[int, int]], list[int]]:
+    """Drop segments whose Cross_Diff_Avg is a large outlier above the median.
+
+    Once the obvious non-match candidates are gone, the surviving segments are
+    overwhelmingly the one repeated match camera, so their cross averages form a
+    tight cluster: across six matches every genuine rally sits within ~1.9x the
+    median, while synthetic replays (Hawkeye "official review" renders and the
+    like) land at ~5x. Anything above ``k`` * median is therefore a scene that
+    merely *resembles* the court but is not live play, and is removed.
+
+    This is deliberately conservative:
+
+    * it needs at least ``min_segments`` segments for the median to be stable;
+    * if more than ``max_drop_ratio`` of segments would be dropped it does
+      nothing, since that means the "median" is not a clean match cluster.
+
+    Returns the kept segments and the indices that were dropped.
+    """
+    n = len(segments)
+    if n < min_segments or not cross_avgs:
+        return segments, []
+
+    median_avg = float(np.median(cross_avgs))
+    if median_avg <= 0:
+        return segments, []
+
+    threshold = median_avg * float(k)
+    dropped = [i for i, avg in enumerate(cross_avgs) if avg > threshold]
+    if len(dropped) > max_drop_ratio * n:
+        return segments, []
+
+    dropped_set = set(dropped)
+    kept = [seg for i, seg in enumerate(segments) if i not in dropped_set]
+    return kept, dropped
 
 
 def filter_segments_by_cross_avg(

@@ -21,6 +21,8 @@ from modules.match_segmentation.segments import (
     SEGMENT_FIELDS,
     build_segment_records,
     build_segments_from_mask,
+    looks_single_scene,
+    reject_cross_outliers,
     write_segments,
 )
 
@@ -97,3 +99,63 @@ def test_build_segments_from_mask_closes_run_at_end():
 def test_build_segments_from_mask_no_low_frames():
     mask = np.zeros(5, dtype=bool)
     assert build_segments_from_mask(mask) == []
+
+
+# ── reject_cross_outliers ────────────────────────────────────────────────────
+def _segs(n):
+    return [(i * 100, i * 100 + 50) for i in range(n)]
+
+
+def test_reject_cross_outliers_drops_high_replays():
+    # 10 tight match segments (~7) plus two replay outliers (~40).
+    segs = _segs(12)
+    avgs = [7, 7, 8, 7, 40, 7, 8, 7, 40, 7, 7, 8]
+    kept, dropped = reject_cross_outliers(segs, avgs, k=3.0)
+    assert dropped == [4, 8]
+    assert len(kept) == 10
+    assert segs[4] not in kept and segs[8] not in kept
+
+
+def test_reject_cross_outliers_keeps_tight_cluster():
+    # Real-only: max is ~1.8x median, well under k=3 -> nothing dropped.
+    segs = _segs(10)
+    avgs = [25, 26, 24, 45, 25, 27, 24, 26, 25, 25]  # median ~25, max 45 = 1.8x
+    kept, dropped = reject_cross_outliers(segs, avgs, k=3.0)
+    assert dropped == []
+    assert kept == segs
+
+
+def test_reject_cross_outliers_needs_enough_segments():
+    segs = _segs(5)
+    avgs = [7, 7, 40, 7, 8]
+    kept, dropped = reject_cross_outliers(segs, avgs, k=3.0, min_segments=8)
+    assert dropped == [] and kept == segs
+
+
+def test_reject_cross_outliers_bails_when_too_many_would_drop():
+    # If the "outliers" are actually half the set, the median is not a clean
+    # match cluster, so the guard refuses to drop anything.
+    segs = _segs(10)
+    avgs = [1, 1, 1, 1, 1, 50, 50, 50, 50, 50]
+    kept, dropped = reject_cross_outliers(segs, avgs, k=3.0, max_drop_ratio=0.30)
+    assert dropped == [] and kept == segs
+
+
+# ── looks_single_scene ───────────────────────────────────────────────────────
+def test_single_scene_true_for_clean_clip_distribution():
+    # A clean single shot: every frame differs only slightly from the last.
+    rng = np.random.default_rng(0)
+    scores = rng.integers(0, 3, size=2000).astype(float)  # 0..2, no cuts
+    assert looks_single_scene(scores) is True
+
+
+def test_single_scene_false_when_scene_cuts_present():
+    # A broadcast: mostly low motion, but a sprinkling of big cut spikes.
+    rng = np.random.default_rng(1)
+    scores = rng.integers(0, 6, size=2000).astype(float)
+    scores[::120] = 60  # periodic scene cuts -> long high tail
+    assert looks_single_scene(scores) is False
+
+
+def test_single_scene_empty_is_false():
+    assert looks_single_scene(np.array([], dtype=float)) is False
