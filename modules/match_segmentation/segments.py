@@ -87,6 +87,34 @@ def load_excluded_frames(json_path: str) -> set[int]:
     return excluded
 
 
+def looks_single_scene(
+    scores: np.ndarray,
+    ratio_p99: float = 3.0,
+    ratio_max: float = 6.0,
+) -> bool:
+    """True when the video is one continuous shot with no scene cuts.
+
+    The GMM always returns a split, even for a video that has no dead-time to
+    remove (an already-cut rally clip, or an inherently clean recording). On
+    such input it invents a threshold inside a single population and shreds the
+    clip. This guard catches that case first.
+
+    A broadcast always contains high-motion frames -- scene cuts, replays, crowd
+    pans -- so the score distribution has a long tail far above the stable
+    match-camera level (measured: p99 4-47x the median, peaks 9-80x). A single
+    continuous shot has none: every frame differs only slightly from the last
+    (measured: p99 ~2x the median, peak ~2-3x). Requiring BOTH the 99th
+    percentile and the maximum to stay close to the median keeps this firmly on
+    the clean-clip side of a very wide gap, so it never fires on real matches.
+    """
+    if scores.size == 0:
+        return False
+    low = max(float(np.median(scores)), 1.0)
+    p99 = float(np.percentile(scores, 99))
+    peak = float(np.max(scores))
+    return p99 < ratio_p99 * low and peak < ratio_max * low
+
+
 def find_threshold_gmm(scores: np.ndarray) -> float:
     """Fit a 2-component GMM in log space and return the split threshold."""
     if scores.size == 0:

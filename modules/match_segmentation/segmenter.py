@@ -2,6 +2,8 @@
 
 Pipeline:
     1) per-frame FrameDiff(MAD)
+    1b) single-scene guard: if there are no scene cuts, keep the whole video as
+        one segment instead of letting the GMM invent a split
     2) GMM auto-threshold -> low-motion mask
     3) contiguous low-motion frames -> segments, merge close ones
     4) drop too-short segments
@@ -49,6 +51,7 @@ from modules.match_segmentation.segments import (
     filter_short_segments,
     find_threshold_gmm,
     load_excluded_frames,
+    looks_single_scene,
     merge_close_segments,
     merge_segments_by_gap,
     reject_cross_outliers,
@@ -93,6 +96,10 @@ class SegmentationConfig:
     # Merge a rally wrongly split by a brief in-rally motion blip: bridge gaps
     # up to this many frames when no scene cut sits inside them (0 disables).
     bridge_max_gap: int = DEFAULT_BRIDGE_MAX_GAP
+    # Guard against shredding an already-clean / single-shot video: when the
+    # motion distribution shows no scene cuts, emit one segment instead of
+    # letting the GMM invent a split. Set False to force the old behaviour.
+    single_scene_guard: bool = True
 
 
 @dataclass
@@ -119,6 +126,7 @@ class SegmentationResult:
     outlier_dropped: int = 0
     gaps_bridged: int = 0
     boundaries_moved: int = 0
+    single_scene: bool = False
     cross_avgs: list[int] = field(default_factory=list)
 
 
@@ -158,9 +166,17 @@ def segment_video(
         valid_excluded = [f for f in excluded_frames if 0 <= f < scores.size]
         excluded_mask[valid_excluded] = True
 
-    # Fit the GMM threshold only on non-excluded frames so a rerun really
-    # searches within the remaining frames.
-    threshold = find_threshold_gmm(scores[~excluded_mask])
+    # A single continuous shot (already-cut clip or otherwise clean video) has
+    # no dead-time to remove; skip the GMM so it is not shredded by an invented
+    # threshold. A threshold above every score keeps the whole span as one
+    # segment, which then flows through the rest of the pipeline unchanged.
+    single_scene = config.single_scene_guard and looks_single_scene(scores[~excluded_mask])
+    if single_scene:
+        threshold = float(scores.max()) + 1.0 if scores.size else 1.0
+    else:
+        # Fit the GMM threshold only on non-excluded frames so a rerun really
+        # searches within the remaining frames.
+        threshold = find_threshold_gmm(scores[~excluded_mask])
     is_low = scores < threshold
     if is_low.size > 0:
         is_low[0] = False
@@ -245,6 +261,7 @@ def segment_video(
         outlier_dropped=outlier_dropped,
         gaps_bridged=gaps_bridged,
         boundaries_moved=boundaries_moved,
+        single_scene=single_scene,
         cross_avgs=cross_avgs,
     )
 
@@ -283,6 +300,8 @@ def parse_args() -> argparse.Namespace:
                         help="disable frame-accurate boundary refinement (kept on by default)")
     parser.add_argument("--bridge-max-gap", dest="bridge_max_gap", type=int, default=DEFAULT_BRIDGE_MAX_GAP,
                         help="merge rallies split by an in-rally blip: bridge cut-free gaps up to this many frames (default 12; 0 disables)")
+    parser.add_argument("--no-single-scene-guard", dest="single_scene_guard", action="store_false",
+                        help="disable the single-shot guard (force GMM split even on a clean/already-cut video)")
     return parser.parse_args()
 
 
@@ -306,6 +325,7 @@ def main() -> None:
         cross_outlier_k=float(args.cross_outlier_k),
         refine_boundaries=bool(args.refine_boundaries),
         bridge_max_gap=int(args.bridge_max_gap),
+        single_scene_guard=bool(args.single_scene_guard),
     )
 
     print("=" * 72)
@@ -331,6 +351,8 @@ def main() -> None:
     print(f"FPS: {result.fps:.3f}")
     print(f"total frames: {result.processed_frames}")
     print(f"duration: {result.duration_sec / 60:.1f} min")
+    if result.single_scene:
+        print("single-scene guard: no scene cuts detected -> emitting one segment")
     print(f"GMM threshold: {result.threshold:.2f}")
     if result.excluded_frame_count:
         print(f"excluded frames: {result.excluded_frame_count}")
