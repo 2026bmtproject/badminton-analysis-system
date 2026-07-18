@@ -318,6 +318,48 @@ def compute_avg_threshold(
     return min_avg, threshold, pct
 
 
+def reject_cross_outliers(
+    segments: list[tuple[int, int]],
+    cross_avgs: list[int],
+    k: float,
+    min_segments: int = 8,
+    max_drop_ratio: float = 0.30,
+) -> tuple[list[tuple[int, int]], list[int]]:
+    """Drop segments whose Cross_Diff_Avg is a large outlier above the median.
+
+    Once the obvious non-match candidates are gone, the surviving segments are
+    overwhelmingly the one repeated match camera, so their cross averages form a
+    tight cluster: across six matches every genuine rally sits within ~1.9x the
+    median, while synthetic replays (Hawkeye "official review" renders and the
+    like) land at ~5x. Anything above ``k`` * median is therefore a scene that
+    merely *resembles* the court but is not live play, and is removed.
+
+    This is deliberately conservative:
+
+    * it needs at least ``min_segments`` segments for the median to be stable;
+    * if more than ``max_drop_ratio`` of segments would be dropped it does
+      nothing, since that means the "median" is not a clean match cluster.
+
+    Returns the kept segments and the indices that were dropped.
+    """
+    n = len(segments)
+    if n < min_segments or not cross_avgs:
+        return segments, []
+
+    median_avg = float(np.median(cross_avgs))
+    if median_avg <= 0:
+        return segments, []
+
+    threshold = median_avg * float(k)
+    dropped = [i for i, avg in enumerate(cross_avgs) if avg > threshold]
+    if len(dropped) > max_drop_ratio * n:
+        return segments, []
+
+    dropped_set = set(dropped)
+    kept = [seg for i, seg in enumerate(segments) if i not in dropped_set]
+    return kept, dropped
+
+
 def filter_segments_by_cross_avg(
     segments: list[tuple[int, int]],
     pairs: list[tuple[int, int]],
