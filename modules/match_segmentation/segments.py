@@ -1,6 +1,6 @@
 """Segment math plus the segments.json contract this stage produces.
 
-The math functions (GMM thresholding, building, merging, filtering) touch
+The math functions (Otsu thresholding, building, merging, filtering) touch
 neither video nor disk, so they are deterministic and cheap to reason about.
 The I/O helpers own the frame->second derivation that turns raw
 ``(start_frame, end_frame)`` pairs into :class:`Segment`-shaped records; the
@@ -94,7 +94,8 @@ def looks_single_scene(
 ) -> bool:
     """True when the video is one continuous shot with no scene cuts.
 
-    The GMM always returns a split, even for a video that has no dead-time to
+    The threshold search always returns a split, even for a video with no
+    dead-time to
     remove (an already-cut rally clip, or an inherently clean recording). On
     such input it invents a threshold inside a single population and shreds the
     clip. This guard catches that case first.
@@ -115,70 +116,68 @@ def looks_single_scene(
     return p99 < ratio_p99 * low and peak < ratio_max * low
 
 
-def find_threshold_gmm(scores: np.ndarray) -> float:
-    """Fit a 2-component GMM in log space and return the split threshold."""
+def find_threshold_otsu3(scores: np.ndarray, nbins: int = 256) -> float:
+    """Lower cut of a 3-class Otsu split on log10(MAD)."""
     if scores.size == 0:
         raise ValueError("scores is empty")
 
-    log_scores = np.log10(np.maximum(scores.astype(float), 1.0))
+    values = scores.astype(float)
+    log_scores = np.log10(np.maximum(values, 1.0))
+    hist, edges = np.histogram(log_scores, bins=nbins)
 
-    m1 = float(np.percentile(log_scores, 25))
-    m2 = float(np.percentile(log_scores, 75))
-    shared_var = float(np.var(log_scores))
-    v1 = max(shared_var, 1e-6)
-    v2 = max(shared_var, 1e-6)
-    w1, w2 = 0.5, 0.5
+    # Fewer than three occupied bins cannot carry three classes; any cut here
+    # would be invented rather than found.
+    if np.count_nonzero(hist) < 3:
+        return float(values.max()) + 1.0
 
-    for _ in range(100):
-        p1 = w1 * np.exp(-0.5 * ((log_scores - m1) ** 2) / v1) / np.sqrt(2.0 * np.pi * v1)
-        p2 = w2 * np.exp(-0.5 * ((log_scores - m2) ** 2) / v2) / np.sqrt(2.0 * np.pi * v2)
-        denom = np.maximum(p1 + p2, 1e-12)
+    p = hist.astype(float) / float(hist.sum())
+    centers = (edges[:-1] + edges[1:]) / 2.0
 
-        r1 = p1 / denom
-        r2 = p2 / denom
+    weight = np.cumsum(p)            # cumulative class weight up to each bin
+    moment = np.cumsum(p * centers)  # cumulative first moment
+    mu_total = moment[-1]
 
-        n1 = max(float(np.sum(r1)), 1e-9)
-        n2 = max(float(np.sum(r2)), 1e-9)
+    best_variance = -1.0
+    best_low_cut = 0
+    j = np.arange(nbins - 1)
+    for i in range(nbins - 2):
+        upper = j[i + 1:]
+        w0 = weight[i]
+        w1 = weight[upper] - weight[i]
+        w2 = 1.0 - weight[upper]
+        valid = (w0 > 0) & (w1 > 0) & (w2 > 0)
+        if not np.any(valid):
+            continue
 
-        m1 = float(np.sum(r1 * log_scores) / n1)
-        m2 = float(np.sum(r2 * log_scores) / n2)
+        m0 = moment[i] / w0
+        m1 = np.where(valid, (moment[upper] - moment[i]) / np.where(w1 > 0, w1, 1.0), 0.0)
+        m2 = np.where(valid, (mu_total - moment[upper]) / np.where(w2 > 0, w2, 1.0), 0.0)
 
-        v1 = max(float(np.sum(r1 * (log_scores - m1) ** 2) / n1), 1e-9)
-        v2 = max(float(np.sum(r2 * (log_scores - m2) ** 2) / n2), 1e-9)
+        variance = (w0 * (m0 - mu_total) ** 2
+                    + w1 * (m1 - mu_total) ** 2
+                    + w2 * (m2 - mu_total) ** 2)
+        variance = np.where(valid, variance, -1.0)
 
-        total = max(float(log_scores.size), 1e-9)
-        w1 = n1 / total
-        w2 = n2 / total
+        best_here = float(np.max(variance))
+        if best_here > best_variance:
+            best_variance = best_here
+            best_low_cut = i
 
-    means = np.array([m1, m2], dtype=float)
-    variances = np.array([v1, v2], dtype=float)
-    weights = np.array([w1, w2], dtype=float)
+    return float(10.0 ** centers[best_low_cut])
 
-    order = np.argsort(means)
-    m1, m2 = means[order]
-    v1, v2 = variances[order]
-    w1, w2 = weights[order]
 
-    v1 = max(float(v1), 1e-12)
-    v2 = max(float(v2), 1e-12)
-
-    s1 = np.sqrt(v1)
-    s2 = np.sqrt(v2)
-
-    a = 1.0 / (2.0 * v1) - 1.0 / (2.0 * v2)
-    b = m2 / v2 - m1 / v1
-    c = (m1**2) / (2.0 * v1) - (m2**2) / (2.0 * v2) + np.log((s2 * w1) / (s1 * w2))
-
-    roots = np.roots([a, b, c])
-    real_roots = np.real(roots[np.isreal(roots)])
-    between = real_roots[(real_roots > m1) & (real_roots < m2)]
-
-    if between.size > 0:
-        thresh_log = float(between[0])
-    else:
-        thresh_log = float((m1 + m2) / 2.0)
-
-    return float(10.0**thresh_log)
+def threshold_near_distribution_edge(
+    scores: np.ndarray,
+    threshold: float,
+    low_pct: float = 5.0,
+    high_pct: float = 95.0,
+) -> bool:
+    """True when the split sits in the tail rather than between two populations."""
+    if scores.size == 0:
+        return False
+    low = float(np.percentile(scores, low_pct))
+    high = float(np.percentile(scores, high_pct))
+    return threshold < low or threshold > high
 
 
 def build_segments_from_mask(is_low: np.ndarray) -> list[tuple[int, int]]:

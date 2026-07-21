@@ -21,8 +21,10 @@ from modules.match_segmentation.segments import (
     SEGMENT_FIELDS,
     build_segment_records,
     build_segments_from_mask,
+    find_threshold_otsu3,
     looks_single_scene,
     reject_cross_outliers,
+    threshold_near_distribution_edge,
     write_segments,
 )
 
@@ -159,3 +161,73 @@ def test_single_scene_false_when_scene_cuts_present():
 
 def test_single_scene_empty_is_false():
     assert looks_single_scene(np.array([], dtype=float)) is False
+
+
+# ── find_threshold_otsu3 ─────────────────────────────────────────────────────
+def _broadcast_scores() -> np.ndarray:
+    """The three masses a real broadcast produces, in their measured ratios."""
+    rng = np.random.default_rng(7)
+    still = rng.normal(1.0, 0.3, size=3500)
+    rally = rng.normal(6.0, 2.0, size=5500)
+    cuts = rng.normal(45.0, 12.0, size=1000)
+    return np.clip(np.concatenate([still, rally, cuts]), 0.0, None)
+
+
+def test_otsu3_threshold_lands_between_still_and_rally():
+    threshold = find_threshold_otsu3(_broadcast_scores())
+    assert 1.5 < threshold < 6.0
+
+
+def test_otsu3_cuts_lower_than_a_2class_split_would():
+    """The property the switch to three classes buys."""
+    scores = _broadcast_scores()
+    log_scores = np.log10(np.maximum(scores, 1.0))
+    hist, edges = np.histogram(log_scores, bins=256)
+    p = hist.astype(float) / hist.sum()
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    omega = np.cumsum(p)
+    mu = np.cumsum(p * centers)
+    denom = np.where(omega * (1.0 - omega) > 0, omega * (1.0 - omega), 1e-12)
+    two_class = float(10.0 ** centers[int(np.argmax((mu[-1] * omega - mu) ** 2 / denom))])
+
+    assert find_threshold_otsu3(scores) < two_class
+
+
+def test_otsu3_threshold_is_insensitive_to_bin_count():
+    """No knob that swings the answer."""
+    scores = _broadcast_scores()
+    thresholds = [find_threshold_otsu3(scores, nbins=n) for n in (64, 256, 1024)]
+    assert max(thresholds) - min(thresholds) < 1.0
+
+
+def test_otsu3_empty_scores_raises():
+    with pytest.raises(ValueError):
+        find_threshold_otsu3(np.array([], dtype=float))
+
+
+def test_otsu3_constant_scores_keep_everything_low():
+    """One population = no split to make; everything must stay low motion."""
+    scores = np.full(500, 7.0)
+    threshold = find_threshold_otsu3(scores)
+    assert threshold > scores.max()
+    assert bool(np.all(scores < threshold))
+
+
+def test_otsu3_single_frame_keeps_everything_low():
+    threshold = find_threshold_otsu3(np.array([4.0]))
+    assert threshold > 4.0
+
+
+# ── threshold_near_distribution_edge ─────────────────────────────────────────
+def test_threshold_in_the_body_is_not_flagged():
+    assert threshold_near_distribution_edge(_broadcast_scores(), 10.0) is False
+
+
+def test_threshold_out_in_the_tail_is_flagged():
+    scores = _broadcast_scores()
+    assert threshold_near_distribution_edge(scores, 0.1) is True
+    assert threshold_near_distribution_edge(scores, 999.0) is True
+
+
+def test_threshold_edge_check_empty_is_false():
+    assert threshold_near_distribution_edge(np.array([], dtype=float), 3.0) is False
