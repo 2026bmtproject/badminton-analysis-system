@@ -3,8 +3,8 @@
 Pipeline:
     1) per-frame FrameDiff(MAD)
     1b) single-scene guard: if there are no scene cuts, keep the whole video as
-        one segment instead of letting the GMM invent a split
-    2) GMM auto-threshold -> low-motion mask
+        one segment instead of letting the threshold invent a split
+    2) Otsu auto-threshold -> low-motion mask
     3) contiguous low-motion frames -> segments, merge close ones
     4) drop too-short segments
     5) two representative frames per segment, cross-segment MAD
@@ -49,12 +49,13 @@ from modules.match_segmentation.segments import (
     compute_avg_threshold,
     filter_segments_by_cross_avg,
     filter_short_segments,
-    find_threshold_gmm,
+    find_threshold_otsu3,
     load_excluded_frames,
     looks_single_scene,
     merge_close_segments,
     merge_segments_by_gap,
     reject_cross_outliers,
+    threshold_near_distribution_edge,
     write_segments,
 )
 
@@ -98,7 +99,7 @@ class SegmentationConfig:
     bridge_max_gap: int = DEFAULT_BRIDGE_MAX_GAP
     # Guard against shredding an already-clean / single-shot video: when the
     # motion distribution shows no scene cuts, emit one segment instead of
-    # letting the GMM invent a split. Set False to force the old behaviour.
+    # letting the threshold invent a split. Set False to force the old behaviour.
     single_scene_guard: bool = True
 
 
@@ -167,16 +168,21 @@ def segment_video(
         excluded_mask[valid_excluded] = True
 
     # A single continuous shot (already-cut clip or otherwise clean video) has
-    # no dead-time to remove; skip the GMM so it is not shredded by an invented
-    # threshold. A threshold above every score keeps the whole span as one
-    # segment, which then flows through the rest of the pipeline unchanged.
+    # no dead-time to remove; skip the split so it is not shredded by an
+    # invented threshold. A threshold above every score keeps the whole span as
+    # one segment, which then flows through the rest of the pipeline unchanged.
     single_scene = config.single_scene_guard and looks_single_scene(scores[~excluded_mask])
     if single_scene:
         threshold = float(scores.max()) + 1.0 if scores.size else 1.0
     else:
-        # Fit the GMM threshold only on non-excluded frames so a rerun really
+        # Pick the threshold from non-excluded frames only, so a rerun really
         # searches within the remaining frames.
-        threshold = find_threshold_gmm(scores[~excluded_mask])
+        kept_scores = scores[~excluded_mask]
+        threshold = find_threshold_otsu3(kept_scores)
+        if threshold_near_distribution_edge(kept_scores, threshold):
+            print(f"  [warn] threshold {threshold:.2f} sits in the tail of the score")
+            print("         distribution -- this video may not have the two motion")
+            print("         regimes (rally vs. cuts/replays) this stage assumes.")
     is_low = scores < threshold
     if is_low.size > 0:
         is_low[0] = False
@@ -276,7 +282,7 @@ def pick_default_video() -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="FrameDiff(MAD) + GMM + per-segment 2-frame cross comparison",
+        description="FrameDiff(MAD) + Otsu + per-segment 2-frame cross comparison",
     )
     parser.add_argument("video_path", nargs="?", default=None, help="input video path (default: first *.mp4 here)")
     parser.add_argument("output_json", nargs="?", default=None, help="output JSON path (default <name>_segments.json)")
@@ -301,7 +307,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bridge-max-gap", dest="bridge_max_gap", type=int, default=DEFAULT_BRIDGE_MAX_GAP,
                         help="merge rallies split by an in-rally blip: bridge cut-free gaps up to this many frames (default 12; 0 disables)")
     parser.add_argument("--no-single-scene-guard", dest="single_scene_guard", action="store_false",
-                        help="disable the single-shot guard (force GMM split even on a clean/already-cut video)")
+                        help="disable the single-shot guard (force a split even on a clean/already-cut video)")
     return parser.parse_args()
 
 
@@ -329,7 +335,7 @@ def main() -> None:
     )
 
     print("=" * 72)
-    print("match_segmentation: FrameDiff(MAD) + GMM + cross-segment filtering")
+    print("match_segmentation: FrameDiff(MAD) + Otsu + cross-segment filtering")
     print("=" * 72)
     print(f"video:  {video_path}")
     print(f"output: {output_json}")
@@ -353,7 +359,7 @@ def main() -> None:
     print(f"duration: {result.duration_sec / 60:.1f} min")
     if result.single_scene:
         print("single-scene guard: no scene cuts detected -> emitting one segment")
-    print(f"GMM threshold: {result.threshold:.2f}")
+    print(f"Otsu threshold: {result.threshold:.2f}")
     if result.excluded_frame_count:
         print(f"excluded frames: {result.excluded_frame_count}")
     print(f"below threshold: {result.low_frames} ({result.low_frames / max(result.total_scored, 1) * 100:.1f}%)")
