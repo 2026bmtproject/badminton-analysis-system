@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 
 from modules.common.progress import SmoothProgress
-from modules.match_segmentation.segments import round_to_int
 
 DEFAULT_FPS = 30.0
 
@@ -70,7 +69,7 @@ def compute_frame_diff(
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             diff = cv2.absdiff(prev_gray, gray)
-            score = round_to_int(float(np.mean(diff)))
+            score = float(np.mean(diff))
             prev_gray = gray
 
             # Fill every skipped frame in this interval with the same score.
