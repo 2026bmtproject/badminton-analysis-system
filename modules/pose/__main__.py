@@ -137,10 +137,8 @@ def _write_overlays(module: PoseModule, match_path: Path, out_dir: Path, count: 
     # mid-rally is where players are actually moving (and lunging), unlike the edges.
     step = max(1, len(segments) // count)
     sampled = list(range(0, len(segments), step))[:count]
-    loaded = {
-        i: detection_cache.load_segment(detection_cache.segment_file(match_path, i))
-        for i in sampled
-    }
+    entries = module.cache(match_path, video, image_to_court).plan(segments).entries
+    loaded = {i: detection_cache.load_segment(entries[i].path) for i in sampled}
     # The umpire is in nearly every frame, so the anchor pass finds it even from this
     # spread of sampled segments — enough for the overlay to mirror the real selection.
     anchors = build_static_anchors(

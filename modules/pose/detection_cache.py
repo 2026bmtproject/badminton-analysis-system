@@ -1,114 +1,103 @@
-"""The pose cache: ``cache/pose/seg{NNNN}.npz`` plus a ``meta.json``.
+"""The pose cache: one file per rally segment under ``cache/pose/``.
 
 Same bargain as ``shuttle_tracking``'s heatmap cache, for the same reasons. The GPU
 pass (detect + pose every frame of every rally) is the expensive part; picking the two
-players out of the result is milliseconds. Caching every *candidate* — everyone who
-could conceivably be on the court, not just the two who were chosen — means the
-selection heuristics and their margins can be retuned and re-run against an existing
-cache without touching the GPU, and an interrupted run resumes at the segment it
-stopped on.
+players out of the result is milliseconds.
+
+Caching every *candidate* — everyone who could conceivably be on the court, not just the
+two who were chosen — means the selection heuristics and their margins can be retuned and
+re-run against an existing cache without touching the GPU, and an interrupted run resumes
+at the segment it stopped on.
+
+Only people inside the candidate band get a skeleton, because RTMPose is charged per
+person and a broadcast frame is mostly crowd: the detector finds 8-23 people per frame
+against the 2-4 near the court, so posing everyone costs several times as much for
+skeletons nobody reads. The band is a *court* filter, which is what
+:func:`build_params`'s ``candidate_margins`` records — searching wider at selection time
+than what was posed would quietly scan a region containing people who have no skeleton,
+and rebuilds instead. The homography itself is deliberately *not* part of the key; see
+``court`` in the notes below.
 
 Detections are ragged: a frame holds however many people were visible, from zero to a
 dozen. Rather than pay for an object array, each segment's frames are concatenated and
 a per-frame ``counts`` row says how to cut them apart again — so everything stays a
 dense numeric array that npz can compress.
 
-``meta.json`` pins what the detections are a function of (both models, the pose input
-size, the source video, the segment boundaries). Any mismatch rebuilds the cache, so
-swapping to a bigger RTMPose or re-cutting the segments can never leave stale
-skeletons behind.
+What the detections *are* a function of (both models, the pose input size, the
+pre-filters, the source video, the segment's own frame range) is hashed into each
+file's name by :mod:`modules.common.segment_cache`, so re-cutting one rally
+invalidates that rally and nothing else.
 """
 
 from __future__ import annotations
 
-import json
-import shutil
+import hashlib
 from pathlib import Path
 
 import numpy as np
 
+from modules.common.segment_cache import SegmentCache, atomic_savez, canonical
 from modules.contracts import cache_path
 from modules.pose.estimator import DET_MODEL, NUM_KEYPOINTS, POSE_MODELS
 
 CACHE_SUBDIR = "pose"
-META_FILENAME = "meta.json"
 
 
 def pose_dir(match_path: str | Path) -> Path:
-    """``matches/{match}/cache/pose`` — where the per-segment npz files live."""
+    """``matches/{match}/cache/pose`` — where the per-segment files live."""
     return Path(cache_path(match_path)) / CACHE_SUBDIR
 
 
-def segment_file(match_path: str | Path, segment_index: int) -> Path:
-    return pose_dir(match_path) / f"seg{segment_index:04d}.npz"
-
-
-def build_meta(
+def build_params(
     *,
     pose_mode: str,
     person_min_area: float,
     candidate_margins: tuple[float, float],
     video: str | Path,
-    segments: list[dict],
 ) -> dict:
-    """Describe the inputs a cached detection set is a function of.
+    """The global inputs a cached detection set is a function of.
 
     The models are identified by their URLs: they are immutable published artifacts, so
     the URL pins the weights as firmly as a hash would, without downloading anything to
     decide whether the cache is valid.
 
-    ``candidate_margins`` is here because the pre-filter runs *before* pose and so
-    decides who is in the cache at all. This is what keeps re-selection honest: widening
-    the selection margins past the band that was cached would otherwise silently search
-    a region containing people who were never posed, and instead rebuilds the cache.
-    Tuning *within* the cached band — the usual case — still costs nothing.
+    Both filters run *before* pose estimation, so they change who is in the cache.
+    ``candidate_margins`` is what keeps re-selection honest: widening the selection
+    margins past the band that was cached would otherwise silently search a region
+    containing people who were never posed, and instead rebuilds the cache. Tuning
+    *within* the cached band — the usual case — still costs nothing.
     """
     pose_url, pose_input = POSE_MODELS[pose_mode]
     return {
         "pose_model": pose_url,
         "pose_input": list(pose_input),
         "det_model": DET_MODEL,
-        # Both filters happen before pose estimation, so they change what is cached.
         "person_min_area": float(person_min_area),
         "candidate_margins": [float(m) for m in candidate_margins],
         "video": Path(video).name,
-        "segments": [[int(s["start_frame"]), int(s["end_frame"])] for s in segments],
     }
 
 
-def read_meta(match_path: str | Path) -> dict | None:
-    path = pose_dir(match_path) / META_FILENAME
-    if not path.is_file():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return None  # unreadable meta == no usable cache
+def court_fingerprint(image_to_court) -> str:
+    """A short hash of the homography the candidate band was measured against."""
+    rounded = [[round(float(v), 6) for v in row] for row in np.asarray(image_to_court)]
+    return hashlib.sha256(canonical(rounded).encode("utf-8")).hexdigest()[:16]
 
 
-def write_meta(match_path: str | Path, meta: dict) -> None:
-    directory = pose_dir(match_path)
-    directory.mkdir(parents=True, exist_ok=True)
-    with (directory / META_FILENAME).open("w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+def open_cache(match_path: str | Path, params: dict, court: str | None = None) -> SegmentCache:
+    """Open the cache. ``court`` is recorded as a *note*, not as part of the key.
 
-
-def prepare(match_path: str | Path, meta: dict, force: bool = False) -> bool:
-    """Ready the cache dir for ``meta``; wipe it if what is there does not match.
-
-    Returns True when an existing, matching cache was kept (its npz files are
-    reusable), False when the directory was (re)created empty.
+    The homography does decide who passed the candidate band, so strictly it belongs in
+    the key — but putting it there means every re-fit of the court throws away the whole
+    GPU pass, which is the single most expensive thing this project does. The band is
+    deliberately far wider than the selection it feeds, so a re-clicked court almost
+    never changes who is in it. Recording it as a note lets the stage *say* the court
+    moved and leave the choice (``--refresh-cache``) to the user.
     """
-    directory = pose_dir(match_path)
-    if not force and read_meta(match_path) == meta:
-        return True
-
-    if directory.exists():
-        shutil.rmtree(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    write_meta(match_path, meta)
-    return False
+    return SegmentCache(
+        pose_dir(match_path), params, suffix=".npz",
+        notes={"court": court} if court is not None else None,
+    )
 
 
 def save_segment(path: str | Path, detections: list[dict]) -> None:
@@ -121,10 +110,8 @@ def save_segment(path: str | Path, detections: list[dict]) -> None:
             return np.zeros((0, *shape), np.float32)
         return np.concatenate(parts, axis=0).astype(np.float32)
 
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        target,
+    atomic_savez(
+        path,
         counts=counts,
         kps=stack("kps", (NUM_KEYPOINTS, 2)),
         scores=stack("scores", (NUM_KEYPOINTS,)),

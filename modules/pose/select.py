@@ -262,7 +262,8 @@ def build_static_anchors(
     px). :class:`PlayerTracker` refuses any candidate within ``anchor_radius`` of one.
 
     Self-calibrating per match and camera. Pass the same detections the selection will
-    run on (the cache is exactly this).
+    run on (the cache is exactly this) — they are already inside the candidate band, so
+    the crowd never reaches the occupancy histogram.
     """
     config = config or SelectConfig()
     grid = config.anchor_grid

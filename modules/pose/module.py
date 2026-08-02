@@ -84,6 +84,21 @@ class PoseModule(BaseModule):
     def get_output_path(self, match_path) -> Path:
         return artifact_path(match_path, self.name)
 
+    def cache(self, match_path: Path, video: Path, image_to_court=None):
+        return detection_cache.open_cache(
+            match_path,
+            detection_cache.build_params(
+                pose_mode=self.config.pose_mode,
+                person_min_area=self.config.person_min_area,
+                candidate_margins=candidate_margins(self.config.select),
+                video=video,
+            ),
+            court=(
+                None if image_to_court is None
+                else detection_cache.court_fingerprint(image_to_court)
+            ),
+        )
+
     # ---------------------------------------------------------------- phase 1
     def build_detections(
         self,
@@ -94,20 +109,22 @@ class PoseModule(BaseModule):
         on_progress: ProgressFn | None = None,
     ) -> None:
         """Fill the detection cache, skipping segments that are already cached."""
-        meta = detection_cache.build_meta(
-            pose_mode=self.config.pose_mode,
-            person_min_area=self.config.person_min_area,
-            candidate_margins=candidate_margins(self.config.select),
-            video=video,
-            segments=segments,
-        )
-        detection_cache.prepare(match_path, meta, force=self.config.refresh_cache)
+        cache = self.cache(match_path, video, image_to_court)
+        adopted = cache.migrate_legacy(segments)
+        if adopted:
+            print(f"  pose:     adopted {adopted} segment(s) from the pre-manifest cache")
+        if cache.stale_notes():
+            # Plain ASCII: the one message that explains a silently-narrow cache.
+            print("  [warn] the court has changed since these detections were cached.")
+            print("         People just outside the old candidate band were never posed,")
+            print("         so a court that moved a lot wants --refresh-cache. A re-click")
+            print("         of the same corners does not: the band is far wider than the")
+            print("         selection inside it.")
 
-        pending = [
-            i for i in range(len(segments))
-            if not detection_cache.segment_file(match_path, i).is_file()
-        ]
+        plan = cache.plan(segments, force=self.config.refresh_cache)
+        pending = plan.missing
         if not pending:
+            cache.commit(plan)
             if on_progress:
                 on_progress(1.0)
             return
@@ -124,32 +141,27 @@ class PoseModule(BaseModule):
         print(f"  device:   {estimator.device}")
         print(f"  RTMPose:  {self.config.pose_mode} + YOLOX person detector")
         print(f"  frames:   {len(pending)} segment(s) to compute, "
-              f"{len(segments) - len(pending)} cached")
+              f"{len(plan.hits)} cached")
 
         # Only people who could conceivably be players get a skeleton; the crowd is
         # discarded between the two models. See select.candidate_mask.
         def keep(bboxes: np.ndarray) -> np.ndarray:
             return candidate_mask(bboxes, image_to_court, self.config.select)
 
-        total_frames = sum(
-            int(segments[i]["end_frame"]) - int(segments[i]["start_frame"]) + 1
-            for i in pending
-        )
+        total_frames = sum(e.end_frame - e.start_frame + 1 for e in pending)
         done_frames = 0
-        for index in pending:
-            segment = segments[index]
+        for entry in pending:
             detections = []
             for _, frame in iter_segment_frames(
-                str(video), int(segment["start_frame"]), int(segment["end_frame"])
+                str(video), entry.start_frame, entry.end_frame
             ):
                 detections.append(estimator(frame, keep=keep))
                 done_frames += 1
                 if on_progress and done_frames % 32 == 0:
                     on_progress(done_frames / total_frames)
-            detection_cache.save_segment(
-                detection_cache.segment_file(match_path, index), detections
-            )
-            print(f"    seg{index:04d}: {len(detections)} frames")
+            detection_cache.save_segment(entry.path, detections)
+            print(f"    {entry.label}: {len(detections)} frames")
+        cache.commit(plan)
         if on_progress:
             on_progress(1.0)
 
@@ -157,6 +169,7 @@ class PoseModule(BaseModule):
     def build_frames(
         self,
         match_path: Path,
+        video: Path,
         segments: list[dict],
         image_to_court: np.ndarray,
         on_progress: ProgressFn | None = None,
@@ -169,11 +182,10 @@ class PoseModule(BaseModule):
         # never moving) from a player, and the selection loop then reuses the same
         # detections. See select.build_static_anchors.
         per_segment: list[list[dict]] = []
-        for index in range(len(segments)):
-            path = detection_cache.segment_file(match_path, index)
-            if not path.is_file():
-                raise RuntimeError(f"pose cache is missing seg{index:04d}: {path}")
-            per_segment.append(detection_cache.load_segment(path))
+        for entry in self.cache(match_path, video, image_to_court).plan(segments).entries:
+            if not entry.cached:
+                raise RuntimeError(f"pose cache is missing {entry.label}: {entry.path}")
+            per_segment.append(detection_cache.load_segment(entry.path))
 
         anchors = build_static_anchors(
             (det for detections in per_segment for det in detections),
@@ -231,7 +243,7 @@ class PoseModule(BaseModule):
             return StageResult(detection_cache.pose_dir(match_path), pending=True)
 
         records = self.build_frames(
-            match_path, segments, image_to_court,
+            match_path, video, segments, image_to_court,
             on_progress=(lambda f: on_progress(0.95 + 0.05 * f)) if on_progress else None,
         )
         found = sum(r.keypoints is not None for r in records)
