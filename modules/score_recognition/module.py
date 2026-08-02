@@ -13,6 +13,7 @@ from modules.score_recognition.recognizer import (
     ScoreRecognitionConfig,
     recognize_scores,
 )
+from modules.score_recognition.score_cache import ScoreCache
 
 
 class ScoreRecognitionModule(BaseModule):
@@ -75,6 +76,11 @@ class ScoreRecognitionModule(BaseModule):
             self.config,
             on_progress=on_progress,
             fps=fps,
+            # Keyed on the video actually read, not the source: a different downscale is
+            # a different image, and Gemini is being shown the image.
+            cache=ScoreCache.open(
+                match_path, config=self.config, video=downscaled_video
+            ),
         )
         try:
             meta["downscaled_video"] = str(downscaled_video.relative_to(match_path))

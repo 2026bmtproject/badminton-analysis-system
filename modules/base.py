@@ -31,6 +31,13 @@ class StageState:
     Stored at stages/{name}/status.json.
     Paths are always saved as strings relative to match_path for
     portability; resolve them back to absolute paths when reading.
+
+    ``inputs`` records a fingerprint of each dependency's artifact as it was when this
+    stage last succeeded, which is how the runner can tell a completed stage from an
+    *up-to-date* one — see :func:`artifact_fingerprint` and ``modules.runner.is_stale``.
+    A state written before this field existed has ``None``, which means "unknown", not
+    "unchanged": the runner says so and leaves the stage alone rather than re-running a
+    match somebody already paid for.
     """
 
     name: str
@@ -40,6 +47,7 @@ class StageState:
     output_path: str | None = None     # main output file, relative to match_path
     error: str | None = None           # error message when status == FAILED
     updated_at: str | None = None      # when this file was last written
+    inputs: dict[str, str] | None = None   # dependency name -> artifact fingerprint
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -56,6 +64,7 @@ class StageState:
             output_path=d.get("output_path"),
             error=d.get("error"),
             updated_at=d.get("updated_at"),
+            inputs=d.get("inputs"),
         )
 
 
@@ -78,6 +87,32 @@ def read_status(stage_path: Path) -> StageState | None:
         return None
     with path.open("r", encoding="utf-8") as f:
         return StageState.from_dict(json.load(f))
+
+
+def artifact_fingerprint(match_path: Path, stage: str) -> str | None:
+    """Content hash of ``stage``'s artifact, or None if it is not there.
+
+    Content, not mtime: re-running a stage that lands on the same answer must not look
+    like a change, or every downstream stage would rebuild for nothing.
+    """
+    import hashlib
+
+    from modules.contracts import artifact_path
+
+    path = artifact_path(match_path, stage)
+    if not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:16]
+
+
+def current_inputs(match_path: Path, dependencies: list[str]) -> dict[str, str]:
+    """Fingerprints of every dependency artifact that exists right now."""
+    found = {d: artifact_fingerprint(Path(match_path), d) for d in dependencies}
+    return {d: f for d, f in found.items() if f is not None}
 
 
 def write_status(stage_path: Path, state: StageState) -> None:
@@ -145,6 +180,9 @@ class BaseModule:
         else:
             state.status = StageStatus.COMPLETED
             state.output_path = str(result.path.relative_to(match_path))
+            state.inputs = current_inputs(
+                match_path, [*self.dependencies, *self.optional_dependencies]
+            )
         write_status(out_dir, state)
         if not result.pending and on_progress:
             on_progress(1.0)

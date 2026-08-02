@@ -22,15 +22,23 @@ import json
 import numpy as np
 import pytest
 
-from modules.artifacts import read_artifact, write_artifact
+from modules.artifacts import read_artifact, read_records, write_artifact
 from modules.base import StageStatus, StageState, write_status
 from modules.common.bst import adapter
 from modules.common.bst.classes import N_CLASSES, STROKE_CLASSES, UNKNOWN_INDEX
-from modules.contracts import COCO_KEYPOINTS, PIPELINE, pipeline_order, stage_path
+from modules.contracts import (
+    COCO_KEYPOINTS,
+    PIPELINE,
+    artifact_path,
+    pipeline_order,
+    stage_path,
+)
 from modules.event_detection import dense_cache
 from modules.event_detection.complete import complete_segment
 from modules.event_detection.config import EventDetectionConfig
 from modules.event_detection.evidence import Dense
+from modules.common.bst.features import SegmentFeatures
+from modules.event_detection import module as module_under_test
 from modules.event_detection.module import EventDetectionModule, scan_windows
 from modules.event_detection.prune import dead_segments, prune_segment, rally_span
 from modules.event_detection.sides import SideOf, skeletons_by_segment
@@ -386,10 +394,7 @@ def match(tmp_path):
     checkpoint.write_bytes(b"not a real checkpoint")
 
     segments = [{"start_frame": start, "end_frame": start + n_frames - 1}]
-    meta = dense_cache.build_meta(
-        checkpoint=checkpoint, half=12, shuttle_method="inpaint", segments=segments
-    )
-    dense_cache.prepare(tmp_path, meta)
+    cache = _dense_cache(tmp_path, checkpoint)
     probabilities = probabilities_with(
         n_frames,
         [(0, 14, SERVE_BOTTOM)] + [
@@ -397,8 +402,19 @@ def match(tmp_path):
             for f in range(39, 200, 40)
         ],
     )
-    dense_cache.save_segment(dense_cache.segment_file(tmp_path, 0), probabilities, start)
+    plan = cache.plan(segments, dense_cache.upstream_digests(tmp_path, segments, "inpaint"))
+    dense_cache.save_segment(plan.entries[0].path, probabilities, start)
+    cache.commit(plan)
     return tmp_path, checkpoint, start
+
+
+def _dense_cache(match_path, checkpoint, half=12, shuttle_method="inpaint"):
+    return dense_cache.open_cache(
+        match_path,
+        dense_cache.build_params(
+            checkpoint=checkpoint, half=half, shuttle_method=shuttle_method
+        ),
+    )
 
 
 def test_stage_writes_absolute_frames_and_nothing_else(match):
@@ -430,7 +446,9 @@ def test_offset_is_applied_once_and_clamped(match):
     module = EventDetectionModule(config)
 
     segments, fps = adapter.read_segments(tmp_path)
-    results = module.detect(tmp_path, segments, None)
+    results = module.detect(
+        tmp_path, segments, None, fps, module.upstream(tmp_path, segments)
+    )
     raw = sorted(results[0].hits)
 
     output = module.run(tmp_path)
@@ -462,14 +480,100 @@ def test_stale_cache_is_rebuilt_not_reused(match):
     other.write_bytes(b"a different checkpoint entirely")
 
     segments = [{"start_frame": 1000, "end_frame": 1239}]
-    meta = dense_cache.build_meta(
-        checkpoint=other, half=12, shuttle_method="inpaint", segments=segments
-    )
-    assert dense_cache.prepare(tmp_path, meta) is False        # wiped
-    assert not dense_cache.segment_file(tmp_path, 0).is_file()
+    upstream = dense_cache.upstream_digests(tmp_path, segments, "inpaint")
 
+    assert _dense_cache(tmp_path, other).plan(segments, upstream).missing
     # ... and an unchanged one is kept, or every tuning run would pay for the GPU again.
-    assert dense_cache.prepare(tmp_path, meta) is True
+    assert not _dense_cache(tmp_path, checkpoint).plan(segments, upstream).missing
+
+
+def test_the_scan_computes_only_the_missing_segments(match, monkeypatch):
+    """Walks the compute path with the model stubbed out.
+
+    Every other test here pre-seeds the cache, so ``pending`` is always empty and the
+    branch that loads BST and writes entries never runs — which is how a NameError in it
+    reached a real pipeline run. This exercises it.
+    """
+    tmp_path, checkpoint, start = match
+    module = EventDetectionModule(EventDetectionConfig(bst_checkpoint=str(checkpoint)))
+    segments, fps = adapter.read_segments(tmp_path)
+    upstream = module.upstream(tmp_path, segments)
+
+    cache = module.cache(fps, tmp_path)
+    for entry in cache.plan(segments, upstream).entries:
+        entry.path.unlink()                       # force the scan to actually run
+
+    features = SegmentFeatures(
+        joints=np.zeros((240, 2, len(COCO_KEYPOINTS), 2), np.float32),
+        positions=np.zeros((240, 2, 2), np.float32),
+        shuttle=np.zeros((240, 2), np.float32),
+        start_frame=start,
+    )
+    loaded, scanned = [], []
+    monkeypatch.setattr(adapter, "load_segment_features", lambda *a, **k: [features])
+    monkeypatch.setattr(
+        module_under_test, "load_bst_model",
+        lambda weight, device=None: loaded.append(weight) or "model",
+    )
+    monkeypatch.setattr(
+        module_under_test, "predict_windows",
+        lambda *a, **k: scanned.append(1) or np.full((240, N_CLASSES), 1 / N_CLASSES, np.float32),
+    )
+
+    module.build_dense_scan(tmp_path, segments, fps, upstream)
+
+    assert loaded == [checkpoint], "the configured checkpoint must reach the loader"
+    assert len(scanned) == 1
+    assert not cache.plan(segments, upstream).missing, "the entry must be written"
+
+
+def test_a_changed_trajectory_invalidates_only_its_own_segment(match):
+    """The dependency the old meta.json never recorded: what the scan actually reads.
+
+    Re-running shuttle_tracking used to leave this cache untouched, so BST kept reading
+    one trajectory while the detector read another. Now it is keyed per segment, so a
+    change to one rally costs one rally.
+    """
+    tmp_path, checkpoint, start = match
+    segments = [
+        {"start_frame": start, "end_frame": start + 119},
+        {"start_frame": start + 120, "end_frame": start + 239},
+    ]
+    cache = _dense_cache(tmp_path, checkpoint)
+    before = dense_cache.upstream_digests(tmp_path, segments, "inpaint")
+    for entry in cache.plan(segments, before).entries:
+        dense_cache.save_segment(entry.path, np.zeros((120, 25), np.float32), entry.start_frame)
+
+    points = read_records(PIPELINE["shuttle_tracking"], artifact_path(tmp_path, "shuttle_tracking"))
+    for point in points:
+        if point["method"] == "inpaint" and point["frame"] > start + 150:
+            point["x"] = (point["x"] or 0.0) + 3.0
+    write_artifact(
+        PIPELINE["shuttle_tracking"], points,
+        artifact_path(tmp_path, "shuttle_tracking"),
+    )
+
+    after = dense_cache.upstream_digests(tmp_path, segments, "inpaint")
+    plan = cache.plan(segments, after)
+
+    assert [e.index for e in plan.missing] == [1]
+
+
+def test_the_segment_index_upstream_is_not_what_identifies_the_data(match):
+    """Inserting a rally renumbers every later one; that must not invalidate them."""
+    tmp_path, _, start = match
+    segments = [{"start_frame": start, "end_frame": start + 239}]
+    before = dense_cache.upstream_digests(tmp_path, segments, "inpaint")
+
+    points = read_records(PIPELINE["shuttle_tracking"], artifact_path(tmp_path, "shuttle_tracking"))
+    for point in points:
+        point["segment_index"] = 7            # what an upstream insert would do
+    write_artifact(
+        PIPELINE["shuttle_tracking"], points,
+        artifact_path(tmp_path, "shuttle_tracking"),
+    )
+
+    assert dense_cache.upstream_digests(tmp_path, segments, "inpaint") == before
 
 
 # --------------------------------------------------------------------------- #

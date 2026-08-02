@@ -6,6 +6,18 @@ Behaviour (as required):
   * before running a stage, verify it is ready (deps done, inputs present);
   * stop at the first failure — later stages are not attempted.
 
+**A completed stage is re-run when its inputs have moved under it.** ``status.json``
+records a fingerprint of each dependency's artifact as it stood when the stage last
+succeeded (see ``modules.base.current_inputs``); if one no longer matches, the stage is
+*stale* and completing it once is not enough. This is only affordable because the caches
+underneath are keyed per segment: re-cutting one rally makes every downstream stage
+stale, and each of them then recomputes that one rally rather than the match.
+
+A ``status.json`` written before that field existed says nothing about its inputs. That
+is reported as unknown and left alone — the alternative is re-running matches somebody
+has already paid GPU hours and Gemini calls for, on no evidence. Pass ``--strict-stale``
+to treat unknown as stale instead.
+
 Usage::
 
     uv run python -m modules.runner matches/MK_vs_CT_2019
@@ -17,7 +29,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from modules.base import BaseModule, StageStatus, read_status
+from modules.base import BaseModule, StageStatus, current_inputs, read_status
 from modules.contracts import stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.event_detection import EventDetectionModule
@@ -51,10 +63,27 @@ def _status_of(match_path: Path, name: str) -> StageStatus | None:
     return state.status if state else None
 
 
+def stale_inputs(match_path: Path, module: BaseModule) -> list[str] | None:
+    """Dependencies whose artifact has changed since ``module`` last succeeded.
+
+    ``None`` means the question cannot be answered: the stage predates input tracking.
+    An empty list means everything it read is still what it read.
+    """
+    state = read_status(stage_path(match_path, module.name))
+    if state is None or state.inputs is None:
+        return None
+    current = current_inputs(
+        match_path, [*module.dependencies, *module.optional_dependencies]
+    )
+    names = set(state.inputs) | set(current)
+    return sorted(n for n in names if state.inputs.get(n) != current.get(n))
+
+
 def run_pipeline(
     match_path: str | Path,
     modules: dict[str, BaseModule] | None = None,
     force: bool = False,
+    strict_stale: bool = False,
 ) -> bool:
     """Run every registered stage in dependency order.
 
@@ -80,8 +109,21 @@ def run_pipeline(
         module = modules[name]
 
         if not force and _status_of(match_path, name) == StageStatus.COMPLETED:
-            print(f"[skip] {name}: already completed")
-            continue
+            stale = stale_inputs(match_path, module)
+            if stale is None:
+                if not strict_stale:
+                    # Plain ASCII: a legacy-console code page mangles anything else, and
+                    # this line is how a user finds out why nothing rebuilt.
+                    print(f"[skip] {name}: already completed (inputs not tracked - run "
+                          f"with --strict-stale to rebuild anyway)")
+                    continue
+                reason = "its inputs were never recorded"
+            elif not stale:
+                print(f"[skip] {name}: already completed")
+                continue
+            else:
+                reason = f"{', '.join(stale)} changed since it last ran"
+            print(f"[stale] {name}: {reason}")
 
         if not module.check_ready(match_path):
             print(f"[stop] {name}: not ready (missing input or unfinished dependency)")
@@ -103,12 +145,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the analysis pipeline for one match.")
     parser.add_argument("match_path", help="match path, e.g. matches/MK_vs_CT_2019")
     parser.add_argument("--force", action="store_true", help="re-run stages even if completed")
+    parser.add_argument("--strict-stale", action="store_true",
+                        help="also re-run completed stages whose status.json predates "
+                             "input tracking, instead of leaving them alone")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    ok = run_pipeline(args.match_path, force=args.force)
+    ok = run_pipeline(args.match_path, force=args.force, strict_stale=args.strict_stale)
     raise SystemExit(0 if ok else 1)
 
 

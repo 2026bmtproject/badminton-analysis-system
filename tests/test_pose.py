@@ -10,6 +10,7 @@ that carry the result.
 from __future__ import annotations
 
 import csv
+import json
 
 import numpy as np
 import pytest
@@ -629,33 +630,51 @@ def test_cache_round_trips_a_ragged_segment(tmp_path):
     assert loaded[2]["bboxes"][0] == pytest.approx(frames[2]["bboxes"][0])
 
 
-def base_meta(**overrides) -> dict:
+def base_cache(tmp_path, court=None, **overrides):
     kwargs = dict(
         pose_mode="balanced",
         person_min_area=0.0,
         candidate_margins=candidate_margins(SelectConfig()),
         video="m.mp4",
-        segments=make_segments(),
     )
-    return detection_cache.build_meta(**{**kwargs, **overrides})
+    return detection_cache.open_cache(
+        tmp_path, detection_cache.build_params(**{**kwargs, **overrides}), court=court
+    )
 
 
-def test_cache_is_kept_when_the_meta_matches(tmp_path):
-    assert detection_cache.prepare(tmp_path, base_meta()) is False   # created empty
-    detection_cache.save_segment(detection_cache.segment_file(tmp_path, 0), [make_det()])
+def fill_cache(cache, segments):
+    plan = cache.plan(segments)
+    for entry in plan.missing:
+        detection_cache.save_segment(entry.path, [make_det()])
+    cache.commit(plan)
+    return plan
 
-    assert detection_cache.prepare(tmp_path, base_meta()) is True    # reused
-    assert detection_cache.segment_file(tmp_path, 0).is_file()
+
+def test_cache_is_kept_when_the_params_match(tmp_path):
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path), segments)
+
+    assert not base_cache(tmp_path).plan(segments).missing
 
 
 def test_retuning_the_selection_within_the_cached_band_reuses_the_cache(tmp_path):
     # The payoff of the split: the usual retune costs no GPU at all, because everyone
     # inside the candidate band already has a skeleton.
-    detection_cache.prepare(tmp_path, base_meta())
-    detection_cache.save_segment(detection_cache.segment_file(tmp_path, 0), [make_det()])
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path), segments)
 
     tuned = candidate_margins(SelectConfig(x_margin=0.2, y_margin=0.4))
-    assert detection_cache.prepare(tmp_path, base_meta(candidate_margins=tuned)) is True
+    assert not base_cache(tmp_path, candidate_margins=tuned).plan(segments).missing
+
+
+def test_only_the_recut_segment_is_recomputed(tmp_path):
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path), segments)
+
+    edited = [segments[0], {"start_frame": 100, "end_frame": 151}]
+    plan = base_cache(tmp_path).plan(edited)
+
+    assert [e.index for e in plan.missing] == [1]
 
 
 @pytest.mark.parametrize(
@@ -664,26 +683,68 @@ def test_retuning_the_selection_within_the_cached_band_reuses_the_cache(tmp_path
         {"pose_mode": "performance"},          # different weights -> different skeletons
         {"person_min_area": 0.001},            # filters before pose -> different people
         {"video": "other.mp4"},
-        {"segments": [{"start_frame": 0, "end_frame": 11}]},   # re-cut segments
         # Searching wider than what was posed: those people are not in the cache, so
         # reusing it would quietly search an empty region.
         {"candidate_margins": candidate_margins(SelectConfig(y_margin=0.8))},
     ],
 )
-def test_cache_is_wiped_when_an_input_changes(tmp_path, changed):
-    detection_cache.prepare(tmp_path, base_meta())
-    detection_cache.save_segment(detection_cache.segment_file(tmp_path, 0), [make_det()])
+def test_cache_misses_when_an_input_changes(tmp_path, changed):
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path), segments)
 
-    assert detection_cache.prepare(tmp_path, base_meta(**changed)) is False
-    assert not detection_cache.segment_file(tmp_path, 0).is_file()
+    assert len(base_cache(tmp_path, **changed).plan(segments).missing) == len(segments)
 
 
-def test_refresh_cache_wipes_a_matching_cache(tmp_path):
-    detection_cache.prepare(tmp_path, base_meta())
-    detection_cache.save_segment(detection_cache.segment_file(tmp_path, 0), [make_det()])
+def test_refresh_cache_recomputes_a_matching_cache(tmp_path):
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path), segments)
 
-    assert detection_cache.prepare(tmp_path, base_meta(), force=True) is False
-    assert not detection_cache.segment_file(tmp_path, 0).is_file()
+    plan = base_cache(tmp_path).plan(segments, force=True)
+    assert len(plan.missing) == len(segments)
+
+
+def test_a_moved_court_warns_instead_of_rebuilding(tmp_path):
+    """The homography decides who was posed, but a rebuild costs the whole GPU pass.
+
+    So it is recorded as a note rather than keyed: the cache stays usable and the stage
+    gets to say the band was measured against a different court.
+    """
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path, court="aaaa"), segments)
+
+    moved = base_cache(tmp_path, court="bbbb")
+    assert moved.stale_notes() == ["court"]
+    assert not moved.plan(segments).missing        # still reusable
+
+    assert base_cache(tmp_path, court="aaaa").stale_notes() == []
+
+
+def test_court_fingerprint_ignores_float_noise(tmp_path):
+    """Re-fitting to the same corners must not read as a moved court."""
+    base = np.array([[1.0, 0.0, 200.0], [0.0, 1.0, 100.0], [0.0, 0.0, 1.0]])
+    jittered = base + 1e-9
+
+    assert detection_cache.court_fingerprint(base) == detection_cache.court_fingerprint(jittered)
+    assert detection_cache.court_fingerprint(base) != detection_cache.court_fingerprint(base * 1.01)
+
+
+def test_a_legacy_cache_is_adopted_by_renaming(tmp_path):
+    """Pre-manifest entries used the same court filter, so they carry straight over."""
+    segments = make_segments()
+    cache = base_cache(tmp_path)
+    directory = detection_cache.pose_dir(tmp_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "meta.json").write_text(
+        json.dumps({**cache.params, "segments": [[0, 9], [100, 149]]}), encoding="utf-8"
+    )
+    (directory / "seg0000.npz").write_bytes(b"first")
+    (directory / "seg0001.npz").write_bytes(b"second")
+
+    assert cache.migrate_legacy(segments) == 2
+
+    plan = cache.plan(segments)
+    assert plan.missing == []
+    assert plan.entries[0].path.read_bytes() == b"first"
 
 
 # --------------------------------------------------------------------------- #

@@ -105,30 +105,39 @@ class EventDetectionModule(BaseModule):
     def get_output_path(self, match_path) -> Path:
         return artifact_path(match_path, self.name)
 
+    def cache(self, fps: float, match_path: Path):
+        return dense_cache.open_cache(
+            match_path,
+            dense_cache.build_params(
+                checkpoint=resolve_weight(self.config.bst_checkpoint),
+                half=int(fps // 2),
+                shuttle_method=self.config.base_method,
+            ),
+        )
+
+    def upstream(self, match_path: Path, segments: list[dict]) -> list[str]:
+        return dense_cache.upstream_digests(match_path, segments, self.config.base_method)
+
     # ---------------------------------------------------------------- phase 1
     def build_dense_scan(
         self,
         match_path: Path,
         segments: list[dict],
         fps: float,
+        upstream: list[str],
         on_progress: ProgressFn | None = None,
     ) -> None:
         """Fill the dense-scan cache, skipping segments that are already there."""
         half = int(fps // 2)
-        checkpoint = resolve_weight(self.config.bst_checkpoint)
-        meta = dense_cache.build_meta(
-            checkpoint=checkpoint,
-            half=half,
-            shuttle_method=self.config.base_method,
-            segments=segments,
-        )
-        dense_cache.prepare(match_path, meta, force=self.config.refresh_cache)
+        cache = self.cache(fps, match_path)
+        adopted = cache.migrate_legacy(segments, upstream)
+        if adopted:
+            print(f"  dense scan: adopted {adopted} segment(s) from the pre-manifest cache")
 
-        pending = [
-            i for i in range(len(segments))
-            if not dense_cache.segment_file(match_path, i).is_file()
-        ]
+        plan = cache.plan(segments, upstream, force=self.config.refresh_cache)
+        pending = plan.missing
         if not pending:
+            cache.commit(plan)
             print(f"  dense scan: {len(segments)} segment(s) cached")
             if on_progress:
                 on_progress(1.0)
@@ -145,15 +154,15 @@ class EventDetectionModule(BaseModule):
             )
 
         device = self.config.device or default_device()
-        model = load_bst_model(checkpoint, device=device)
+        model = load_bst_model(resolve_weight(self.config.bst_checkpoint), device=device)
         print(f"  device:     {device}")
         print(f"  dense scan: {len(pending)} segment(s) to compute, "
-              f"{len(segments) - len(pending)} cached (window +/-{half} frames)")
+              f"{len(plan.hits)} cached (window +/-{half} frames)")
 
-        total = sum(len(features[i]) for i in pending) or 1
+        total = sum(len(features[e.index]) for e in pending) or 1
         done = 0
-        for index in pending:
-            segment_features = features[index]
+        for entry in pending:
+            segment_features = features[entry.index]
             windows = scan_windows(len(segment_features), half)
             probabilities = predict_windows(
                 model,
@@ -163,13 +172,12 @@ class EventDetectionModule(BaseModule):
                 batch_size=self.config.batch_size,
             )
             dense_cache.save_segment(
-                dense_cache.segment_file(match_path, index),
-                probabilities,
-                segment_features.start_frame,
+                entry.path, probabilities, segment_features.start_frame
             )
             done += len(segment_features)
             if on_progress:
                 on_progress(done / total)
+        cache.commit(plan)
 
     # ---------------------------------------------------------------- phase 2
     def detect_segment(
@@ -215,6 +223,8 @@ class EventDetectionModule(BaseModule):
         match_path: Path,
         segments: list[dict],
         scores: dict[int, tuple[int, int] | None] | None,
+        fps: float,
+        upstream: list[str],
         on_progress: ProgressFn | None = None,
     ) -> dict[int, SegmentResult]:
         """Every segment, then the match-level scoreboard rule."""
@@ -233,11 +243,13 @@ class EventDetectionModule(BaseModule):
 
         results: dict[int, SegmentResult] = {}
         dense_by_segment: dict[int, Dense] = {}
-        for index in range(len(segments)):
-            path = dense_cache.segment_file(match_path, index)
-            if not path.is_file():
-                raise RuntimeError(f"dense-scan cache is missing seg{index:04d}: {path}")
-            probabilities, start_frame = dense_cache.load_segment(path)
+        for entry in self.cache(fps, match_path).plan(segments, upstream).entries:
+            index = entry.index
+            if not entry.cached:
+                raise RuntimeError(
+                    f"dense-scan cache is missing {entry.label}: {entry.path}"
+                )
+            probabilities, start_frame = dense_cache.load_segment(entry.path)
             dense = Dense(probabilities, start_frame)
             dense_by_segment[index] = dense
 
@@ -285,14 +297,15 @@ class EventDetectionModule(BaseModule):
         output_json = self.get_output_path(match_path)
         segments, fps = adapter.read_segments(match_path)
         scores = self._read_scores(match_path)
+        upstream = self.upstream(match_path, segments)
 
         # The scan dominates the runtime, so it owns most of the progress bar.
         self.build_dense_scan(
-            match_path, segments, fps,
+            match_path, segments, fps, upstream,
             on_progress=(lambda f: on_progress(0.9 * f)) if on_progress else None,
         )
         results = self.detect(
-            match_path, segments, scores,
+            match_path, segments, scores, fps, upstream,
             on_progress=(lambda f: on_progress(0.9 + 0.1 * f)) if on_progress else None,
         )
 
