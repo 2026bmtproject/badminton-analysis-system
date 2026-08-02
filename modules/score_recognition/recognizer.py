@@ -37,6 +37,7 @@ from modules.common.frame_composite import (
     extract_frames_in_range,
 )
 from modules.contracts import RallyScore
+from modules.score_recognition.score_cache import ScoreCache
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -504,10 +505,14 @@ def _read_window_score(
     config: ScoreRecognitionConfig,
     rate_limiter: "RateLimiter | None" = None,
     stop_event: "threading.Event | None" = None,
+    cache: "ScoreCache | None" = None,
 ) -> "tuple[int, int] | None":
     """Composite ``[start, end]`` and read its dominant scoreboard, or None."""
     if end - start < 2:
         return None
+    cached = cache.get(start, end) if cache is not None else None
+    if cached is not None and cached.get("window") is not None:
+        return (int(cached["window"][0]), int(cached["window"][1]))
     try:
         frames = extract_frames_in_range(
             video_path, start, end,
@@ -531,6 +536,8 @@ def _read_window_score(
         )
         sa, sb = parsed.get("score_a"), parsed.get("score_b")
         if sa is not None and sb is not None:
+            if cache is not None:
+                cache.put(start, end, {"window": [int(sa), int(sb)]})
             return (int(sa), int(sb))
     return None
 
@@ -570,13 +577,14 @@ def _refine_merged_segments(
     config: ScoreRecognitionConfig,
     rate_limiter: "RateLimiter | None" = None,
     stop_event: "threading.Event | None" = None,
+    cache: "ScoreCache | None" = None,
 ) -> None:
     """Second pass: bisect every jump-flagged segment to recover its rallies."""
     info_by_index = {info.get("segment_index"): info for info in infos}
 
     def read_fn(a: int, b: int) -> "tuple[int, int] | None":
         return _read_window_score(
-            video_path, a, b, api_key, config, rate_limiter, stop_event,
+            video_path, a, b, api_key, config, rate_limiter, stop_event, cache,
         )
 
     prev: "tuple[int, int] | None" = None
@@ -622,6 +630,7 @@ def recognize_scores(
     on_progress: ProgressCallback | None = None,
     stop_event: "threading.Event | None" = None,
     fps: float | None = None,
+    cache: "ScoreCache | None" = None,
 ) -> tuple[list[RallyScore], dict]:
     """Read the scoreboard for every segment of ``video_path``.
 
@@ -636,6 +645,10 @@ def recognize_scores(
     ``split_secs`` (see :class:`~modules.contracts.RallyScore`). ``fps`` is
     required only because the split times are reported in seconds; without it the
     refine pass is skipped and the first-pass scalar scores are returned as-is.
+
+    ``cache`` is optional so this function stays runnable against a bare video path;
+    the stage always passes one (see :mod:`modules.score_recognition.score_cache`),
+    which is what stops a re-cut of one rally from re-buying the whole match.
     """
     config = config or ScoreRecognitionConfig()
     total = len(segments)
@@ -649,16 +662,24 @@ def recognize_scores(
 
     def process(index: int, seg: dict) -> tuple[RallyScore, dict]:
         """Worker: score one segment. Never raises — failures become a note."""
+        start, end = int(seg["start_frame"]), int(seg["end_frame"])
         try:
-            best, attempts = score_segment(
-                video_path,
-                int(seg["start_frame"]),
-                int(seg["end_frame"]),
-                api_key,
-                config,
-                rate_limiter=rate_limiter,
-                stop_event=stop_event,
-            )
+            hit = cache.get(start, end) if cache is not None else None
+            if hit is not None and hit.get("best") is not None:
+                best, attempts, source = hit["best"], hit.get("attempts", []), "cached"
+            else:
+                best, attempts = score_segment(
+                    video_path, start, end, api_key, config,
+                    rate_limiter=rate_limiter,
+                    stop_event=stop_event,
+                )
+                source = best.get("method", "")
+                if (
+                    cache is not None
+                    and best.get("score_a") is not None
+                    and best.get("score_b") is not None
+                ):
+                    cache.put(start, end, {"best": best, "attempts": attempts})
             rally = RallyScore(
                 segment_index=index,
                 score_a=best.get("score_a"),
@@ -672,7 +693,7 @@ def recognize_scores(
             }
             with print_lock:
                 print(f"[{index + 1}/{total}] seg {index} "
-                      f"→ {rally.score_a} : {rally.score_b}  ({best.get('method')})")
+                      f"→ {rally.score_a} : {rally.score_b}  ({source})")
         except Exception as e:
             rally = RallyScore(segment_index=index, score_a=None, score_b=None)
             info = {"segment_index": index, "method": "", "attempts": "", "note": str(e)[:200]}
@@ -715,6 +736,7 @@ def recognize_scores(
         _refine_merged_segments(
             kept_rallies, kept_infos, segments, video_path, float(fps),
             api_key, config, rate_limiter=rate_limiter, stop_event=stop_event,
+            cache=cache,
         )
 
     meta = {"attempts": kept_infos}

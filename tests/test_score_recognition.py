@@ -416,7 +416,8 @@ def test_recognize_scores_refines_a_merged_segment(monkeypatch):
     # Refine reads windows inside seg1 [200,745]; scoreboard flips at frame 472.
     window_reader = scoreboard_reader([(200, (3, 2)), (472, (3, 3))])
 
-    def fake_window(video_path, start, end, api_key, config, rate_limiter=None, stop_event=None):
+    def fake_window(video_path, start, end, api_key, config, rate_limiter=None,
+                    stop_event=None, cache=None):
         return window_reader(start, end)
 
     monkeypatch.setattr(recognizer, "score_segment", fake_score_segment)
