@@ -375,63 +375,159 @@ def checkpoint(tmp_path):
     return path
 
 
-def _meta(checkpoint, tmp_path, segments=((0, 100),), eval_mode="nonoverlap", chunk_frames=1200):
-    return heatmap_cache.build_meta(
-        checkpoint=checkpoint,
-        eval_mode=eval_mode,
-        chunk_frames=chunk_frames,
-        video=tmp_path / "match.mp4",
-        segments=[{"start_frame": a, "end_frame": b} for a, b in segments],
+def _segments(*bounds):
+    return [{"start_frame": a, "end_frame": b} for a, b in bounds]
+
+
+def _cache(checkpoint, tmp_path, eval_mode="nonoverlap", chunk_frames=1200):
+    return heatmap_cache.open_cache(
+        tmp_path,
+        heatmap_cache.build_params(
+            checkpoint=checkpoint,
+            eval_mode=eval_mode,
+            chunk_frames=chunk_frames,
+            video=tmp_path / "match.mp4",
+        ),
     )
+
+
+def _fill(cache, segments):
+    """Write a placeholder for every segment, as a completed run would leave behind."""
+    plan = cache.plan(segments)
+    for entry in plan.entries:
+        entry.path.parent.mkdir(parents=True, exist_ok=True)
+        entry.path.write_bytes(b"heatmaps")
+    cache.commit(plan)
+    return plan
 
 
 def test_cache_is_reused_when_nothing_it_depends_on_changed(tmp_path, checkpoint):
-    meta = _meta(checkpoint, tmp_path)
+    segments = _segments((0, 100))
+    _fill(_cache(checkpoint, tmp_path), segments)
 
-    assert heatmap_cache.prepare(tmp_path, meta) is False  # first time: built empty
-    assert heatmap_cache.prepare(tmp_path, meta) is True   # second time: reused
+    assert not _cache(checkpoint, tmp_path).plan(segments).missing
 
 
-def test_cache_is_wiped_when_the_checkpoint_changes(tmp_path, checkpoint):
-    heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path))
-    stale = heatmap_cache.segment_file(tmp_path, 0)
-    stale.write_bytes(b"old heatmaps")
+def test_cache_misses_when_the_checkpoint_changes(tmp_path, checkpoint):
+    segments = _segments((0, 100))
+    stale = _fill(_cache(checkpoint, tmp_path), segments).entries[0].path
 
     checkpoint.write_bytes(b"different weights")
-    reused = heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path))
+    plan = _cache(checkpoint, tmp_path).plan(segments)
 
-    assert reused is False
-    assert not stale.exists()
-
-
-def test_cache_is_wiped_when_the_segments_change(tmp_path, checkpoint):
-    heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path, segments=((0, 100),)))
-    reused = heatmap_cache.prepare(
-        tmp_path, _meta(checkpoint, tmp_path, segments=((0, 100), (200, 300)))
-    )
-    assert reused is False
+    assert len(plan.missing) == 1
+    assert plan.entries[0].path != stale
 
 
-def test_cache_is_wiped_when_the_eval_mode_changes(tmp_path, checkpoint):
-    heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path))
-    reused = heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path, eval_mode="weight"))
-    assert reused is False
+def test_only_the_segment_whose_frames_moved_is_recomputed(tmp_path, checkpoint):
+    """The whole point: a two-frame edit to one rally costs one rally, not the match."""
+    segments = _segments((0, 100), (200, 300), (400, 500))
+    _fill(_cache(checkpoint, tmp_path), segments)
+
+    edited = _segments((0, 100), (200, 302), (400, 500))
+    plan = _cache(checkpoint, tmp_path).plan(edited)
+
+    assert [e.index for e in plan.missing] == [1]
 
 
-def test_cache_is_wiped_when_the_chunk_size_changes(tmp_path, checkpoint):
+def test_inserting_a_segment_does_not_shift_the_others_out_of_the_cache(tmp_path, checkpoint):
+    segments = _segments((0, 100), (200, 300))
+    _fill(_cache(checkpoint, tmp_path), segments)
+
+    grown = _segments((0, 100), (150, 180), (200, 300))
+    plan = _cache(checkpoint, tmp_path).plan(grown)
+
+    assert [e.index for e in plan.missing] == [1]
+
+
+def test_removing_a_segment_recomputes_nothing(tmp_path, checkpoint):
+    segments = _segments((0, 100), (200, 300), (400, 500))
+    _fill(_cache(checkpoint, tmp_path), segments)
+
+    plan = _cache(checkpoint, tmp_path).plan(_segments((0, 100), (400, 500)))
+
+    assert plan.missing == []
+
+
+def test_going_back_to_an_earlier_segmentation_is_free(tmp_path, checkpoint):
+    original = _segments((0, 100), (200, 300))
+    _fill(_cache(checkpoint, tmp_path), original)
+    _fill(_cache(checkpoint, tmp_path), _segments((0, 100), (200, 305)))
+
+    assert not _cache(checkpoint, tmp_path).plan(original).missing
+
+
+def test_cache_misses_when_the_eval_mode_changes(tmp_path, checkpoint):
+    segments = _segments((0, 100))
+    _fill(_cache(checkpoint, tmp_path), segments)
+
+    plan = _cache(checkpoint, tmp_path, eval_mode="weight").plan(segments)
+    assert len(plan.missing) == 1
+
+
+def test_cache_misses_when_the_chunk_size_changes(tmp_path, checkpoint):
     # Windows cannot span a chunk boundary, so the chunk size shows through in the
     # heatmaps of any segment long enough to be split.
-    heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path))
-    reused = heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path, chunk_frames=600))
-    assert reused is False
+    segments = _segments((0, 100))
+    _fill(_cache(checkpoint, tmp_path), segments)
+
+    plan = _cache(checkpoint, tmp_path, chunk_frames=600).plan(segments)
+    assert len(plan.missing) == 1
 
 
-def test_meta_records_the_store_threshold_so_a_lower_one_invalidates(tmp_path, checkpoint):
-    heatmap_cache.prepare(tmp_path, _meta(checkpoint, tmp_path))
-    written = json.loads(
-        (heatmap_cache.heatmap_dir(tmp_path) / heatmap_cache.META_FILENAME).read_text()
+def test_force_recomputes_everything_in_place(tmp_path, checkpoint):
+    segments = _segments((0, 100), (200, 300))
+    kept = _fill(_cache(checkpoint, tmp_path), segments)
+
+    plan = _cache(checkpoint, tmp_path).plan(segments, force=True)
+
+    assert len(plan.missing) == 2
+    assert [e.path for e in plan.entries] == [e.path for e in kept.entries]
+
+
+def test_manifest_records_the_store_threshold_so_a_lower_one_invalidates(tmp_path, checkpoint):
+    segments = _segments((0, 100))
+    cache = _cache(checkpoint, tmp_path)
+    _fill(cache, segments)
+
+    written = cache.read_manifest()
+    assert written["params"]["store_threshold"] == heatmap_cache.STORE_THRESHOLD
+
+
+def test_a_legacy_cache_is_adopted_by_renaming_not_recomputing(tmp_path, checkpoint):
+    """Caches built before the manifest must survive the upgrade untouched."""
+    segments = _segments((0, 100), (200, 300))
+    cache = _cache(checkpoint, tmp_path)
+    directory = heatmap_cache.heatmap_dir(tmp_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "meta.json").write_text(
+        json.dumps({**cache.params, "segments": [[0, 100], [200, 300]]}), encoding="utf-8"
     )
-    assert written["store_threshold"] == heatmap_cache.STORE_THRESHOLD
+    (directory / "seg0000.npz").write_bytes(b"first")
+    (directory / "seg0001.npz").write_bytes(b"second")
+
+    assert cache.migrate_legacy(segments) == 2
+
+    plan = cache.plan(segments)
+    assert plan.missing == []
+    assert plan.entries[0].path.read_bytes() == b"first"
+    assert plan.entries[1].path.read_bytes() == b"second"
+    assert not (directory / "meta.json").exists()
+
+
+def test_a_legacy_cache_built_on_other_params_is_left_alone(tmp_path, checkpoint):
+    segments = _segments((0, 100))
+    cache = _cache(checkpoint, tmp_path)
+    directory = heatmap_cache.heatmap_dir(tmp_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "meta.json").write_text(
+        json.dumps({**cache.params, "eval_mode": "weight", "segments": [[0, 100]]}),
+        encoding="utf-8",
+    )
+    (directory / "seg0000.npz").write_bytes(b"first")
+
+    assert cache.migrate_legacy(segments) == 0
+    assert cache.plan(segments).missing
 
 
 def test_saved_heatmaps_are_sparsified_but_keep_everything_readable(tmp_path):

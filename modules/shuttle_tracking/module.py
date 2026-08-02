@@ -111,6 +111,17 @@ class ShuttleTrackingModule(BaseModule):
         path = Path(configured)
         return path if path.is_absolute() else repo_root() / path
 
+    def _cache(self, match_path: Path, video: Path):
+        return heatmap_cache.open_cache(
+            match_path,
+            heatmap_cache.build_params(
+                checkpoint=self._checkpoint(self.config.tracknet_checkpoint),
+                eval_mode=self.config.eval_mode,
+                chunk_frames=self.config.chunk_frames,
+                video=video,
+            ),
+        )
+
     # ---------------------------------------------------------------- phase 1
     def build_heatmaps(
         self,
@@ -120,20 +131,15 @@ class ShuttleTrackingModule(BaseModule):
         on_progress: ProgressFn | None = None,
     ) -> None:
         """Fill the heatmap cache, skipping segments that are already cached."""
-        meta = heatmap_cache.build_meta(
-            checkpoint=self._checkpoint(self.config.tracknet_checkpoint),
-            eval_mode=self.config.eval_mode,
-            chunk_frames=self.config.chunk_frames,
-            video=video,
-            segments=segments,
-        )
-        heatmap_cache.prepare(match_path, meta, force=self.config.refresh_cache)
+        cache = self._cache(match_path, video)
+        adopted = cache.migrate_legacy(segments)
+        if adopted:
+            print(f"  heatmaps: adopted {adopted} segment(s) from the pre-manifest cache")
 
-        pending = [
-            i for i in range(len(segments))
-            if not heatmap_cache.segment_file(match_path, i).is_file()
-        ]
+        plan = cache.plan(segments, force=self.config.refresh_cache)
+        pending = plan.missing
         if not pending:
+            cache.commit(plan)
             if on_progress:
                 on_progress(1.0)
             return
@@ -162,16 +168,17 @@ class ShuttleTrackingModule(BaseModule):
             f"{' (auto)' if self.config.batch_size is None else ''}"
         )
         print(f"  heatmaps: {len(pending)} segment(s) to compute, "
-              f"{len(segments) - len(pending)} cached")
+              f"{len(plan.hits)} cached")
 
-        for done, index in enumerate(pending):
-            heatmaps, img_shape = self._infer_segment(video, segments[index], net, batch_size)
-            heatmap_cache.save_segment(
-                heatmap_cache.segment_file(match_path, index), heatmaps, img_shape
+        for done, entry in enumerate(pending):
+            heatmaps, img_shape = self._infer_segment(
+                video, segments[entry.index], net, batch_size
             )
-            print(f"    seg{index:04d}: {len(heatmaps)} frames")
+            heatmap_cache.save_segment(entry.path, heatmaps, img_shape)
+            print(f"    {entry.label}: {len(heatmaps)} frames")
             if on_progress:
                 on_progress((done + 1) / len(pending))
+        cache.commit(plan)
 
     def _infer_segment(
         self,
@@ -220,6 +227,7 @@ class ShuttleTrackingModule(BaseModule):
     def build_tracks(
         self,
         match_path: Path,
+        video: Path,
         segments: list[dict],
         fps: float,
         on_progress: ProgressFn | None = None,
@@ -235,13 +243,16 @@ class ShuttleTrackingModule(BaseModule):
             )
         from modules.shuttle_tracking import track_viterbi
 
+        plan = self._cache(match_path, video).plan(segments)
         records: list[ShuttlePoint] = []
-        for index, segment in enumerate(segments):
-            path = heatmap_cache.segment_file(match_path, index)
-            if not path.is_file():
-                raise RuntimeError(f"heatmap cache is missing seg{index:04d}: {path}")
+        for entry in plan.entries:
+            index, segment = entry.index, segments[entry.index]
+            if not entry.cached:
+                raise RuntimeError(
+                    f"heatmap cache is missing {entry.label}: {entry.path}"
+                )
 
-            heatmaps, img_shape = heatmap_cache.load_segment(path)
+            heatmaps, img_shape = heatmap_cache.load_segment(entry.path)
             xy_base, conf_base = blob.baseline_track(
                 heatmaps, img_shape, self.config.threshold
             )
@@ -296,7 +307,7 @@ class ShuttleTrackingModule(BaseModule):
             return StageResult(cache_dir, pending=True)
 
         records = self.build_tracks(
-            match_path, segments, fps,
+            match_path, video, segments, fps,
             on_progress=(lambda f: on_progress(0.85 + 0.15 * f)) if on_progress else None,
         )
         write_artifact(
