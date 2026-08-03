@@ -5,6 +5,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 
+from modules.common import console
+
+#: How to decode what ffmpeg and ffprobe write. Not the platform default: ffmpeg emits
+#: UTF-8, and on a zh-TW Windows ``text=True`` decodes it as cp950 instead -- a single
+#: byte it cannot map raises UnicodeDecodeError inside subprocess's reader *thread*,
+#: which dumps a traceback into the middle of a stage and loses the output entirely.
+_DECODE = {"text": True, "encoding": "utf-8", "errors": "replace"}
+
 
 def has_tool(name: str) -> bool:
     """Return True if the given executable is available on PATH."""
@@ -25,13 +33,15 @@ def check_ffmpeg() -> bool:
     Returns True when ffmpeg is available. Intended for CLI entry points.
     """
     try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, **_DECODE)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("[error] ffmpeg not found; please install it and add it to PATH.")
-        print("  macOS:   brew install ffmpeg")
-        print("  Ubuntu:  sudo apt install ffmpeg")
-        print("  Windows: https://ffmpeg.org/download.html")
+        console.error(
+            "ffmpeg not found; please install it and add it to PATH.\n"
+            "macOS:   brew install ffmpeg\n"
+            "Ubuntu:  sudo apt install ffmpeg\n"
+            "Windows: https://ffmpeg.org/download.html"
+        )
         return False
 
 
@@ -46,7 +56,7 @@ def get_video_duration(video_path: str) -> float:
             video_path,
         ],
         capture_output=True,
-        text=True,
+        **_DECODE,
     )
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {result.stderr.strip() or 'could not read duration'}")
@@ -72,9 +82,9 @@ def sec_to_ts(seconds: float) -> str:
 def run_ffmpeg(args: list[str], desc: str = "") -> bool:
     """Run an ffmpeg command; return True on success."""
     if desc:
-        print(f"  -> {desc}")
-    result = subprocess.run(args, capture_output=True, text=True)
+        console.note(f"-> {desc}")
+    result = subprocess.run(args, capture_output=True, **_DECODE)
     if result.returncode != 0:
-        print(f"  [ffmpeg error]\n{result.stderr[-800:]}")
+        console.error(f"ffmpeg failed:\n{result.stderr[-800:]}")
         return False
     return True
