@@ -24,6 +24,7 @@ from typing import Callable, Optional
 
 from modules.artifacts import read_records, write_artifact
 from modules.base import BaseModule, StageResult
+from modules.common import console
 from modules.common.bst import adapter
 from modules.common.bst.classes import UNKNOWN_CLASS
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
@@ -68,9 +69,12 @@ class StrokeClassificationModule(BaseModule):
         checkpoint = resolve_weight(self.config.bst_checkpoint)
         device = self.config.device or default_device()
         model = load_bst_model(checkpoint, device=device)
-        print(f"  device:     {device}")
-        print(f"  hits:       {sum(len(h) for h in hits.values())} across "
-              f"{len(hits)} rally segment(s)")
+        console.field("device", device)
+        console.field(
+            "hits",
+            f"{sum(len(h) for h in hits.values())} across "
+            f"{console.count(len(hits), 'rally segment')}",
+        )
 
         predictions: list[Prediction] = []
         done = 0
@@ -123,7 +127,7 @@ class StrokeClassificationModule(BaseModule):
 
         if debug_csv:
             debug.write_csv(Path(debug_csv), predictions, topk=self.config.topk)
-            print(f"  debug csv:  {len(predictions)} hit(s) -> {debug_csv}")
+            console.field("debug csv", f"{console.count(len(predictions), 'hit')} -> {debug_csv}")
 
         self._report(records)
         return StageResult(output_json)
@@ -169,10 +173,12 @@ class StrokeClassificationModule(BaseModule):
         ranked = ", ".join(
             f"{stroke} {n}" for stroke, n in sorted(counts.items(), key=lambda kv: -kv[1])
         )
-        print(f"  strokes:    {len(records)} hit(s) — {ranked}")
+        console.field("strokes", f"{console.count(len(records), 'hit')} - {ranked}")
         if unknown:
             # Loud on purpose: these are hits event_detection is sure of and BST could not
             # read, and they leave the pipeline with no stroke and no hitter.
             share = unknown / len(records) if records else 0.0
-            print(f"  未知球種:    {unknown} hit(s) ({share:.0%}) — recorded as 未知球種 "
-                  "with no player")
+            console.warn(
+                f"{console.count(unknown, 'hit')} ({share:.0%}) went unread by BST -\n"
+                f"recorded as {UNKNOWN_CLASS} with no player"
+            )

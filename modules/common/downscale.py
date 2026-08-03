@@ -18,10 +18,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 import cv2
 
+from modules.common import console
 from modules.common.ffmpeg_utils import ensure_tool, run_ffmpeg
 from modules.contracts import VIDEO_EXTENSIONS
 
@@ -126,14 +128,15 @@ def ensure_max_height(
 
     if os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
         if verbose:
-            print(f"reuse cached {max_height}p video: {output_path}")
+            console.field("downscale", f"reusing cached {max_height}p video: {output_path}")
         return output_path, True
 
-    if verbose:
-        print(f"source is {height}p (> {max_height}p); downscaling...")
+    # No line here for the downscaling case: downscale_video opens its own section
+    # immediately below, and saying "downscaling" right before it just says it twice.
     downscale_video(
         input_path, output_path, height=max_height,
         crf=crf, preset=preset, gpu=gpu, no_audio=no_audio, verbose=verbose,
+        source_height=height,
     )
     return output_path, True
 
@@ -223,8 +226,13 @@ def downscale_video(
     gpu: bool = False,
     no_audio: bool = False,
     verbose: bool = True,
+    source_height: int | None = None,
 ) -> str:
-    """Downscale ``input_path`` and return the written output path."""
+    """Downscale ``input_path`` and return the written output path.
+
+    ``source_height`` is only reported, and only when the caller already knows it --
+    reading it back here would mean opening the video a second time to print one line.
+    """
     ensure_tool("ffmpeg")
 
     if not os.path.isfile(input_path):
@@ -239,31 +247,35 @@ def downscale_video(
     cmd = build_command(input_path, resolved_output, height, crf, preset, gpu, no_audio)
 
     if verbose:
-        print("=" * 72)
-        print("downscale: ffmpeg video downscaling")
-        print("=" * 72)
-        print(f"input:  {input_path}")
-        print(f"output: {resolved_output}")
-        print(f"height: {height}p")
-        print(f"encoder: {'h264_nvenc (GPU)' if gpu else 'libx264 (CPU)'}")
-        print(f"quality: {'-cq' if gpu else '-crf'} {crf}")
-        print("-" * 72)
-        print("command:")
-        print(" ".join(cmd))
-        print("-" * 72)
+        # A section, not a header: this runs *inside* match_segmentation as often as it
+        # runs on its own, and a full-width banner nested under a stage reads as the
+        # stage having ended.
+        console.section("downscale")
+        console.summary([
+            ("input", input_path),
+            ("output", resolved_output),
+            ("height", f"{source_height}p -> {height}p" if source_height else f"{height}p"),
+            ("encoder", "h264_nvenc (GPU)" if gpu else "libx264 (CPU)"),
+            ("quality", f"{'-cq' if gpu else '-crf'} {crf}"),
+            ("command", " ".join(cmd)),
+        ])
 
+    started = time.perf_counter()
     if not run_ffmpeg(cmd):
         raise RuntimeError("ffmpeg failed while downscaling")
 
     if verbose:
         in_size = os.path.getsize(input_path)
         out_size = os.path.getsize(resolved_output)
-        print("-" * 72)
-        print(f"input size:  {in_size / 1024 / 1024:.1f} MB")
-        print(f"output size: {out_size / 1024 / 1024:.1f} MB")
-        if in_size > 0:
-            print(f"ratio:       {out_size / in_size * 100:.1f}%")
-        print("done")
+        console.summary([
+            ("input size", f"{in_size / 1024 / 1024:.1f} MB"),
+            ("output size", f"{out_size / 1024 / 1024:.1f} MB"),
+            ("ratio", f"{out_size / in_size * 100:.1f}%" if in_size > 0 else None),
+        ])
+        console.ok(
+            f"downscale in {console.duration(time.perf_counter() - started)} "
+            f"-> {resolved_output}"
+        )
 
     return resolved_output
 
@@ -300,7 +312,7 @@ def main() -> None:
             no_audio=args.no_audio,
         )
     except RuntimeError as e:
-        print(str(e), file=sys.stderr)
+        console.error(str(e))
         sys.exit(1)
 
 

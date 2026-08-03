@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 
 from modules.artifacts import read_records
+from modules.common import console
 from modules.common.ffmpeg_utils import (
     check_ffmpeg,
     get_video_duration,
@@ -39,7 +40,7 @@ def parse_segments(json_path: str) -> list[dict]:
             start_sec = float(record["start_sec"])
             end_sec = float(record["end_sec"])
         except (KeyError, TypeError, ValueError) as e:
-            print(f"  [warn] segment {i} failed to parse ({e}), skipped.")
+            console.warn(f"segment {i} failed to parse ({e}), skipped.")
             continue
 
         duration_sec = record.get("duration_sec")
@@ -52,7 +53,8 @@ def parse_segments(json_path: str) -> list[dict]:
             "end_frame":    record.get("end_frame", ""),
         }
         if seg["end_sec"] <= seg["start_sec"]:
-            print(f"  [warn] segment {i}: end_sec ({seg['end_sec']}) <= start_sec ({seg['start_sec']}), skipped.")
+            console.warn(f"segment {i}: end_sec ({seg['end_sec']}) <= "
+                         f"start_sec ({seg['start_sec']}), skipped.")
             continue
         segments.append(seg)
 
@@ -116,7 +118,6 @@ def _concat_files(tmp_files: list[str], tmp_dir: str, output_path: str) -> bool:
         for p in tmp_files:
             f.write(f"file '{p}'\n")
 
-    print(f"\n  merging {len(tmp_files)} segment(s)...")
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat",
@@ -125,7 +126,9 @@ def _concat_files(tmp_files: list[str], tmp_dir: str, output_path: str) -> bool:
         "-c", "copy",
         output_path,
     ]
-    return run_ffmpeg(cmd, f"merge -> {output_path}")
+    return run_ffmpeg(
+        cmd, f"merging {console.count(len(tmp_files), 'segment')} -> {output_path}"
+    )
 
 
 def mode_separate(video_path: str, segments: list[dict], output_dir: str) -> None:
@@ -135,28 +138,28 @@ def mode_separate(video_path: str, segments: list[dict], output_dir: str) -> Non
     total = len(segments)
     success = 0
 
-    print(f"\n[mode A] separate output -> folder: {output_dir}")
-    print(f"{total} segment(s)\n")
+    console.section(f"separate -> {output_dir}")
+    console.field("segments", console.count(total, "segment"))
 
     for pos, seg in enumerate(segments, start=1):
         idx, start, end, dur = seg["index"], seg["start_sec"], seg["end_sec"], seg["duration_sec"]
         out = os.path.join(output_dir, f"{video_stem}_seg{idx:04d}.mp4")
 
-        print(f"  [{pos}/{total}] seg {idx}: {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
-        if run_ffmpeg(_cut_segment_cmd(video_path, start, end, out), f"write {os.path.basename(out)}"):
-            print(f"    ok: {out}")
+        console.item(f"[{pos}/{total}] seg {idx}: {sec_to_ts(start)} -> "
+                     f"{sec_to_ts(end)}  ({dur:.3f}s)")
+        if run_ffmpeg(_cut_segment_cmd(video_path, start, end, out)):
             success += 1
         else:
-            print(f"    fail: segment {idx}")
+            console.tag("fail", f"segment {idx}", indent=2)
 
-    print(f"\ndone: {success}/{total} segment(s) written.")
+    console.ok(f"{success}/{total} segments written -> {output_dir}")
 
 
 def mode_merge(video_path: str, segments: list[dict], output_path: str) -> None:
     """Concatenate all segments into a single MP4 file."""
     total = len(segments)
-    print(f"\n[mode B] merged output -> {output_path}")
-    print(f"{total} segment(s), staging then concatenating...\n")
+    console.section(f"merge -> {output_path}")
+    console.field("segments", f"{console.count(total, 'segment')}, staging then concatenating")
 
     tmp_dir = tempfile.mkdtemp(prefix="ffmpeg_merge_")
     tmp_files: list[str] = []
@@ -164,42 +167,42 @@ def mode_merge(video_path: str, segments: list[dict], output_path: str) -> None:
         for pos, seg in enumerate(segments, start=1):
             idx, start, end, dur = seg["index"], seg["start_sec"], seg["end_sec"], seg["duration_sec"]
             tmp = os.path.join(tmp_dir, f"seg{idx:04d}.mp4")
-            print(f"  [{pos}/{total}] seg {idx}: {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
-            if run_ffmpeg(_cut_segment_cmd(video_path, start, end, tmp), f"stage segment {idx}"):
+            console.item(f"[{pos}/{total}] seg {idx}: {sec_to_ts(start)} -> "
+                         f"{sec_to_ts(end)}  ({dur:.3f}s)")
+            if run_ffmpeg(_cut_segment_cmd(video_path, start, end, tmp)):
                 tmp_files.append(tmp)
-                print("    ok")
             else:
-                print(f"    fail: skip segment {idx}")
+                console.tag("fail", f"skipping segment {idx}", indent=2)
 
         if not tmp_files:
-            print("\n[error] no segment staged successfully, cannot merge.")
+            console.error("no segment staged successfully, cannot merge.")
             return
 
         if _concat_files(tmp_files, tmp_dir, output_path):
-            print(f"\n  ok: merged -> {output_path}")
+            console.ok(f"merged -> {output_path}")
         else:
-            print("\n  fail: merge.")
+            console.tag("fail", "merge")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def mode_inverse_merge(video_path: str, segments: list[dict], output_path: str) -> None:
     """Delete the given segments and merge only the remaining (kept) ranges."""
-    print(f"\n[mode C] inverse merge (delete segments) -> {output_path}")
+    console.section(f"inverse merge (delete segments) -> {output_path}")
 
     try:
         video_duration = get_video_duration(video_path)
     except Exception as e:
-        print(f"[error] failed to read video duration: {e}")
+        console.error(f"failed to read video duration: {e}")
         return
 
     keep_ranges = compute_keep_ranges(segments, video_duration)
     if not keep_ranges:
-        print("\n[error] segments cover the whole video, nothing to keep.")
+        console.error("segments cover the whole video, nothing to keep.")
         return
 
-    print(f"  video duration: {video_duration:.3f}s")
-    print(f"  keep ranges: {len(keep_ranges)}, staging then concatenating...\n")
+    console.field("duration", f"{video_duration:.3f}s")
+    console.field("keep ranges", f"{len(keep_ranges)}, staging then concatenating")
 
     tmp_dir = tempfile.mkdtemp(prefix="ffmpeg_inverse_merge_")
     tmp_files: list[str] = []
@@ -207,65 +210,64 @@ def mode_inverse_merge(video_path: str, segments: list[dict], output_path: str) 
         for idx, (start, end) in enumerate(keep_ranges, start=1):
             dur = end - start
             tmp = os.path.join(tmp_dir, f"keep{idx:04d}.mp4")
-            print(f"  [{idx}/{len(keep_ranges)}] {sec_to_ts(start)} -> {sec_to_ts(end)}  ({dur:.3f}s)")
-            if run_ffmpeg(_cut_segment_cmd(video_path, start, end, tmp), f"stage keep range {idx}"):
+            console.item(f"[{idx}/{len(keep_ranges)}] {sec_to_ts(start)} -> "
+                         f"{sec_to_ts(end)}  ({dur:.3f}s)")
+            if run_ffmpeg(_cut_segment_cmd(video_path, start, end, tmp)):
                 tmp_files.append(tmp)
-                print("    ok")
             else:
-                print(f"    fail: skip range {idx}")
+                console.tag("fail", f"skipping range {idx}", indent=2)
 
         if not tmp_files:
-            print("\n[error] no keep range staged successfully, cannot merge.")
+            console.error("no keep range staged successfully, cannot merge.")
             return
 
         if _concat_files(tmp_files, tmp_dir, output_path):
-            print(f"\n  ok: inverse merge -> {output_path}")
+            console.ok(f"inverse merge -> {output_path}")
         else:
-            print("\n  fail: inverse merge.")
+            console.tag("fail", "inverse merge")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def interactive_mode() -> None:
     """Prompt-driven flow used when no CLI arguments are given."""
-    print("=" * 52)
-    print("   FFmpeg video cutter  v1.0")
-    print("=" * 52)
+    console.header("video_cutter", "cut an MP4 according to a segments JSON")
 
     while True:
         video = input("\nMP4 video path: ").strip().strip("'\"")
         if os.path.isfile(video):
             break
-        print("  [error] file not found, try again.")
+        console.error("file not found, try again.")
 
     while True:
         segments_path = input("segments JSON path: ").strip().strip("'\"")
         if os.path.isfile(segments_path):
             break
-        print("  [error] file not found, try again.")
+        console.error("file not found, try again.")
 
     try:
         segments = parse_segments(segments_path)
     except Exception as e:
-        print(f"\n[error] failed to read segments JSON: {e}")
+        console.error(f"failed to read segments JSON: {e}")
         sys.exit(1)
 
     if not segments:
-        print("\n[error] no valid segment in the JSON.")
+        console.error("no valid segment in the JSON.")
         sys.exit(1)
 
-    print(f"\n  read {len(segments)} valid segment(s).")
+    console.field("segments", f"read {console.count(len(segments), 'valid segment')}")
 
-    print("\nchoose output mode:")
-    print("  1. separate (one MP4 per segment)")
-    print("  2. merge (all segments into one MP4)")
-    print("  3. inverse merge (delete segments, keep the rest)")
+    console.blank()
+    console.note("choose output mode:", indent=0)
+    console.item("1. separate (one MP4 per segment)", indent=1)
+    console.item("2. merge (all segments into one MP4)", indent=1)
+    console.item("3. inverse merge (delete segments, keep the rest)", indent=1)
 
     while True:
         choice = input("enter 1, 2 or 3: ").strip()
         if choice in ("1", "2", "3"):
             break
-        print("  please enter 1, 2 or 3.")
+        console.error("please enter 1, 2 or 3.")
 
     if choice == "1":
         default_dir = Path(video).stem + "_segments"
@@ -306,13 +308,13 @@ def resolve_io(args: argparse.Namespace) -> tuple[str, str, str]:
 
         match_path = Path(args.match)
         if not match_path.is_dir():
-            print(f"[error] match path not found: {match_path}")
+            console.error(f"match path not found: {match_path}")
             sys.exit(1)
         if video is None:
             try:
                 video = str(resolve_input_video(match_path))
             except FileNotFoundError as e:
-                print(f"[error] {e}")
+                console.error(str(e))
                 sys.exit(1)
         if segments is None:
             segments = str(artifact_path(match_path, "match_segmentation"))
@@ -322,7 +324,7 @@ def resolve_io(args: argparse.Namespace) -> tuple[str, str, str]:
         missing = [f for f, v in (("-v/--video", video), ("-s/--segments", segments),
                                   ("-o/--output", output)) if v is None]
         if missing:
-            print(f"[error] without a match path, {', '.join(missing)} are required.")
+            console.error(f"without a match path, {', '.join(missing)} are required.")
             sys.exit(1)
 
     return video, segments, output
@@ -366,26 +368,28 @@ examples:
     video, segments_path, output = resolve_io(args)
 
     if not os.path.isfile(video):
-        print(f"[error] video not found: {video}")
+        console.error(f"video not found: {video}")
         sys.exit(1)
     if not os.path.isfile(segments_path):
-        print(f"[error] segments JSON not found: {segments_path}")
+        console.error(f"segments JSON not found: {segments_path}")
         sys.exit(1)
 
     try:
         segments = parse_segments(segments_path)
     except Exception as e:
-        print(f"[error] failed to read segments JSON: {e}")
+        console.error(f"failed to read segments JSON: {e}")
         sys.exit(1)
 
     if not segments:
-        print("[error] no valid segment in the JSON.")
+        console.error("no valid segment in the JSON.")
         sys.exit(1)
 
-    print(f"  video:    {video}")
-    print(f"  segments: {segments_path}")
-    print(f"  output:   {output}  (mode: {args.mode})")
-    print(f"  read {len(segments)} valid segment(s).")
+    console.header("video_cutter", "cut an MP4 according to a segments JSON")
+    console.summary([
+        ("video", video),
+        ("segments", f"{segments_path} ({console.count(len(segments), 'valid segment')})"),
+        ("output", f"{output}  (mode: {args.mode})"),
+    ])
 
     if args.mode == "separate":
         mode_separate(video, segments, output)

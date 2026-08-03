@@ -26,6 +26,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from modules.artifacts import read_records, read_segments
+from modules.common import console
 from modules.common.progress import SmoothProgress
 from modules.contracts import PIPELINE, resolve_input_video
 from modules.pose.estimator import POSE_MODES
@@ -91,16 +92,14 @@ def main() -> None:
     module = PoseModule(config=config)
 
     bar = SmoothProgress("pose", total=1000)
-    output = module.run(
+    module.run(
         match_path,
         on_progress=lambda f: bar.update(int(f * 1000), force=f >= 1.0),
         only_detect=args.only_detect,
     )
-    print(f"done -> {output}")
-
     if args.debug_overlay:
         written = _write_overlays(module, match_path, Path(args.debug_overlay), args.debug_frames)
-        print(f"overlay -> {written} frame(s) in {args.debug_overlay}")
+        console.field("overlay", f"{console.count(written, 'frame')} in {args.debug_overlay}")
 
     if args.csv_dir and not args.only_detect:
         from modules.pose import csv_export
@@ -111,7 +110,7 @@ def main() -> None:
         paths = csv_export.export(
             Path(args.csv_dir), records, segments, stem=match_path.name
         )
-        print(f"csv -> {len(paths)} segment file(s) in {args.csv_dir}")
+        console.field("csv", f"{console.count(len(paths), 'segment file')} in {args.csv_dir}")
 
 
 def _write_overlays(module: PoseModule, match_path: Path, out_dir: Path, count: int) -> int:

@@ -82,12 +82,11 @@ def main() -> None:
 
     bar = SmoothProgress("shuttle_tracking", total=1000)
     module = ShuttleTrackingModule(config=config)
-    output = module.run(
+    module.run(
         Path(args.match_path),
         on_progress=lambda f: bar.update(int(f * 1000), force=f >= 1.0),
         only_heatmap=args.only_heatmap,
     )
-    print(f"done -> {output}")
 
 
 if __name__ == "__main__":

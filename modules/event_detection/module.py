@@ -27,6 +27,7 @@ import numpy as np
 
 from modules.artifacts import read_records, write_artifact
 from modules.base import BaseModule, StageResult, stage_completed
+from modules.common import console
 from modules.common.bst import Window, predict_windows
 from modules.common.bst import adapter
 from modules.common.bst.model import DEFAULT_WEIGHT, default_device, load_bst_model, resolve_weight
@@ -132,13 +133,16 @@ class EventDetectionModule(BaseModule):
         cache = self.cache(fps, match_path)
         adopted = cache.migrate_legacy(segments, upstream)
         if adopted:
-            print(f"  dense scan: adopted {adopted} segment(s) from the pre-manifest cache")
+            console.field(
+                "dense scan",
+                f"adopted {console.count(adopted, 'segment')} from the pre-manifest cache",
+            )
 
         plan = cache.plan(segments, upstream, force=self.config.refresh_cache)
         pending = plan.missing
         if not pending:
             cache.commit(plan)
-            print(f"  dense scan: {len(segments)} segment(s) cached")
+            console.field("dense scan", f"{console.count(len(segments), 'segment')} cached")
             if on_progress:
                 on_progress(1.0)
             return
@@ -155,9 +159,12 @@ class EventDetectionModule(BaseModule):
 
         device = self.config.device or default_device()
         model = load_bst_model(resolve_weight(self.config.bst_checkpoint), device=device)
-        print(f"  device:     {device}")
-        print(f"  dense scan: {len(pending)} segment(s) to compute, "
-              f"{len(plan.hits)} cached (window +/-{half} frames)")
+        console.field("device", device)
+        console.field(
+            "dense scan",
+            f"{console.count(len(pending), 'segment')} to compute, "
+            f"{len(plan.hits)} cached (window +/-{half} frames)",
+        )
 
         total = sum(len(features[e.index]) for e in pending) or 1
         done = 0
@@ -282,7 +289,11 @@ class EventDetectionModule(BaseModule):
                 for frame in list(result.hits):
                     result.drop_rule[frame] = "score_dead"
                     del result.hits[frame]
-            print(f"  scoreboard: {len(dead)} dead segment(s), {emptied} hit(s) dropped")
+            console.field(
+                "scoreboard",
+                f"{console.count(len(dead), 'dead segment')}, "
+                f"{console.count(emptied, 'hit')} dropped",
+            )
         return results
 
     # -------------------------------------------------------------------- run
@@ -334,7 +345,9 @@ class EventDetectionModule(BaseModule):
         if debug_csv:
             self._write_debug(Path(debug_csv), results)
 
-        print(f"  {len(records)} hit(s) across {len(results)} segment(s)")
+        console.field(
+            "hits", f"{len(records)} across {console.count(len(results), 'segment')}"
+        )
         return StageResult(output_json)
 
     def _offset(self, frame: int, source: str, traj: Traj) -> int:
@@ -353,7 +366,7 @@ class EventDetectionModule(BaseModule):
                 result.base, result.hits, result.events, result.drop_rule,
                 self.config.offsets, sens_prom=self.config.signal.sens_yprom,
             )
-        print(f"  debug csv:  {len(results)} file(s) -> {out_dir}")
+        console.field("debug csv", f"{console.count(len(results), 'file')} -> {out_dir}")
 
     # ----------------------------------------------------------------- inputs
     def _read_scores(self, match_path: Path) -> dict[int, tuple[int, int] | None] | None:
@@ -364,14 +377,16 @@ class EventDetectionModule(BaseModule):
         a whole match without anyone noticing.
         """
         if not self.config.use_scores:
-            print("  scoreboard: rule disabled (--no-scores)")
+            console.field("scoreboard", "rule disabled (--no-scores)")
             return None
         if not stage_completed(match_path, "score_recognition"):
-            print("  scoreboard: [warn] score_recognition has not run for this match, so")
-            print("              the dead-time rule is OFF. Warm-up and time-out footage")
-            print("              between rallies will keep whatever hits are detected in")
-            print("              it. Run `python -m modules.score_recognition <match>`")
-            print("              first to enable it.")
+            console.warn(
+                "scoreboard: score_recognition has not run for this match, so\n"
+                "the dead-time rule is OFF. Warm-up and time-out footage\n"
+                "between rallies will keep whatever hits are detected in\n"
+                "it. Run `python -m modules.score_recognition <match>`\n"
+                "first to enable it."
+            )
             return None
 
         spec = PIPELINE["score_recognition"]
@@ -382,7 +397,7 @@ class EventDetectionModule(BaseModule):
             a, b = record.get("score_a"), record.get("score_b")
             scores[index] = (int(a), int(b)) if a is not None and b is not None else None
         if not scores:
-            print("  scoreboard: [warn] scores.json is empty, dead-time rule is OFF")
+            console.warn("scoreboard: scores.json is empty, dead-time rule is OFF")
             return None
-        print(f"  scoreboard: rule ON ({len(scores)} segment(s) scored)")
+        console.field("scoreboard", f"rule ON ({console.count(len(scores), 'segment')} scored)")
         return scores

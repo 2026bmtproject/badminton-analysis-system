@@ -25,6 +25,7 @@ import numpy as np
 
 from modules.artifacts import read_segments, write_artifact
 from modules.base import BaseModule, StageResult
+from modules.common import console
 from modules.common.video import iter_segment_frames
 from modules.contracts import (
     PIPELINE,
@@ -112,14 +113,18 @@ class PoseModule(BaseModule):
         cache = self.cache(match_path, video, image_to_court)
         adopted = cache.migrate_legacy(segments)
         if adopted:
-            print(f"  pose:     adopted {adopted} segment(s) from the pre-manifest cache")
+            console.field(
+                "pose",
+                f"adopted {console.count(adopted, 'segment')} from the pre-manifest cache",
+            )
         if cache.stale_notes():
-            # Plain ASCII: the one message that explains a silently-narrow cache.
-            print("  [warn] the court has changed since these detections were cached.")
-            print("         People just outside the old candidate band were never posed,")
-            print("         so a court that moved a lot wants --refresh-cache. A re-click")
-            print("         of the same corners does not: the band is far wider than the")
-            print("         selection inside it.")
+            console.warn(
+                "the court has changed since these detections were cached.\n"
+                "People just outside the old candidate band were never posed,\n"
+                "so a court that moved a lot wants --refresh-cache. A re-click\n"
+                "of the same corners does not: the band is far wider than the\n"
+                "selection inside it."
+            )
 
         plan = cache.plan(segments, force=self.config.refresh_cache)
         pending = plan.missing
@@ -138,10 +143,12 @@ class PoseModule(BaseModule):
             backend=self.config.backend,
             person_min_area=self.config.person_min_area,
         )
-        print(f"  device:   {estimator.device}")
-        print(f"  RTMPose:  {self.config.pose_mode} + YOLOX person detector")
-        print(f"  frames:   {len(pending)} segment(s) to compute, "
-              f"{len(plan.hits)} cached")
+        console.field("device", estimator.device)
+        console.field("RTMPose", f"{self.config.pose_mode} + YOLOX person detector")
+        console.field(
+            "frames",
+            f"{console.count(len(pending), 'segment')} to compute, {len(plan.hits)} cached",
+        )
 
         # Only people who could conceivably be players get a skeleton; the crowd is
         # discarded between the two models. See select.candidate_mask.
@@ -160,7 +167,6 @@ class PoseModule(BaseModule):
                 if on_progress and done_frames % 32 == 0:
                     on_progress(done_frames / total_frames)
             detection_cache.save_segment(entry.path, detections)
-            print(f"    {entry.label}: {len(detections)} frames")
         cache.commit(plan)
         if on_progress:
             on_progress(1.0)
@@ -239,7 +245,7 @@ class PoseModule(BaseModule):
         if only_detect:
             # The cache is warm but the stage produced no artifact, so it is not
             # done — leaving it COMPLETED would make the runner skip it forever.
-            print(f"  pose cache ready; stage still PENDING (no {OUTPUT_FILENAME} yet)")
+            console.note(f"pose cache ready; --only-detect wrote no {OUTPUT_FILENAME}")
             return StageResult(detection_cache.pose_dir(match_path), pending=True)
 
         records = self.build_frames(
@@ -259,7 +265,7 @@ class PoseModule(BaseModule):
                 "players_expected": len(records),
             },
         )
-        print(f"  players found in {found}/{len(records)} (frame, player) slots")
+        console.field("players", f"found in {found}/{len(records)} (frame, player) slots")
         return StageResult(output_json)
 
 

@@ -25,11 +25,13 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
 
+from modules.common import console
 from modules.common.downscale import ensure_max_height
 from modules.match_segmentation.boundary_refine import (
     RefineConfig,
@@ -180,9 +182,11 @@ def segment_video(
         kept_scores = scores[~excluded_mask]
         threshold = find_threshold_otsu3(kept_scores)
         if threshold_near_distribution_edge(kept_scores, threshold):
-            print(f"  [warn] threshold {threshold:.2f} sits in the tail of the score")
-            print("         distribution -- this video may not have the two motion")
-            print("         regimes (rally vs. cuts/replays) this stage assumes.")
+            console.warn(
+                f"threshold {threshold:.2f} sits in the tail of the score\n"
+                "distribution -- this video may not have the two motion\n"
+                "regimes (rally vs. cuts/replays) this stage assumes."
+            )
     is_low = scores < threshold
     if is_low.size > 0:
         is_low[0] = False
@@ -218,7 +222,8 @@ def segment_video(
     outlier_dropped = 0
     if config.cross_outlier_k > 0 and len(filtered_segments) >= 8:
         _, clean_avgs, _ = compute_cross_segment_scores(
-            filtered_pairs, frame_cache, config.compare_size
+            filtered_pairs, frame_cache, config.compare_size,
+            label="step 4: replay rejection",
         )
         filtered_segments, dropped = reject_cross_outliers(
             filtered_segments, clean_avgs, config.cross_outlier_k
@@ -334,60 +339,65 @@ def main() -> None:
         single_scene_guard=bool(args.single_scene_guard),
     )
 
-    print("=" * 72)
-    print("match_segmentation: FrameDiff(MAD) + Otsu + cross-segment filtering")
-    print("=" * 72)
-    print(f"video:  {video_path}")
-    print(f"output: {output_json}")
-    if config.scan_max_height > 0:
-        print(f"scan max height: {config.scan_max_height}p (downscale source if taller)")
-    else:
-        print("scan max height: disabled (scan at source resolution)")
-    if config.frame_step > 1:
-        print(f"subsample: decode 1 every {config.frame_step} frames")
-    else:
-        print("subsample: every frame")
-    if args.exclude_path:
-        print(f"exclude & rerun: {args.exclude_path}")
+    console.header(
+        "match_segmentation",
+        "FrameDiff(MAD) + Otsu + cross-segment filtering",
+    )
+    console.summary([
+        ("video", video_path),
+        ("output", output_json),
+        ("scan max height",
+         f"{config.scan_max_height}p (downscale source if taller)"
+         if config.scan_max_height > 0 else "disabled (scan at source resolution)"),
+        ("subsample",
+         f"decode 1 every {config.frame_step} frames"
+         if config.frame_step > 1 else "every frame"),
+        ("exclude & rerun", args.exclude_path or None),
+    ])
 
+    started = time.perf_counter()
     result = segment_video(video_path, config, exclude_path=args.exclude_path)
     write_segments(output_json, result.segments, result.fps)
+    elapsed = time.perf_counter() - started
 
-    print("-" * 72)
-    print(f"FPS: {result.fps:.3f}")
-    print(f"total frames: {result.processed_frames}")
-    print(f"duration: {result.duration_sec / 60:.1f} min")
-    if result.single_scene:
-        print("single-scene guard: no scene cuts detected -> emitting one segment")
-    print(f"Otsu threshold: {result.threshold:.2f}")
-    if result.excluded_frame_count:
-        print(f"excluded frames: {result.excluded_frame_count}")
-    print(f"below threshold: {result.low_frames} ({result.low_frames / max(result.total_scored, 1) * 100:.1f}%)")
-    print(f"raw segments: {result.raw_count}")
-    print(f"merged segments: {result.merged_count}")
-    print(f"merge threshold (gap low-diff ratio): {clamp(config.merge_min_ratio, 0.0, 1.0):.2f}")
-    print(f"candidate segments (min {config.min_segment_seconds:.1f}s): {result.candidate_count}")
-    if result.cross_avgs:
-        print(f"Cross_Diff_Avg min: {result.min_avg}")
-        print(f"Cross_Diff_Avg pct: {result.used_pct * 100:.2f}%")
-        print(f"Cross_Diff_Avg threshold: {result.avg_threshold}")
-    else:
-        print("Cross_Diff_Avg: no candidate segments")
-    print(f"reference segments: {result.compared_segments}")
-    print(f"segments after Cross_Diff_Avg filter: {result.filtered_count}")
-    if config.cross_outlier_k > 0:
-        print(f"replay outliers dropped (>{config.cross_outlier_k:g}x median): {result.outlier_dropped}")
-    if config.bridge_max_gap > 0:
-        print(f"in-rally splits bridged (cut-free gap < {config.bridge_max_gap}): {result.gaps_bridged}")
-    if config.refine_boundaries:
-        print(f"boundaries snapped to scene cut: {result.boundaries_moved}")
-    if config.final_merge_gap > 0:
-        print(f"segments after final merge (gap < {config.final_merge_gap}): {len(result.segments)}")
-    else:
-        print("final merge: disabled")
-    print(f"final kept segments: {len(result.segments)}")
-    print(f"key-frame cache: {result.key_frame_cache}")
-    print("done")
+    console.section("report")
+    console.summary([
+        ("FPS", f"{result.fps:.3f}"),
+        ("total frames", result.processed_frames),
+        ("duration", f"{result.duration_sec / 60:.1f} min"),
+        ("single-scene guard",
+         "no scene cuts detected -> emitting one segment" if result.single_scene else None),
+        ("Otsu threshold", f"{result.threshold:.2f}"),
+        ("excluded frames", result.excluded_frame_count or None),
+        ("below threshold",
+         f"{result.low_frames} "
+         f"({result.low_frames / max(result.total_scored, 1) * 100:.1f}%)"),
+        ("raw segments", result.raw_count),
+        ("merged segments", result.merged_count),
+        ("merge threshold (gap low-diff ratio)",
+         f"{clamp(config.merge_min_ratio, 0.0, 1.0):.2f}"),
+        (f"candidate segments (min {config.min_segment_seconds:.1f}s)",
+         result.candidate_count),
+        ("Cross_Diff_Avg min", result.min_avg if result.cross_avgs else None),
+        ("Cross_Diff_Avg pct",
+         f"{result.used_pct * 100:.2f}%" if result.cross_avgs else None),
+        ("Cross_Diff_Avg threshold", result.avg_threshold if result.cross_avgs else None),
+        ("Cross_Diff_Avg", None if result.cross_avgs else "no candidate segments"),
+        ("reference segments", result.compared_segments),
+        ("segments after Cross_Diff_Avg filter", result.filtered_count),
+        (f"replay outliers dropped (>{config.cross_outlier_k:g}x median)",
+         result.outlier_dropped if config.cross_outlier_k > 0 else None),
+        (f"in-rally splits bridged (cut-free gap < {config.bridge_max_gap})",
+         result.gaps_bridged if config.bridge_max_gap > 0 else None),
+        ("boundaries snapped to scene cut",
+         result.boundaries_moved if config.refine_boundaries else None),
+        (f"segments after final merge (gap < {config.final_merge_gap})",
+         len(result.segments) if config.final_merge_gap > 0 else None),
+        ("final merge", None if config.final_merge_gap > 0 else "disabled"),
+        ("final kept segments", len(result.segments)),
+        ("key-frame cache", result.key_frame_cache),
+    ])
+    console.ok(f"match_segmentation in {console.duration(elapsed)} -> {output_json}")
 
 
 if __name__ == "__main__":

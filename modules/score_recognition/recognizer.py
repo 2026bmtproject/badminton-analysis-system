@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import base64
 import json
-import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,6 +35,7 @@ from modules.common.frame_composite import (
     composite_sigma_clip,
     extract_frames_in_range,
 )
+from modules.common import console
 from modules.contracts import RallyScore
 from modules.score_recognition.score_cache import ScoreCache
 
@@ -247,14 +247,16 @@ def call_gemini(
             err_body = e.read().decode("utf-8", errors="replace")
             if e.code == 429 or e.code >= 500:
                 wait = retry_base_delay * attempt
-                print(f"    HTTP {e.code}, retry {attempt}/{max_retries} in {wait:.0f}s...")
+                console.tag("retry", f"HTTP {e.code} - attempt {attempt}/{max_retries} "
+                                     f"in {wait:.0f}s", indent=2)
                 time.sleep(wait)
             else:
-                print(f"    HTTP {e.code}: {err_body}", file=sys.stderr)
+                console.error(f"HTTP {e.code}: {err_body}", indent=2)
                 raise
         except Exception as e:
             wait = retry_base_delay * attempt
-            print(f"    Error: {e}, retry {attempt}/{max_retries} in {wait:.0f}s...")
+            console.tag("retry", f"{e} - attempt {attempt}/{max_retries} "
+                                 f"in {wait:.0f}s", indent=2)
             time.sleep(wait)
 
     raise RuntimeError(f"failed after {max_retries} retries")
@@ -614,8 +616,8 @@ def _refine_merged_segments(
                 rally.split_secs = split_secs
                 if info is not None:
                     info["refine"] = f"merged -> {sub_scores} @ {split_secs}s"
-                print(f"  seg {rally.segment_index}: merged rally recovered "
-                      f"-> {sub_scores} @ {split_secs}s")
+                console.item(f"seg {rally.segment_index}: merged rally recovered "
+                             f"-> {sub_scores} @ {split_secs}s")
             elif info is not None:
                 info["refine"] = f"jump seen but not resolved{f' ({err})' if err else ''}"
         if cur is not None:
@@ -659,21 +661,22 @@ def recognize_scores(
     rate_limiter = RateLimiter(config.rpm, burst=concurrency)
     print_lock = threading.Lock()
     done_count = [0]
+    cached_count = [0]
 
     def process(index: int, seg: dict) -> tuple[RallyScore, dict]:
         """Worker: score one segment. Never raises — failures become a note."""
         start, end = int(seg["start_frame"]), int(seg["end_frame"])
+        from_cache = False
         try:
             hit = cache.get(start, end) if cache is not None else None
             if hit is not None and hit.get("best") is not None:
-                best, attempts, source = hit["best"], hit.get("attempts", []), "cached"
+                best, attempts, from_cache = hit["best"], hit.get("attempts", []), True
             else:
                 best, attempts = score_segment(
                     video_path, start, end, api_key, config,
                     rate_limiter=rate_limiter,
                     stop_event=stop_event,
                 )
-                source = best.get("method", "")
                 if (
                     cache is not None
                     and best.get("score_a") is not None
@@ -691,17 +694,17 @@ def recognize_scores(
                 "attempts": format_attempts(attempts),
                 "note": best.get("note", ""),
             }
-            with print_lock:
-                print(f"[{index + 1}/{total}] seg {index} "
-                      f"→ {rally.score_a} : {rally.score_b}  ({source})")
+            # The scores themselves land in scores.json; with a hundred workers running
+            # out of order, printing each one only buries the failures below.
         except Exception as e:
             rally = RallyScore(segment_index=index, score_a=None, score_b=None)
             info = {"segment_index": index, "method": "", "attempts": "", "note": str(e)[:200]}
             with print_lock:
-                print(f"[{index + 1}/{total}] seg {index} ERROR: {e}")
+                console.tag("fail", f"seg {index} ({index + 1}/{total}): {e}", indent=1)
 
         with print_lock:
             done_count[0] += 1
+            cached_count[0] += from_cache
             if on_progress is not None:
                 on_progress(done_count[0] / max(total, 1))
         return rally, info
@@ -727,6 +730,10 @@ def recognize_scores(
 
     kept_rallies = [r for r in rallies if r is not None]
     kept_infos = [info for info in infos if info is not None]
+    console.field(
+        "scoreboard",
+        f"{console.count(total, 'segment')} read, {cached_count[0]} from cache",
+    )
 
     if (
         config.refine_merged_segments

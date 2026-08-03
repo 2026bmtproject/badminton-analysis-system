@@ -22,6 +22,9 @@ class MatchSegmentationModule(BaseModule):
 
     name = "match_segmentation"
     dependencies = PIPELINE["match_segmentation"].dependencies  # [] — first stage
+    # segment_video draws a bar per phase (scan, key frames, cross-segment MAD); this
+    # stage only reports four checkpoints, so a runner bar would say less and cover more.
+    draws_own_progress = True
 
     def __init__(
         self,
