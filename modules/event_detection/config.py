@@ -136,12 +136,18 @@ class PruneConfig:
     score_serve_conf: float = 0.4
 
 
-#: Systematic offset, in frames, applied to a hit frame **once**, at record-building time.
-#: The detector fires at the shuttle's turning point, which leads the actual contact by
-#: about two frames — so anything derived from the trajectory (ball / refine / sens) gets
-#: +2. A dense-scan weighted centre and a serve-rise anchor are not turning-point
-#: estimates and sit closer to the truth; tuning put them at +1.
-DEFAULT_OFFSETS: dict[str, int] = {
+#: Optional per-source offset, in frames, applied to a hit frame **once**, at
+#: record-building time. **Off by default** — the stage reports the frame it actually
+#: detected on.
+#:
+#: The +2 was measured against the manual labels: the detector fires at the shuttle's
+#: turning point and the labels sit about two frames later, so shifting the trajectory
+#: sources (ball / refine / sens) by +2 scored better. A dense-scan weighted centre and a
+#: serve-rise anchor are not turning-point estimates and sat closer, at +1. But that is a
+#: property of the *labels*, not of the video, so the correction now belongs to whoever is
+#: comparing against them — ``tools/accuracy_eval.py`` shifts the answer instead (see its
+#: ``--gt-offset``). Pass ``offsets=dict(SOURCE_OFFSETS)`` to get the old behaviour back.
+SOURCE_OFFSETS: dict[str, int] = {
     "ball": 2, "refine": 2, "sens": 2, "dense": 1, "serve": 1,
 }
 
@@ -168,7 +174,7 @@ class EventDetectionConfig:
     select: SelectConfig = field(default_factory=SelectConfig)
     complete: CompleteConfig = field(default_factory=CompleteConfig)
     prune: PruneConfig = field(default_factory=PruneConfig)
-    offsets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_OFFSETS))
+    offsets: dict[str, int] = field(default_factory=dict)   # see SOURCE_OFFSETS
 
     # dense scan (phase 1)
     bst_checkpoint: str | None = None   # None -> modules.common.bst.model.DEFAULT_WEIGHT

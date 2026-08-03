@@ -20,7 +20,7 @@ from pathlib import Path
 
 from modules.common.progress import SmoothProgress
 from modules.contracts import SHUTTLE_METHODS
-from modules.event_detection.config import EventDetectionConfig
+from modules.event_detection.config import SOURCE_OFFSETS, EventDetectionConfig
 from modules.event_detection.module import EventDetectionModule
 
 
@@ -38,6 +38,10 @@ def parse_args() -> argparse.Namespace:
                         help="dense-scan inference batch size (default 256)")
     parser.add_argument("--no-scores", action="store_true",
                         help="skip the scoreboard dead-time rule even if scores.json exists")
+    parser.add_argument("--source-offsets", action="store_true",
+                        help="shift each hit by its source's measured label offset "
+                             "(off by default; the stage reports the detected frame and "
+                             "tools/accuracy_eval.py shifts the answer instead)")
     parser.add_argument("--debug-csv", default=None, metavar="DIR",
                         help="also write the 18-column detail CSV per segment")
     parser.add_argument("--refresh-cache", action="store_true",
@@ -63,6 +67,7 @@ def main() -> None:
         device=args.device,
         refresh_cache=args.refresh_cache,
         use_scores=not args.no_scores,
+        offsets=dict(SOURCE_OFFSETS) if args.source_offsets else {},
     )
 
     bar = SmoothProgress("event_detection", total=1000)

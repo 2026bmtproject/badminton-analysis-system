@@ -9,11 +9,12 @@ The layout is v632's, column for column. While that reference still existed, a m
 test diffed the two runs against each other directly; both are gone now, but the columns
 are kept as they were — they are a good layout, and re-inventing them would buy nothing.
 
-One thing to know when reading it: the ``Hit`` flag is written at ``frame + offset`` while
-everything else stays on the detector's native frame, so a hit row is usually a couple of
-rows below the candidate row that explains it. That is not a mistake — see
-``config.DEFAULT_OFFSETS`` — it is the whole reason the offset is applied once, here and in
-the records, rather than being smeared through the pipeline.
+One thing to know when reading it: the ``Hit`` flag is written at ``frame + offset``, and
+the offset is off by default (``config.SOURCE_OFFSETS``), so normally the flag sits on the
+candidate row that explains it. Turn the offsets on and the flag moves a couple of rows
+down while everything else stays on the detector's native frame — that is not a mistake,
+it is the offset being applied once, here and in the records, rather than being smeared
+through the pipeline.
 """
 
 from __future__ import annotations

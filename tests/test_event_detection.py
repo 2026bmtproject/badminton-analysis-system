@@ -35,7 +35,7 @@ from modules.contracts import (
 )
 from modules.event_detection import dense_cache
 from modules.event_detection.complete import complete_segment
-from modules.event_detection.config import EventDetectionConfig
+from modules.event_detection.config import SOURCE_OFFSETS, EventDetectionConfig
 from modules.event_detection.evidence import Dense
 from modules.common.bst.features import SegmentFeatures
 from modules.event_detection import module as module_under_test
@@ -435,31 +435,51 @@ def test_stage_writes_absolute_frames_and_nothing_else(match):
     assert json.loads(output.read_text(encoding="utf-8"))["scoreboard_rule"] is False
 
 
-def test_offset_is_applied_once_and_clamped(match):
-    """A trajectory-sourced hit leads the true contact by ~2 frames, and is shifted for it.
-
-    The same hit must not be shifted again anywhere else, and the shift must never push a
-    hit out of its own segment.
-    """
-    tmp_path, checkpoint, start = match
-    config = EventDetectionConfig(bst_checkpoint=str(checkpoint))
-    module = EventDetectionModule(config)
-
-    segments, fps = adapter.read_segments(tmp_path)
+def _detected_hits(module, match_path):
+    """``{frame: source}`` for the fixture's single segment, straight out of detection."""
+    segments, fps = adapter.read_segments(match_path)
     results = module.detect(
-        tmp_path, segments, None, fps, module.upstream(tmp_path, segments)
+        match_path, segments, None, fps, module.upstream(match_path, segments)
     )
-    raw = sorted(results[0].hits)
+    return {frame: source for frame, (source, _) in results[0].hits.items()}
+
+
+def test_no_offset_is_applied_by_default(match):
+    """The stage reports the frame it detected on.
+
+    The measured ~2 frame lead on the manual labels is a property of those labels, so
+    correcting for it belongs to whoever compares against them (``tools/accuracy_eval.py``
+    shifts the answer), not to the detector's own output.
+    """
+    tmp_path, checkpoint, _start = match
+    module = EventDetectionModule(EventDetectionConfig(bst_checkpoint=str(checkpoint)))
+    detected = _detected_hits(module, tmp_path)
 
     output = module.run(tmp_path)
     written = [e["frame"] for e in read_artifact(PIPELINE["event_detection"], output)["events"]]
 
-    offsets = {frame: config.offsets[source] for frame, (source, _) in results[0].hits.items()}
+    assert written == sorted(detected)
+    assert json.loads(output.read_text(encoding="utf-8"))["offsets"] == {}
+
+
+def test_opted_in_offset_is_applied_once_and_clamped(match):
+    """Turned on, each source's shift lands exactly once and never leaves the segment."""
+    tmp_path, checkpoint, start = match
+    config = EventDetectionConfig(
+        bst_checkpoint=str(checkpoint), offsets=dict(SOURCE_OFFSETS)
+    )
+    module = EventDetectionModule(config)
+    detected = _detected_hits(module, tmp_path)
+
+    output = module.run(tmp_path)
+    written = [e["frame"] for e in read_artifact(PIPELINE["event_detection"], output)["events"]]
+
     expected = sorted(
-        min(max(f + offsets[f], start), start + 239) for f in raw
+        min(max(f + SOURCE_OFFSETS[source], start), start + 239)
+        for f, source in detected.items()
     )
     assert written == expected
-    assert all(offsets[f] in (1, 2) for f in raw)
+    assert all(SOURCE_OFFSETS[source] in (1, 2) for source in detected.values())
 
 
 def test_missing_scores_are_announced_not_swallowed(match, capsys):

@@ -22,9 +22,10 @@ one in from the strongest evidence available:
 Every fill respects ``min_sep`` from every existing hit, so two rules cannot both fill the
 same gap.
 
-Returns ``(frame, source, tag)``; ``source`` selects the output offset (see
-``config.DEFAULT_OFFSETS``) because a synthesized dense centre and a detected turning
-point do not lead the true contact by the same amount.
+Returns ``(frame, source, tag)``; ``source`` says how the frame was arrived at, which is
+what the optional output offset keys off (see ``config.SOURCE_OFFSETS``) because a
+synthesized dense centre and a detected turning point do not lead the true contact by the
+same amount.
 """
 
 from __future__ import annotations

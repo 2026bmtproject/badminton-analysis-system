@@ -338,7 +338,11 @@ class EventDetectionModule(BaseModule):
         return StageResult(output_json)
 
     def _offset(self, frame: int, source: str, traj: Traj) -> int:
-        """Apply the systematic offset, once, and keep the hit inside its segment."""
+        """Apply the per-source offset, once, and keep the hit inside its segment.
+
+        ``config.offsets`` is empty by default, which makes this the identity — see
+        ``config.SOURCE_OFFSETS``.
+        """
         shifted = frame + self.config.offsets.get(source, 0)
         return min(max(shifted, traj.frames[0]), traj.frames[-1])
 
