@@ -32,9 +32,22 @@ from typing import Callable
 
 import numpy as np
 
+from modules.common import console
+
+#: Set this to any non-empty value to let onnxruntime's own warnings through. They are
+#: silenced by default -- they land in the middle of the stage's report and none of them
+#: is actionable on a working machine -- but on one where the CUDA provider half-loads
+#: they name the DLL that failed, which nothing in this system can work out for itself.
+ORT_VERBOSE_ENV = "BADMINTON_ORT_VERBOSE"
+
 #: Maps the detected boxes to a mask of which ones deserve a skeleton. See
 #: ``modules.pose.select.candidate_mask``.
 KeepFn = Callable[[np.ndarray], np.ndarray]
+
+
+def ort_verbose() -> bool:
+    """Whether the user asked to see onnxruntime's own diagnostics."""
+    return bool(os.environ.get(ORT_VERBOSE_ENV, "").strip())
 
 #: RTMPose ONNX checkpoints (body7-trained, so they generalize to broadcast footage).
 #: mode -> (url, (width, height)). Bigger input = more accurate, slower.
@@ -112,7 +125,11 @@ def enable_cuda_dlls() -> None:
     import onnxruntime as ort
 
     if hasattr(ort, "preload_dlls"):
-        ort.preload_dlls()
+        # Announces "Skip loading CUDA and cuDNN DLLs since torch is imported" on the way
+        # through. Whether it loaded them is not what decides the device -- _resolve
+        # settles that by building a session and asking what provider it got.
+        with console.muted():
+            ort.preload_dlls()
 
 
 def cuda_available() -> bool:
@@ -151,23 +168,38 @@ class TwoStagePoseEstimator:
         self.pose_mode = pose_mode
         self.person_min_area = person_min_area  # fraction of frame area; 0 = keep all
 
-        from rtmlib import RTMPose, YOLOX
+        # Loading two ONNX models prints six lines of rtmlib and onnxruntime chatter into
+        # the middle of the stage's report. None of it is actionable: a provider that
+        # fails to load shows up in _on_gpu below, which then says so in this system's own
+        # words. Only the *construction* is muted — _resolve's NO GPU IN USE warning is
+        # the one thing here nobody may miss, so it must stay outside.
+        with console.muted():
+            import onnxruntime as ort
+
+            # ORT writes from C++, so console.muted() cannot reach it and the severity
+            # is the only lever. It is a process-global one, hence the escape hatch:
+            # on a machine where CUDA half-works, ORT's own warning is the only thing
+            # that names the DLL that failed.
+            ort.set_default_logger_severity(2 if ort_verbose() else 3)  # 2 = WARNING
+            from rtmlib import RTMPose, YOLOX
 
         pose_url, pose_input = POSE_MODELS[pose_mode]
 
         def build_pose(on: str):
-            return RTMPose(onnx_model=pose_url, model_input_size=pose_input,
-                           backend=backend, device=on)
+            with console.muted():
+                return RTMPose(onnx_model=pose_url, model_input_size=pose_input,
+                               backend=backend, device=on)
 
         # Building the session is what actually loads the CUDA DLLs, and loading them is
         # where it usually fails — so the device is settled by *trying* it, on the model
         # we were going to build anyway.
         self.device, self.pose = self._resolve(device, backend, build_pose)
 
-        self.det = YOLOX(
-            onnx_model=DET_MODEL, model_input_size=DET_INPUT,
-            backend=backend, device=self.device,
-        )
+        with console.muted():
+            self.det = YOLOX(
+                onnx_model=DET_MODEL, model_input_size=DET_INPUT,
+                backend=backend, device=self.device,
+            )
         if self.device == "cuda":
             if not _on_gpu(self.det):
                 raise RuntimeError(
@@ -219,7 +251,7 @@ class TwoStagePoseEstimator:
             "for CUDA 13 while torch ships CUDA 12 — see the pin in pyproject.toml)"
         )
         if explicit_cuda:
-            raise RuntimeError(f"device='cuda' but {reason}. See the ORT warnings above.")
+            raise RuntimeError(f"device='cuda' but {reason}. {_ORT_HINT}")
         _warn_cpu(reason)
         return "cpu", build_pose("cpu")
 
@@ -266,9 +298,17 @@ def empty_detection() -> dict[str, np.ndarray]:
     }
 
 
+#: Appended wherever the GPU was wanted and not had, because the *reason* this system
+#: can give is a guess about the usual cause -- onnxruntime knows the actual one.
+_ORT_HINT = f"Set {ORT_VERBOSE_ENV}=1 and re-run to see onnxruntime's own diagnosis."
+
+
 def _warn_cpu(reason: str) -> None:
     # Plain ASCII and impossible to miss: a silent CPU run is the failure that costs a
     # user an afternoon. Same reasoning as the warning in shuttle_tracking.
-    print(f"  [warn] NO GPU IN USE - {reason}.")
-    print("         RTMPose will run on the CPU: roughly 3x slower, but it will finish.")
-    print("         Pass --device cuda to make this an error instead of a warning.")
+    console.warn(
+        f"NO GPU IN USE - {reason}.\n"
+        "RTMPose will run on the CPU: roughly 3x slower, but it will finish.\n"
+        "Pass --device cuda to make this an error instead of a warning.\n"
+        f"{_ORT_HINT}"
+    )
