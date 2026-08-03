@@ -45,11 +45,10 @@ def main() -> None:
     )
 
     module = CourtDetectionModule(config=config)
-    output = module.run(
+    module.run(
         Path(args.match_path),
         confirm=None if args.no_confirm else fine_tune,
     )
-    print(f"done -> {output}")
 
 
 if __name__ == "__main__":

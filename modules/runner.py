@@ -27,9 +27,13 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import textwrap
+import time
 from pathlib import Path
 
 from modules.base import BaseModule, StageStatus, current_inputs, read_status
+from modules.common import console
+from modules.common.progress import SmoothProgress
 from modules.contracts import stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.event_detection import EventDetectionModule
@@ -102,8 +106,15 @@ def run_pipeline(
         {name: [*m.dependencies, *m.optional_dependencies] for name, m in modules.items()}
     )
 
-    print(f"pipeline: {match_path}")
-    print(f"stages ({len(order)}): {' -> '.join(order)}\n")
+    console.header(f"pipeline: {match_path}")
+    console.summary(
+        [
+            ("stages", len(order)),
+            ("order", "\n".join(textwrap.wrap(" -> ".join(order), console.RULE_WIDTH - 12))),
+        ]
+    )
+    started = time.perf_counter()
+    untracked = 0
 
     for name in order:
         module = modules[name]
@@ -112,32 +123,47 @@ def run_pipeline(
             stale = stale_inputs(match_path, module)
             if stale is None:
                 if not strict_stale:
-                    # Plain ASCII: a legacy-console code page mangles anything else, and
-                    # this line is how a user finds out why nothing rebuilt.
-                    print(f"[skip] {name}: already completed (inputs not tracked - run "
-                          f"with --strict-stale to rebuild anyway)")
+                    console.tag("skip", f"{name}: already completed (inputs not tracked)")
+                    untracked += 1
                     continue
                 reason = "its inputs were never recorded"
             elif not stale:
-                print(f"[skip] {name}: already completed")
+                console.tag("skip", f"{name}: already completed")
                 continue
             else:
                 reason = f"{', '.join(stale)} changed since it last ran"
-            print(f"[stale] {name}: {reason}")
+            console.tag("stale", f"{name}: {reason}")
 
         if not module.check_ready(match_path):
-            print(f"[stop] {name}: not ready (missing input or unfinished dependency)")
+            console.tag("stop", f"{name}: not ready (missing input or unfinished dependency)")
             return False
 
-        print(f"[run ] {name} ...")
+        # The stage prints its own banner, timing and verdict -- see BaseModule.run.
+        # The bar is this runner's job, though: without one, a stage that takes 25
+        # minutes has to narrate its own progress segment by segment, which is how the
+        # per-rally spam got there in the first place. Unless the stage already draws
+        # its own, finer bars, in which case a second one just fights them for the line.
+        bar = None if module.draws_own_progress else SmoothProgress(name, total=1000)
         try:
-            output = module.run(match_path)
-        except Exception as e:  # a stage failed -> stop the pipeline
-            print(f"[fail] {name}: {e}")
+            module.run(
+                match_path,
+                on_progress=(
+                    None if bar is None
+                    else lambda f: bar.update(int(f * 1000), force=f >= 1.0)
+                ),
+            )
+        except Exception:  # a stage failed (and said so) -> stop the pipeline
+            console.blank()
+            console.header(f"pipeline stopped at {name}")
             return False
-        print(f"[done] {name} -> {output}\n")
 
-    print("pipeline complete.")
+    if untracked:
+        console.info(
+            f"{console.count(untracked, 'stage')} predate input tracking and were left "
+            "alone.\nRun with --strict-stale to rebuild them anyway."
+        )
+    console.blank()
+    console.header(f"pipeline complete in {console.duration(time.perf_counter() - started)}")
     return True
 
 

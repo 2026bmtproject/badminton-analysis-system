@@ -58,12 +58,11 @@ def main() -> None:
 
     bar = SmoothProgress("score_recognition", total=100)
     module = ScoreRecognitionModule(config=config)
-    output = module.run(
+    module.run(
         Path(args.match_path),
         on_progress=lambda ratio: bar.update(int(ratio * 100)),
     )
     bar.update(100, force=True)
-    print(f"done -> {output}")
 
 
 if __name__ == "__main__":

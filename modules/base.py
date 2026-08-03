@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Callable
+
+from modules.common import console
 
 
 class StageStatus(str, Enum):
@@ -143,6 +146,10 @@ class BaseModule:
     #: Stages this one reads *if they have run*, and works without otherwise. They order
     #: the pipeline (see modules.contracts.ordering_dependencies) but never gate it.
     optional_dependencies: list[str] = []
+    #: True for a stage that draws its own progress bars. The runner then does not open
+    #: one of its own: two bars sharing one terminal line just flicker over each other,
+    #: and the stage's own are the ones with something to say.
+    draws_own_progress: bool = False
 
     def check_ready(self, match_path) -> bool:
         """Return True only when every dependency's status is completed.
@@ -157,6 +164,11 @@ class BaseModule:
     def run(self, match_path, on_progress: ProgressFn | None = None, **kwargs) -> Path:
         """Run the stage and keep status.json up to date.
         This owns every RUNNING -> COMPLETED/PENDING/FAILED transition.
+
+        It also owns the stage's *terminal* framing -- the banner, the elapsed time and
+        the one-line verdict. Putting it here rather than in the runner is what makes a
+        stage look the same whether the pipeline invoked it or someone ran
+        ``python -m modules.<stage>`` by hand.
         """
         from modules.contracts import stage_path  # local import avoids a cycle
 
@@ -165,27 +177,42 @@ class BaseModule:
         state = StageState(name=self.name, status=StageStatus.RUNNING, started_at=_now_iso())
         write_status(out_dir, state)
 
+        console.section(self.name)
+        started = time.perf_counter()
+        # The bookkeeping is inside the try, not just ``_run``: a stage whose work
+        # succeeded but whose fingerprinting blew up is still a failed stage, and
+        # leaving it RUNNING strands it -- the runner will neither skip nor re-run it.
         try:
             result = self._run(match_path, on_progress=on_progress, **kwargs)
+
+            state.finished_at = _now_iso()
+            if result.pending:
+                state.status = StageStatus.PENDING
+            else:
+                state.status = StageStatus.COMPLETED
+                state.output_path = str(result.path.relative_to(match_path))
+                state.inputs = current_inputs(
+                    match_path, [*self.dependencies, *self.optional_dependencies]
+                )
+            write_status(out_dir, state)
         except Exception as e:
             state.status = StageStatus.FAILED
             state.finished_at = _now_iso()
             state.error = str(e)
             write_status(out_dir, state)
+            failed_in = console.duration(time.perf_counter() - started)
+            console.fail(f"{self.name} after {failed_in}\n{e}")
             raise
 
-        state.finished_at = _now_iso()
-        if result.pending:
-            state.status = StageStatus.PENDING
-        else:
-            state.status = StageStatus.COMPLETED
-            state.output_path = str(result.path.relative_to(match_path))
-            state.inputs = current_inputs(
-                match_path, [*self.dependencies, *self.optional_dependencies]
-            )
-        write_status(out_dir, state)
+        # Finish the progress bar before the verdict: the bar redraws over its own line,
+        # so a late final render would wipe out whatever was printed after it.
         if not result.pending and on_progress:
             on_progress(1.0)
+        elapsed = console.duration(time.perf_counter() - started)
+        if result.pending:
+            console.info(f"{self.name} still PENDING after {elapsed} -> {result.path}")
+        else:
+            console.ok(f"{self.name} in {elapsed} -> {result.path}")
         return result.path
 
     def _run(

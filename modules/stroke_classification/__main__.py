@@ -56,12 +56,11 @@ def main() -> None:
 
     bar = SmoothProgress("stroke_classification", total=1000)
     module = StrokeClassificationModule(config=config)
-    output = module.run(
+    module.run(
         Path(args.match_path),
         on_progress=lambda f: bar.update(int(f * 1000), force=f >= 1.0),
         debug_csv=args.debug_csv,
     )
-    print(f"done -> {output}")
 
 
 if __name__ == "__main__":
