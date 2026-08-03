@@ -78,8 +78,14 @@ def compute_cross_segment_scores(
     pairs: list[tuple[int, int]],
     frame_cache: dict[int, np.ndarray],
     compare_size: tuple[int, int] = DEFAULT_COMPARE_SIZE,
+    label: str = "step 3: cross-segment MAD",
 ) -> tuple[list[int], list[int], int]:
-    """Compute pairwise cross-segment MAD sums and averages."""
+    """Compute pairwise cross-segment MAD sums and averages.
+
+    ``label`` names this pass's progress bar. The replay-rejection pass runs the same
+    computation a second time over the survivors, and two bars reading ``step 3`` in a
+    row look like one bar that restarted.
+    """
     seg_count = len(pairs)
     if seg_count == 0:
         return [], [], 0
@@ -93,7 +99,7 @@ def compute_cross_segment_scores(
 
     total_pairs = seg_count * (seg_count - 1) // 2
     done_pairs = 0
-    bar = SmoothProgress("step 3: cross-segment MAD", total_pairs)
+    bar = SmoothProgress(label, total_pairs)
     bar.update(0, force=True)
 
     for i in range(seg_count):

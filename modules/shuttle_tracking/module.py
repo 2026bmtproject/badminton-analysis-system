@@ -28,6 +28,7 @@ import numpy as np
 
 from modules.artifacts import read_segments, write_artifact
 from modules.base import BaseModule, StageResult
+from modules.common import console
 from modules.common.config import repo_root
 from modules.contracts import (
     PIPELINE,
@@ -134,7 +135,10 @@ class ShuttleTrackingModule(BaseModule):
         cache = self._cache(match_path, video)
         adopted = cache.migrate_legacy(segments)
         if adopted:
-            print(f"  heatmaps: adopted {adopted} segment(s) from the pre-manifest cache")
+            console.field(
+                "heatmaps",
+                f"adopted {console.count(adopted, 'segment')} from the pre-manifest cache",
+            )
 
         plan = cache.plan(segments, force=self.config.refresh_cache)
         pending = plan.missing
@@ -152,30 +156,32 @@ class ShuttleTrackingModule(BaseModule):
         )
         batch_size = self.config.batch_size or auto_batch_size(net.device)
 
-        print(f"  device:   {describe_device(net.device)}")
+        console.field("device", describe_device(net.device))
         if net.device.type != "cuda":
             # Silence here would let someone sit through a 40-minute run without ever
             # realising their GPU went unused.
-            # Plain ASCII: this is the one message nobody may miss, and a Windows
-            # console in a legacy code page mangles anything else.
-            print("  [warn] NO GPU IN USE - running TrackNet on the CPU is about 8x")
-            print("         slower (~12 fps vs ~90 fps): expect ~40 min for a full")
-            print("         match instead of ~5. If you do have an NVIDIA GPU, your")
-            print("         torch is probably the CPU build; re-run `uv sync`.")
-        print(
-            f"  TrackNet: seq_len={net.seq_len} bg_mode={net.bg_mode!r} "
+            console.warn(
+                "NO GPU IN USE - running TrackNet on the CPU is about 8x\n"
+                "slower (~12 fps vs ~90 fps): expect ~40 min for a full\n"
+                "match instead of ~5. If you do have an NVIDIA GPU, your\n"
+                "torch is probably the CPU build; re-run `uv sync`."
+            )
+        console.field(
+            "TrackNet",
+            f"seq_len={net.seq_len} bg_mode={net.bg_mode!r} "
             f"eval_mode={self.config.eval_mode} batch_size={batch_size}"
-            f"{' (auto)' if self.config.batch_size is None else ''}"
+            f"{' (auto)' if self.config.batch_size is None else ''}",
         )
-        print(f"  heatmaps: {len(pending)} segment(s) to compute, "
-              f"{len(plan.hits)} cached")
+        console.field(
+            "heatmaps",
+            f"{console.count(len(pending), 'segment')} to compute, {len(plan.hits)} cached",
+        )
 
         for done, entry in enumerate(pending):
             heatmaps, img_shape = self._infer_segment(
                 video, segments[entry.index], net, batch_size
             )
             heatmap_cache.save_segment(entry.path, heatmaps, img_shape)
-            print(f"    {entry.label}: {len(heatmaps)} frames")
             if on_progress:
                 on_progress((done + 1) / len(pending))
         cache.commit(plan)
@@ -303,7 +309,7 @@ class ShuttleTrackingModule(BaseModule):
             # The cache is warm but the stage produced no artifact, so it is not
             # done — leaving it COMPLETED would make the runner skip it forever.
             cache_dir = heatmap_cache.heatmap_dir(match_path)
-            print(f"  heatmap cache ready; stage still PENDING (no {OUTPUT_FILENAME} yet)")
+            console.note(f"heatmap cache ready; --only-heatmap wrote no {OUTPUT_FILENAME}")
             return StageResult(cache_dir, pending=True)
 
         records = self.build_tracks(

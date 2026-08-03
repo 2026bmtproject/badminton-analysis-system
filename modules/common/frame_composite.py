@@ -28,6 +28,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from modules.common import console
 from modules.contracts import VIDEO_EXTENSIONS
 
 
@@ -71,7 +72,7 @@ def extract_frames(video_path: str, n_frames: int, resize_width: int | None = No
     indices = np.linspace(0, total - 1, n_sample, dtype=int)
     frames = _grab_indices(cap, indices, resize_width)
     cap.release()
-    print(f"  Extracted {len(frames)} frames (sampled {n_sample}, video has {total})")
+    console.field("extracted", f"{len(frames)} frames (sampled {n_sample}, video has {total})")
     return frames
 
 
@@ -173,23 +174,23 @@ def process_video(video_path: Path, out_dir: Path, n_frames: int, methods_to_run
                   max_frames: int = DEFAULT_MAX_FRAMES) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Video: {video_path}")
-    print(f"Sampling {n_frames} frames, output → {out_dir}/")
+    console.section(video_path.name)
+    console.field("video", video_path)
+    console.field("sampling", f"{n_frames} frames -> {out_dir}/")
     frames = extract_frames(str(video_path), n_frames, resize_width, max_frames)
 
     if len(frames) < 3:
-        print("  [skip] need at least 3 frames to build a meaningful composite")
+        console.tag("skip", "need at least 3 frames to build a meaningful composite")
         return
 
     if save_reference:
         mid = len(frames) // 2
         single_path = out_dir / f"{output_prefix}00_single_frame.png"
         cv2.imwrite(str(single_path), frames[mid])
-        print(f"  Saved reference single frame → {single_path}")
+        console.item(f"reference frame -> {single_path}")
 
     for key in methods_to_run:
         label, func = ALL_METHODS[key]
-        print(f"  Computing {label}...", end=" ", flush=True)
         if key == "stability_mask":
             result = func(frames, threshold=stability_threshold)
         elif key == "sigma_clip":
@@ -200,12 +201,10 @@ def process_video(video_path: Path, out_dir: Path, n_frames: int, methods_to_run
             result = func(frames)
         out_path = out_dir / f"{output_prefix}{key}.png"
         cv2.imwrite(str(out_path), result)
-        print(f"→ {out_path}")
+        console.item(f"{label} -> {out_path}")
 
-    if save_reference:
-        print(f"  Done: {len(methods_to_run)} composites + 1 reference saved to {out_dir}/")
-    else:
-        print(f"  Done: {len(methods_to_run)} composites saved to {out_dir}/")
+    reference = " + 1 reference" if save_reference else ""
+    console.ok(f"{len(methods_to_run)} composites{reference} -> {out_dir}/")
 
 
 # ── Composite Methods ─────────────────────────────────────────────────────────
@@ -399,9 +398,8 @@ def main() -> None:
     methods_to_run = args.methods or list(ALL_METHODS.keys())
 
     if is_batch_mode:
-        print(f"Input folder: {input_path}")
-        print(f"Found {len(video_files)} video(s), output root → {out_root}/")
-        print()
+        console.header(f"frame_composite: {console.count(len(video_files), 'video')}")
+        console.summary([("input folder", input_path), ("output root", f"{out_root}/")])
         for video_path in video_files:
             prefix = f"{video_path.stem}_"
             process_video(
@@ -418,8 +416,8 @@ def main() -> None:
                 output_prefix=prefix,
                 max_frames=args.max_frames,
             )
-            print()
-        print(f"Done! Batch composites saved under {out_root}/")
+        console.blank()
+        console.ok(f"batch composites -> {out_root}/", indent=0)
     else:
         process_video(
             video_path=input_path,
@@ -435,7 +433,10 @@ def main() -> None:
             output_prefix="",
             max_frames=args.max_frames,
         )
-        print(f"\nDone! {len(methods_to_run)} composites + 1 reference saved to {out_root}/")
+        console.blank()
+        console.ok(
+            f"{len(methods_to_run)} composites + 1 reference -> {out_root}/", indent=0
+        )
 
 
 if __name__ == "__main__":

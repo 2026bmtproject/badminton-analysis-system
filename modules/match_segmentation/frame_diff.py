@@ -5,6 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from modules.common import console
 from modules.common.progress import SmoothProgress
 
 DEFAULT_FPS = 30.0
@@ -32,9 +33,11 @@ def compute_frame_diff(
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps <= 0:
         fps = DEFAULT_FPS
-        print(f"  [warn] cannot read fps from {video_path} - assuming {DEFAULT_FPS:g}.")
-        print("         If the source is not 30 fps, every timestamp in segments.json")
-        print("         and every downstream window length will be off by that ratio.")
+        console.warn(
+            f"cannot read fps from {video_path} - assuming {DEFAULT_FPS:g}.\n"
+            "If the source is not 30 fps, every timestamp in segments.json\n"
+            "and every downstream window length will be off by that ratio."
+        )
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     total_frames = max(total_frames, 1)
