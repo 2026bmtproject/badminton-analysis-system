@@ -13,10 +13,18 @@ Runs in two phases, the same split ``shuttle_tracking`` uses and for the same re
 Keeping the split means the selection margins (which are heuristics, and will want
 tuning against real footage) can be re-run for free, while the pass that costs the GPU
 half an hour happens once.
+
+Phase 1 runs several rallies at once, one worker thread each with its own decoder.
+Decoding and the two models' pre-processing are CPU work that a single-threaded loop
+spends the GPU's time waiting on — invisible on a modest card, and the whole reason a
+faster one does not finish sooner. See :func:`default_workers`.
 """
 
 from __future__ import annotations
 
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -46,7 +54,26 @@ from modules.pose.select import (
 
 OUTPUT_FILENAME = PIPELINE["pose"].output_filename
 
+#: Where the returns fell off on every card measured so far — past this the CPU work is
+#: already hidden and the threads are only queueing for the same GPU. ``--workers``
+#: exists because a faster card moves that point.
+MAX_AUTO_WORKERS = 4
+
+#: Frames between progress reports, which are taken under a lock.
+PROGRESS_STRIDE = 32
+
 ProgressFn = Callable[[float], None]
+
+
+def default_workers(device: str) -> int:
+    """How many rallies to decode and infer at once, when the caller did not say.
+
+    One on the CPU, always: there is nothing to overlap with, because onnxruntime
+    already has every core and a decoder thread would only take one away from it.
+    """
+    if not device.startswith("cuda"):
+        return 1
+    return max(1, min(MAX_AUTO_WORKERS, (os.cpu_count() or 2) // 2))
 
 
 @dataclass
@@ -58,6 +85,7 @@ class PoseConfig:
     CPU with a warning"; pass ``"cuda"`` to turn a missing GPU into an error instead.
     ``person_min_area`` drops detections smaller than that fraction of the frame, which
     is a cheap way to throw the crowd away before they ever reach RTMPose.
+    ``workers`` of None lets :func:`default_workers` decide from the device.
     """
 
     pose_mode: str = "balanced"
@@ -66,6 +94,7 @@ class PoseConfig:
     person_min_area: float = 0.0
     select: SelectConfig = field(default_factory=SelectConfig)
     refresh_cache: bool = False
+    workers: int | None = None           # None -> auto
 
 
 class PoseModule(BaseModule):
@@ -143,11 +172,16 @@ class PoseModule(BaseModule):
             backend=self.config.backend,
             person_min_area=self.config.person_min_area,
         )
+        workers = self.config.workers or default_workers(estimator.device)
+        workers = max(1, min(int(workers), len(pending)))
         console.field("device", estimator.device)
         console.field("RTMPose", f"{self.config.pose_mode} + YOLOX person detector")
         console.field(
             "frames",
             f"{console.count(len(pending), 'segment')} to compute, {len(plan.hits)} cached",
+        )
+        console.field(
+            "workers", f"{console.count(workers, 'rally', 'rallies')} decoded at once"
         )
 
         # Only people who could conceivably be players get a skeleton; the crowd is
@@ -155,18 +189,28 @@ class PoseModule(BaseModule):
         def keep(bboxes: np.ndarray) -> np.ndarray:
             return candidate_mask(bboxes, image_to_court, self.config.select)
 
-        total_frames = sum(e.end_frame - e.start_frame + 1 for e in pending)
-        done_frames = 0
-        for entry in pending:
+        progress = _FrameCounter(
+            total=sum(e.end_frame - e.start_frame + 1 for e in pending),
+            on_progress=on_progress,
+        )
+
+        def compute(entry) -> None:
             detections = []
             for _, frame in iter_segment_frames(
                 str(video), entry.start_frame, entry.end_frame
             ):
                 detections.append(estimator(frame, keep=keep))
-                done_frames += 1
-                if on_progress and done_frames % 32 == 0:
-                    on_progress(done_frames / total_frames)
+                progress.advance()
             detection_cache.save_segment(entry.path, detections)
+
+        if workers == 1:
+            for entry in pending:
+                compute(entry)
+        else:
+            _run_concurrently(compute, pending, workers)
+
+        # Only once every rally landed: the manifest records a *complete* pass. A run
+        # that dies partway still leaves atomically-written entries for the next `plan`.
         cache.commit(plan)
         if on_progress:
             on_progress(1.0)
@@ -267,6 +311,45 @@ class PoseModule(BaseModule):
         )
         console.field("players", f"found in {found}/{len(records)} (frame, player) slots")
         return StageResult(output_json)
+
+
+class _FrameCounter:
+    """Frames finished across every worker, reported as one fraction.
+
+    The count *and* the call are under the lock: ``on_progress`` redraws a terminal
+    line, which two threads may not do at once.
+    """
+
+    def __init__(self, total: int, on_progress: ProgressFn | None) -> None:
+        self.total = max(int(total), 1)
+        self.on_progress = on_progress
+        self._done = 0
+        self._lock = threading.Lock()
+
+    def advance(self) -> None:
+        if self.on_progress is None:
+            return
+        with self._lock:
+            self._done += 1
+            if self._done % PROGRESS_STRIDE == 0:
+                self.on_progress(self._done / self.total)
+
+
+def _run_concurrently(work: Callable[[object], None], items: list, workers: int) -> None:
+    """Run ``work`` over ``items`` in a thread pool, raising the first failure.
+
+    Failing fast because the plausible failures — no VRAM, an unopenable video — will
+    hit every remaining rally too, and fifty copies bury the one worth reading.
+    """
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="pose") as pool:
+        futures = [pool.submit(work, item) for item in items]
+        try:
+            for future in as_completed(futures):
+                future.result()
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
 
 
 def _to_record(

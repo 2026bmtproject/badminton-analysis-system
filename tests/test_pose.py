@@ -11,13 +11,23 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import threading
+import time
 
 import numpy as np
 import pytest
 
 from modules.contracts import COCO_KEYPOINTS, POSE_PLAYERS
 from modules.pose import csv_export, detection_cache
-from modules.pose.module import _to_record
+from modules.pose.module import (
+    MAX_AUTO_WORKERS,
+    PROGRESS_STRIDE,
+    _FrameCounter,
+    _run_concurrently,
+    _to_record,
+    default_workers,
+)
 from modules.pose.select import (
     COURT_LENGTH_M,
     COURT_WIDTH_M,
@@ -878,3 +888,93 @@ def test_csv_export_writes_one_file_per_segment(tmp_path):
 
     paths = csv_export.export(tmp_path, records, segments, stem="M")
     assert [p.name for p in paths] == ["M_seg0000_skeleton.csv", "M_seg0001_skeleton.csv"]
+
+
+# --------------------------------------------------------------------------- #
+# running rallies in parallel — the plumbing only, since the overlap itself      #
+# needs a video and a GPU to observe.                                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_the_cpu_gets_one_worker_because_there_is_nothing_to_overlap():
+    assert default_workers("cpu") == 1
+    assert default_workers("openvino") == 1
+
+
+@pytest.mark.parametrize(
+    "cores, expected",
+    [(1, 1), (2, 1), (4, 2), (12, MAX_AUTO_WORKERS), (128, MAX_AUTO_WORKERS)],
+)
+def test_the_gpu_overlaps_several_rallies_without_running_away_with_the_box(
+    monkeypatch, cores, expected
+):
+    monkeypatch.setattr(os, "cpu_count", lambda: cores)
+    assert default_workers("cuda") == expected
+    assert default_workers("cuda:1") == expected
+
+
+def test_an_unknowable_core_count_still_yields_a_workable_default(monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: None)  # documented as possible
+    assert default_workers("cuda") >= 1
+
+
+def test_progress_is_monotonic_and_reaches_the_end_under_contention():
+    total = PROGRESS_STRIDE * 16
+    seen = []
+    counter = _FrameCounter(total, seen.append)
+
+    def tick():
+        for _ in range(total // 8):
+            counter.advance()
+
+    threads = [threading.Thread(target=tick) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert seen == sorted(seen), "the bar went backwards"
+    assert seen[-1] == pytest.approx(1.0)
+    assert len(seen) == 16  # one report per stride, none lost to a race
+
+
+def test_progress_stays_out_of_the_way_when_nobody_is_watching():
+    _FrameCounter(10, None).advance()  # no callback, no crash
+
+
+def test_every_rally_runs_exactly_once():
+    done = []
+    lock = threading.Lock()
+
+    def work(item):
+        with lock:
+            done.append(item)
+
+    _run_concurrently(work, list(range(50)), workers=4)
+    assert sorted(done) == list(range(50))
+
+
+def test_a_failing_rally_surfaces_rather_than_being_swallowed():
+    def work(item):
+        if item == 7:
+            raise RuntimeError("CUDA out of memory")
+
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        _run_concurrently(work, list(range(50)), workers=4)
+
+
+def test_a_failure_does_not_drag_the_rest_of_the_match_through_it():
+    started = []
+    lock = threading.Lock()
+
+    def work(item):
+        with lock:
+            started.append(item)
+        if item == 0:
+            raise RuntimeError("boom")
+        time.sleep(0.01)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        _run_concurrently(work, list(range(200)), workers=2)
+
+    assert len(started) < 200

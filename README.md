@@ -147,6 +147,8 @@ uv run python -m modules.pose matches/MK_vs_CT_2019
 uv run python -m modules.pose matches/MK_vs_CT_2019 --only-detect
 # 用既有的 cache 重新選人（放寬底線外擴，不重算骨架）
 uv run python -m modules.pose matches/MK_vs_CT_2019 --y-margin 0.35
+# GPU 太快、等解碼等到閒置時，加開同時處理的回合數（預設會自己挑，執行時會印出來）
+uv run python -m modules.pose matches/MK_vs_CT_2019 --workers 8
 # 把選人結果畫在真實畫面上檢查（含起跳中的球員）
 uv run python -m modules.pose matches/MK_vs_CT_2019 --debug-overlay overlays/
 # 另外匯出 BST 吃的逐 segment 骨架 CSV
@@ -193,6 +195,10 @@ RTMPose，top-down 兩階段：YOLOX 先找出畫面上所有人，RTMPose 再�
 
 `--x-margin` / `--y-margin` 把判界擴到球場外一圈：球員撲救會衝出邊線、起跳殺球的腳踝騰空會被反投影到
 底線外，判界太緊就會在最關鍵的幀弄丟球員。`--debug-overlay` 把選人結果畫在真實畫面上。
+
+第一相**同時跑多個回合**，每個 worker 各自開一份解碼器：解碼與兩個模型的前處理都是 CPU，序列化跑
+的話 GPU 就在旁邊乾等——換好卡卻沒變快就是這個原因。worker 數預設看裝置決定（GPU 取核心數一半、
+上限 4；CPU 固定 1），執行時會印出來，用 `--workers` 覆蓋。
 
 ### 擊球偵測（event_detection）
 

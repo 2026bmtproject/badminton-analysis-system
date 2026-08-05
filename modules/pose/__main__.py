@@ -9,6 +9,9 @@ Extracts both players' skeletons through every rally segment: detections into
     # just the GPU pass, so the selection margins can be tuned afterwards for free
     uv run python -m modules.pose matches/MK_vs_CT_2019 --only-detect
 
+    # a card fast enough that it finishes a frame before the decoder brings the next
+    uv run python -m modules.pose matches/MK_vs_CT_2019 --workers 8
+
     # re-select against the existing cache with a wider court (no GPU pass)
     uv run python -m modules.pose matches/MK_vs_CT_2019 --y-margin 0.35
 
@@ -30,7 +33,7 @@ from modules.common import console
 from modules.common.progress import SmoothProgress
 from modules.contracts import PIPELINE, resolve_input_video
 from modules.pose.estimator import POSE_MODES
-from modules.pose.module import PoseConfig, PoseModule
+from modules.pose.module import MAX_AUTO_WORKERS, PoseConfig, PoseModule
 from modules.pose.select import SelectConfig
 
 
@@ -60,6 +63,10 @@ def parse_args() -> argparse.Namespace:
                              f"{default.max_step_px:g} px); nobody within this of where the "
                              f"player was means the player is reported missing, rather than "
                              f"the nearest line judge being reported as the player")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="rallies decoded and inferred at once, to stop a fast GPU "
+                             f"idling on the decoder (default: half the cores capped at "
+                             f"{MAX_AUTO_WORKERS} on a GPU, 1 on the CPU)")
     parser.add_argument("--only-detect", action="store_true",
                         help="stop after filling the detection cache")
     parser.add_argument("--refresh-cache", action="store_true",
@@ -88,6 +95,7 @@ def main() -> None:
             max_step_px=args.max_step_px,
         ),
         refresh_cache=args.refresh_cache,
+        workers=args.workers,
     )
     module = PoseModule(config=config)
 

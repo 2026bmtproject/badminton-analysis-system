@@ -21,6 +21,20 @@ failures cost a few times the runtime and look exactly like success. So this mod
 * is explicit about what it ended up on — falling back to the CPU with a loud warning
   when the device was chosen automatically, and refusing to start when the caller
   demanded ``cuda`` and did not get it.
+
+Keeping the GPU busy
+--------------------
+The pre- and post-processing around the two ``session.run`` calls is all CPU, and on a
+fast card it outweighs the inference it feeds — so :meth:`TwoStagePoseEstimator._pose`
+batches a frame's crops into one run instead of one per person, normalizes in float32
+rather than letting rtmlib promote every crop to float64, and ``__call__`` is safe to
+call from several threads at once (:mod:`modules.pose.module` is what uses that).
+
+Both change the order and precision of the floats entering the model, so under 1% of
+keypoint coordinates shift by a SimCC bin or two (~0.5 px, the model's own resolution).
+Measured over four rallies the stage still picked the same person in all 2446
+(frame, player) slots, which is why the cache key is left alone — bumping it would
+discard every existing GPU pass.
 """
 
 from __future__ import annotations
@@ -78,6 +92,17 @@ DET_MODEL = (
 DET_INPUT = (640, 640)
 
 NUM_KEYPOINTS = 17
+
+#: Properties of the published checkpoints, not choices; they match rtmlib, and are
+#: named here only because ``_pose`` does its own pre- and post-processing to batch.
+BBOX_PADDING = 1.25
+SIMCC_SPLIT_RATIO = 2.0
+POSE_MEAN = np.array((123.675, 116.28, 103.53), np.float32)
+POSE_STD = np.array((58.395, 57.12, 57.375), np.float32)
+
+#: A VRAM ceiling for the pathological frame, not a tuning knob: the candidate band
+#: admits two to six people in practice.
+MAX_POSE_BATCH = 16
 
 _dlls_enabled = False
 
@@ -154,6 +179,8 @@ class TwoStagePoseEstimator:
 
     all in original-frame pixels. Selecting *which* of those people are the two
     players is a separate concern — see :mod:`modules.pose.select`.
+
+    Immutable once built, so several threads may share one.
     """
 
     def __init__(
@@ -210,6 +237,9 @@ class TwoStagePoseEstimator:
                 # Prefer a crash over a session that quietly re-runs on the CPU when a
                 # kernel fails — that path just looks like everything being 3x slower.
                 tool.session.disable_fallback()
+
+        self._pose_input = self.pose.session.get_inputs()[0].name
+        self._pose_outputs = [out.name for out in self.pose.session.get_outputs()]
 
     @staticmethod
     def _resolve(requested: str | None, backend: str, build_pose) -> tuple[str, object]:
@@ -268,6 +298,44 @@ class TwoStagePoseEstimator:
             bboxes = bboxes[area >= self.person_min_area * width * height]
         return bboxes
 
+    def _pose(self, frame: np.ndarray, bboxes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Skeletons for ``bboxes``: ``(n, 17, 2)`` keypoints and ``(n, 17)`` scores.
+
+        The crop and the SimCC decode are rtmlib's, step for step — only the batching and
+        the dtype of the normalize differ from ``RTMPose.__call__``, which walks the boxes
+        one at a time and so pays a kernel launch and a host-to-device copy per person.
+        """
+        from rtmlib.tools.pose_estimation.post_processings import get_simcc_maximum
+        from rtmlib.tools.pose_estimation.pre_processings import bbox_xyxy2cs, top_down_affine
+
+        model_input = self.pose.model_input_size
+        crops, centers, scales = [], [], []
+        for bbox in bboxes:
+            center, scale = bbox_xyxy2cs(np.asarray(bbox, np.float64), padding=BBOX_PADDING)
+            crop, scale = top_down_affine(model_input, scale, center, frame)
+            crops.append(((crop.astype(np.float32) - POSE_MEAN) / POSE_STD).transpose(2, 0, 1))
+            centers.append(center)
+            scales.append(scale)
+
+        parts_x, parts_y = [], []
+        for start in range(0, len(crops), MAX_POSE_BATCH):
+            batch = np.ascontiguousarray(crops[start : start + MAX_POSE_BATCH], np.float32)
+            simcc_x, simcc_y = self.pose.session.run(
+                self._pose_outputs, {self._pose_input: batch}
+            )
+            parts_x.append(simcc_x)
+            parts_y.append(simcc_y)
+
+        locations, scores = get_simcc_maximum(
+            np.concatenate(parts_x), np.concatenate(parts_y)
+        )
+        # rtmlib's rescale, kept step for step so the arithmetic stays identical.
+        centers = np.asarray(centers)[:, None, :]
+        scales = np.asarray(scales)[:, None, :]
+        keypoints = locations / SIMCC_SPLIT_RATIO
+        keypoints = keypoints / model_input * scales
+        return keypoints + centers - scales / 2, scores
+
     def __call__(self, frame: np.ndarray, keep: KeepFn | None = None) -> dict[str, np.ndarray]:
         """Detect everyone, then pose whoever ``keep`` says is worth posing.
 
@@ -275,13 +343,15 @@ class TwoStagePoseEstimator:
         models, which is the only place it can save anything: pose is charged per person,
         and a broadcast frame is mostly crowd. Without it, every spectator gets a
         skeleton nobody will ever read.
+
+        Safe to call concurrently on one estimator.
         """
         bboxes = self._detect(frame)
         if len(bboxes) and keep is not None:
             bboxes = bboxes[keep(bboxes)]
         if len(bboxes) == 0:
             return empty_detection()
-        kps, scores = self.pose(frame, bboxes=bboxes.tolist())
+        kps, scores = self._pose(frame, bboxes)
         return {
             "kps": np.asarray(kps, np.float32).reshape(-1, NUM_KEYPOINTS, 2),
             "scores": np.asarray(scores, np.float32).reshape(-1, NUM_KEYPOINTS),
