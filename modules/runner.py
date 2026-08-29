@@ -4,6 +4,7 @@ Behaviour (as required):
   * topologically sort modules by their ``dependencies``;
   * skip any stage already marked ``completed`` (unless ``--force``);
   * before running a stage, verify it is ready (deps done, inputs present);
+  * refuse the run outright when the input video's frame timeline has holes;
   * stop at the first failure — later stages are not attempted.
 
 **A completed stage is re-run when its inputs have moved under it.** ``status.json``
@@ -33,8 +34,9 @@ from pathlib import Path
 
 from modules.base import BaseModule, StageStatus, current_inputs, read_status
 from modules.common import console
+from modules.common.ffmpeg_utils import probe_frame_timeline_fault
 from modules.common.progress import SmoothProgress
-from modules.contracts import stage_path, topological_order
+from modules.contracts import resolve_input_video, stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.event_detection import EventDetectionModule
 from modules.match_segmentation import MatchSegmentationModule
@@ -83,6 +85,26 @@ def stale_inputs(match_path: Path, module: BaseModule) -> list[str] | None:
     return sorted(n for n in names if state.inputs.get(n) != current.get(n))
 
 
+def _reject_gapped_input_video(match_path: Path) -> None:
+    """Refuse to run when the input video's frame timeline has holes.
+
+    Checked once, here, before any stage opens the file. A download missing fragments
+    is the one kind of bad input that never fails loudly: every frame still decodes,
+    but decode order and timestamps have come apart, so segment boundaries land beside
+    their cuts and each later stage reads a different moment than the one it was handed.
+    Better to stop with the reason than to spend GPU hours writing indices nobody can
+    trust. An absent video is not this function's problem -- the first stage's readiness
+    check already reports that.
+    """
+    try:
+        video = resolve_input_video(match_path)
+    except FileNotFoundError:
+        return
+    fault = probe_frame_timeline_fault(str(video))
+    if fault:
+        raise RuntimeError(f"unusable input video: {video.name}\n{fault}")
+
+
 def run_pipeline(
     match_path: str | Path,
     modules: dict[str, BaseModule] | None = None,
@@ -97,6 +119,7 @@ def run_pipeline(
     match_path = Path(match_path)
     if not match_path.is_dir():
         raise FileNotFoundError(f"match path not found: {match_path}")
+    _reject_gapped_input_video(match_path)
 
     modules = available_modules() if modules is None else modules
     # Optional dependencies order the run without gating it: a stage that reads

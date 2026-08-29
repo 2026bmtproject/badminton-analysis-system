@@ -10,7 +10,9 @@ import json
 
 import pytest
 
+from modules import runner
 from modules.artifacts import read_artifact
+from modules.common.ffmpeg_utils import frame_timeline_fault
 from modules.contracts import PIPELINE, resolve_input_video
 from modules.match_segmentation.module import MatchSegmentationModule
 from modules.match_segmentation.segmenter import pick_default_video
@@ -128,3 +130,57 @@ def test_pick_default_video_no_mp4_in_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(FileNotFoundError, match="no .mp4 found"):
         pick_default_video()
+
+
+# --------------------------------------------------------------------------- #
+# Input video frame timeline
+# --------------------------------------------------------------------------- #
+
+
+def test_frame_timeline_fault_accepts_a_whole_file():
+    # 73738 frames over 2949.52s at 25 fps: one frame per slot, nothing missing.
+    assert frame_timeline_fault(25.0, 25.0, 73738, 2949.52) is None
+
+
+def test_frame_timeline_fault_tolerates_a_rounded_container_duration():
+    # A sound 30 fps file whose container stores 3249.999313s rather than 3250s.
+    assert frame_timeline_fault(30.0, 30.0000006, 97500, 3249.999313) is None
+
+
+def test_frame_timeline_fault_reports_missing_frames():
+    # A download that lost three 256-frame fragments: 85153 frames in an 85921 slot
+    # timeline, which ffprobe averages out to 24.7765 fps against a nominal 25.
+    fault = frame_timeline_fault(25.0, 24.77653891365324, 85153, 3436.84)
+    assert fault is not None
+    assert "85921" in fault and "85153" in fault and "768 are missing" in fault
+    assert "-fps_mode cfr -r 25" in fault
+
+
+def test_frame_timeline_fault_reports_rates_when_frame_counts_are_absent():
+    # Containers that expose no nb_frames/duration still give both frame rates.
+    fault = frame_timeline_fault(25.0, 24.77653891365324)
+    assert fault is not None
+    assert "24.7765" in fault
+
+
+def test_frame_timeline_fault_stays_quiet_without_usable_rates():
+    assert frame_timeline_fault(0.0, 0.0) is None
+    assert frame_timeline_fault(25.0, 0.0) is None
+
+
+def test_run_pipeline_refuses_an_input_video_with_a_gapped_timeline(tmp_path, monkeypatch):
+    inp = tmp_path / "input"
+    inp.mkdir()
+    (inp / "match.mp4").write_bytes(b"\x00")
+    monkeypatch.setattr(runner, "probe_frame_timeline_fault", lambda _: "768 are missing")
+
+    with pytest.raises(RuntimeError, match="unusable input video: match.mp4"):
+        run_pipeline(tmp_path)
+
+
+def test_run_pipeline_does_not_probe_when_there_is_no_input_video(tmp_path, monkeypatch):
+    def explode(_):  # pragma: no cover - the point is that it never runs
+        raise AssertionError("probed a video that is not there")
+
+    monkeypatch.setattr(runner, "probe_frame_timeline_fault", explode)
+    assert run_pipeline(tmp_path) is False
