@@ -21,7 +21,8 @@ def parse_args() -> argparse.Namespace:
         description="Read badminton scoreboards per rally segment via Gemini",
     )
     parser.add_argument("match_path", help="match path, e.g. matches/MK_vs_CT_2019")
-    parser.add_argument("--model", default="gemini-2.5-flash", help="Gemini model name")
+    parser.add_argument("--model", default=ScoreRecognitionConfig().model,
+                        help="Gemini model name")
     parser.add_argument("--rpm", type=float, default=8.0,
                         help="Max Gemini requests per minute, shared across workers (default 8)")
     parser.add_argument("--concurrency", type=int, default=2,
