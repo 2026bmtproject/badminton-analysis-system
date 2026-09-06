@@ -19,7 +19,8 @@ modules/
 ├── shuttle_tracking/     # 羽球軌跡 (TrackNetV3)
 ├── event_detection/      # 擊球偵測
 ├── stroke_classification/# 球種辨識 (BST)
-├── audio_highlight/      # 精彩片段偵測 (YAMNet)
+├── audio_highlight/      # 音訊歡呼訊號 / audio measurements
+├── highlight_ranking/    # 精彩片段排序 / downstream ranking policy
 ├── commentary/           # 賽評生成
 ├── common/               # 共用工具
 │   └── bst/              # BST 球種模型（event_detection 與 stroke_classification 共用）
@@ -33,6 +34,12 @@ matches/   # 每場分析的資料（不進 repo）
 
 階段間的輸入輸出格式（每個 `stages/*/*.json` 的 schema）與依賴關係都定義在
 [`modules/contracts.py`](modules/contracts.py)。
+
+音訊階段是 measurement producer：`audio_highlight` 以 `audio_signals.json`
+分別輸出每個 segment 的 `cheer_confidence`、`cheer_intensity` 與
+`n_cheer_windows`，這些 measurement 在 stage boundary 保持分離。後續
+`highlight_ranking` 才負責決定它們如何與其他比賽訊號形成最終 ranking policy；
+目前尚未定義或實作任何組合公式、threshold policy 或 `HighlightScore` producer。
 
 ### 每場分析的目錄結構（match 路徑）
 
