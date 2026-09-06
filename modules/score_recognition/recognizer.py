@@ -51,7 +51,7 @@ FALLBACK_METHODS = [
     ("max", composite_max),
 ]
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
 DEFAULT_RPM = 8.0
 DEFAULT_CONCURRENCY = 2
 DEFAULT_N_FRAMES = 30
@@ -71,6 +71,13 @@ REFINE_METHODS = [
 ProgressCallback = Callable[[float], None]
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+
+
+def _thinking_config(model: str) -> dict:
+    """Return the thinking control supported by the selected model family."""
+    if model.startswith("gemini-2.5-"):
+        return {"thinkingBudget": 0}
+    return {"thinkingLevel": "minimal"}
 
 SCORE_PROMPT_SINGLE = """\
 This is a screenshot of a badminton match. Read the scoreboard.
@@ -229,7 +236,7 @@ def call_gemini(
             # off mid-JSON (finishReason=MAX_TOKENS) — the "parse error" failures
             # seen on a handful of rallies. Disabling thinking gives the full
             # budget to the answer and also makes every call noticeably faster.
-            "thinkingConfig": {"thinkingBudget": 0},
+            "thinkingConfig": _thinking_config(model),
         },
     }
 

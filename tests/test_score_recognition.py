@@ -477,3 +477,7 @@ def test_recognized_rallies_round_trip_through_scores_io(monkeypatch, tmp_path):
     assert data["model"] == "gemini-2.5-flash"
     assert data["rallies"][0]["segment_index"] == 0
     assert data["rallies"][0]["score_a"] == 10
+
+def test_thinking_config_matches_model_family():
+    assert recognizer._thinking_config("gemini-2.5-flash") == {"thinkingBudget": 0}
+    assert recognizer._thinking_config("gemini-3.6-flash") == {"thinkingLevel": "minimal"}
