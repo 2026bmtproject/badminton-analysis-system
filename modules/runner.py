@@ -34,6 +34,7 @@ from pathlib import Path
 
 from modules.base import BaseModule, StageStatus, current_inputs, read_status
 from modules.audio_highlight import AudioHighlightModule
+from modules.highlight_ranking import HighlightRankingModule
 from modules.common import console
 from modules.common.ffmpeg_utils import probe_frame_timeline_fault
 from modules.common.progress import SmoothProgress
@@ -56,6 +57,7 @@ def available_modules() -> dict[str, BaseModule]:
     modules: list[BaseModule] = [
         MatchSegmentationModule(),
         AudioHighlightModule(),
+        HighlightRankingModule(),
         ScoreRecognitionModule(),
         CourtDetectionModule(),
         ShuttleTrackingModule(),

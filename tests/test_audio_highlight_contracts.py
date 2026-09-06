@@ -102,9 +102,10 @@ def test_pipeline_orders_measurement_ranking_and_commentary_without_cycle() -> N
     assert len(order) == len(PIPELINE) == len(set(order))
 
 
-def test_unimplemented_contract_stages_are_not_registered() -> None:
+def test_audio_and_ranking_registered_commentary_unimplemented() -> None:
     runnable = available_modules()
     from modules.audio_highlight import AudioHighlightModule
+    from modules.highlight_ranking import HighlightRankingModule
     assert isinstance(runnable["audio_highlight"], AudioHighlightModule)
-    assert "highlight_ranking" not in runnable
+    assert isinstance(runnable["highlight_ranking"], HighlightRankingModule)
     assert "commentary" not in runnable
