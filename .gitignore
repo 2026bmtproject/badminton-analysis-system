@@ -62,3 +62,5 @@ matches/*
 # ---- Keep tracked config/lock files that would otherwise match above ----
 !config.yaml.example
 !uv.lock
+!models/yamnet_mean_lr_v1/model.npz
+!models/yamnet_mean_lr_v1/metadata.json

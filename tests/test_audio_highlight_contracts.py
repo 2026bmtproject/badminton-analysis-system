@@ -104,6 +104,7 @@ def test_pipeline_orders_measurement_ranking_and_commentary_without_cycle() -> N
 
 def test_unimplemented_contract_stages_are_not_registered() -> None:
     runnable = available_modules()
-    assert "audio_highlight" not in runnable
+    from modules.audio_highlight import AudioHighlightModule
+    assert isinstance(runnable["audio_highlight"], AudioHighlightModule)
     assert "highlight_ranking" not in runnable
     assert "commentary" not in runnable

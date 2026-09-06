@@ -1,0 +1,67 @@
+{
+  "model_id": "yamnet_mean_lr_v1",
+  "model_type": "logistic_regression",
+  "model_sha256": "c5257098315fe51db163039cca95917dd482d1612e1f08b95d301a0dbf8f79f8",
+  "feature_extractor": {
+    "model_identifier": "https://tfhub.dev/google/yamnet/1",
+    "pooling": "mean",
+    "embedding_dimension": 1024
+  },
+  "audio": {
+    "sample_rate_hz": 16000,
+    "window_sec": 3.0,
+    "hop_sec": 1.0,
+    "post_padding_sec": 3.0
+  },
+  "classifier": {
+    "preprocessing": "StandardScaler",
+    "C": 1.0,
+    "solver": "lbfgs",
+    "max_iter": 2000,
+    "class_weight": null,
+    "threshold": 0.5
+  },
+  "training": {
+    "matches": [
+      "match_001",
+      "match_002",
+      "match_003",
+      "match_004"
+    ],
+    "sample_count": 400,
+    "positive_count": 150,
+    "negative_count": 250,
+    "converged": true,
+    "iterations": 37,
+    "scaler_fit_sample_count": 400,
+    "sklearn_version": "1.9.0",
+    "numpy_version": "2.5.2",
+    "trained_at": "2026-08-16T20:58:48.726246+00:00",
+    "datasets": [
+      {
+        "match_id": "match_001",
+        "path": "artifacts/match_001/features/features.npz",
+        "sha256": "05bfdc415ec6ee0bb95fa0246f6a27db2f4c4d4b4405f21910362ab6feeb5c0c",
+        "samples": 100
+      },
+      {
+        "match_id": "match_002",
+        "path": "artifacts/match_002/features/features.npz",
+        "sha256": "0b4f8c9d892c9a5edf51d6d8eae31721ede8d7248f5158b3157eb32989cd550c",
+        "samples": 100
+      },
+      {
+        "match_id": "match_003",
+        "path": "artifacts/match_003/features/features.npz",
+        "sha256": "c71307fb3ef44248b5c375bcdc272b8f5cfa74923f144729ab53eb6d853f4d34",
+        "samples": 100
+      },
+      {
+        "match_id": "match_004",
+        "path": "artifacts/match_004/features/features.npz",
+        "sha256": "53e3f97295bb5770ef7561e6d59c411205518081e11d91ad830db2ca3318a41c",
+        "samples": 100
+      }
+    ]
+  }
+}
