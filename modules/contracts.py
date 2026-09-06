@@ -1,6 +1,6 @@
 """Inter-stage data contracts and the pipeline dependency graph.
 
-This module is the *single source of truth* for two things that the nine
+This module is the *single source of truth* for two things that the
 analysis stages must agree on **before** they are individually built:
 
 1. **Match layout.** A match lives under ``matches/{match}/`` which we call
@@ -302,10 +302,45 @@ class StrokeLabel:
     confidence: float
 
 
+@dataclass(frozen=True)
+class AudioSegmentSignals:
+    """Audio measurement output for one current upstream segment.
+
+    Artifact: ``audio_signals.json`` (key ``signals``).
+
+    ``segment_index`` is the zero-based positional index into the current
+    ``segments.json`` ``segments`` array. It is not a historical
+    ``segment_id``.
+
+    ``cheer_confidence`` is segment-level aggregated detector evidence, not a
+    calibrated probability. The frozen v1 producer uses the NumPy linear 0.95
+    quantile over *all* window ``cheer_probability`` values for the segment.
+
+    ``cheer_intensity`` is relative peak cheer intensity. The frozen v1
+    producer takes the same linear 0.95 quantile over non-null window intensity
+    values only. ``None`` means no applicable detected-cheer intensity; it is
+    distinct from a valid low-end intensity of ``0.0``.
+
+    ``n_cheer_windows`` counts detector-positive, non-null-intensity analysis
+    windows. It is an overlapping-window support count, not a number of
+    distinct cheer events (the producer uses 3-second windows with a 1-second
+    hop).
+    """
+
+    segment_index: int
+    cheer_confidence: float
+    cheer_intensity: float | None
+    n_cheer_windows: int
+
+
 @dataclass
 class HighlightScore:
-    """DRAFT — audio_highlight (YAMNet). Artifact: ``highlights.json``
-    (key ``highlights``). Excitement score per segment."""
+    """DRAFT — highlight_ranking. Artifact: ``highlights.json``
+    (key ``highlights``).
+
+    Final downstream highlight-ranking score per segment. Its numerical
+    meaning and ranking policy are not yet defined or validated.
+    """
 
     segment_index: int
     score: float
@@ -365,8 +400,12 @@ PIPELINE: dict[str, StageSpec] = {
         ["match_segmentation"], "shuttle.json", ShuttlePoint, "points",
     ),
     "audio_highlight": StageSpec(
-        "audio_highlight", "精彩片段偵測 (YAMNet)",
-        ["match_segmentation"], "highlights.json", HighlightScore, "highlights",
+        "audio_highlight", "音訊歡呼訊號 — crowd cheer measurement",
+        ["match_segmentation"], "audio_signals.json", AudioSegmentSignals, "signals",
+    ),
+    "highlight_ranking": StageSpec(
+        "highlight_ranking", "精彩片段排序 — downstream highlight policy",
+        ["audio_highlight"], "highlights.json", HighlightScore, "highlights",
     ),
     "pose": StageSpec(
         "pose", "骨架標記 (RTMPose)",
@@ -387,7 +426,7 @@ PIPELINE: dict[str, StageSpec] = {
     ),
     "commentary": StageSpec(
         "commentary", "賽評生成",
-        ["stroke_classification", "score_recognition", "audio_highlight"],
+        ["stroke_classification", "score_recognition", "highlight_ranking"],
         "commentary.json", CommentaryLine, "lines",
     ),
 }
