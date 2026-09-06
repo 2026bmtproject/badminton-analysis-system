@@ -7,6 +7,10 @@ requires-python = ">=3.12,<3.13"
 
 dependencies = [
     "numpy>=2",
+    "tensorflow>=2.21.0,<2.22",
+    "tensorflow-hub>=0.16.1,<0.17",
+    # tensorflow-hub imports pkg_resources, removed by setuptools 82.
+    "setuptools<82",
     "opencv-python",
     "pillow",
     "pyyaml>=6.0.3",

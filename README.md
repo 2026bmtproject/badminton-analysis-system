@@ -35,11 +35,34 @@ matches/   # 每場分析的資料（不進 repo）
 階段間的輸入輸出格式（每個 `stages/*/*.json` 的 schema）與依賴關係都定義在
 [`modules/contracts.py`](modules/contracts.py)。
 
-音訊階段是 measurement producer：`audio_highlight` 以 `audio_signals.json`
+音訊階段已實作並註冊至 runner：`audio_highlight` 以 `audio_signals.json`
 分別輸出每個 segment 的 `cheer_confidence`、`cheer_intensity` 與
 `n_cheer_windows`，這些 measurement 在 stage boundary 保持分離。後續
 `highlight_ranking` 才負責決定它們如何與其他比賽訊號形成最終 ranking policy；
 目前尚未定義或實作任何組合公式、threshold policy 或 `HighlightScore` producer。
+
+### 音訊歡呼訊號（audio_highlight）
+
+輸入為原始影片的第一個音軌與 `stages/match_segmentation/segments.json`，輸出為
+`stages/audio_highlight/audio_signals.json`（`signals` 陣列，每個 segment 一筆）。
+
+- `cheer_confidence`：所有窗口 detector evidence 的 p95，並非校準過的 segment probability。
+- `cheer_intensity`：同場偵測為歡呼的窗口，以 log RMS 的 average rank percentile 計算，再取 segment p95；無歡呼時為 `null`，有效的 `0.0` 會保留。
+- `n_cheer_windows`：重疊歡呼窗口的支持數，不是獨立歡呼事件數。
+
+```bash
+uv run python -m modules.audio_highlight matches/MK_vs_CT_2019
+```
+
+需在 PATH 安裝 FFmpeg。固定使用 mono / 16 kHz / float32 與 hard clipping、3 秒窗口、
+1 秒 hop、3 秒 post-padding（不截在下一個 segment，只保留完整窗口）。某段無完整窗口時會失敗。
+`cache/audio/audio.f32le` 可重用，來源路徑、大小、mtime 或音訊格式版本改變時重建。
+改換原始影片後，請重跑相關階段或使用 runner 的 `--force`。
+
+凍結的 NumPy detector 與 metadata 隨 repo 放在 `models/yamnet_mean_lr_v1/`，
+執行時驗證 SHA-256；不需 sklearn。YAMNet 首次從 TFHub 下載，之後重用快取。
+預設快取位於系統暫存目錄（必要時使用家目錄的 `.cache`），須為 ASCII 路徑；
+可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。若下載不完整，改設新的空目錄再執行。
 
 ### 每場分析的目錄結構（match 路徑）
 
