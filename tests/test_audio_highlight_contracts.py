@@ -90,7 +90,8 @@ def test_highlight_score_contract_is_owned_by_ranking_stage() -> None:
 
 def test_pipeline_orders_measurement_ranking_and_commentary_without_cycle() -> None:
     commentary = PIPELINE["commentary"]
-    assert "highlight_ranking" in commentary.dependencies
+    assert "highlight_ranking" in commentary.optional_dependencies
+    assert "highlight_ranking" not in commentary.dependencies
     assert "audio_highlight" not in commentary.dependencies
     assert "stroke_classification" in commentary.dependencies
     assert "score_recognition" in commentary.dependencies

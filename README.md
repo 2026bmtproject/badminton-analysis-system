@@ -21,7 +21,7 @@ modules/
 ├── stroke_classification/# 球種辨識 (BST)
 ├── audio_highlight/      # 音訊歡呼訊號 / audio measurements
 ├── highlight_ranking/    # 精彩片段排序 / downstream ranking policy
-├── commentary/           # 賽評生成
+├── commentary/           # 賽評契約與 domain schemas（尚未接入 runtime）
 ├── common/               # 共用工具
 │   └── bst/              # BST 球種模型（event_detection 與 stroke_classification 共用）
 ├── base.py               # BaseModule 介面 + 階段狀態 (status.json)
@@ -34,6 +34,10 @@ matches/   # 每場分析的資料（不進 repo）
 
 階段間的輸入輸出格式（每個 `stages/*/*.json` 的 schema）與依賴關係都定義在
 [`modules/contracts.py`](modules/contracts.py)。
+
+賽評目前只完成第一層契約遷移，尚未註冊至 runner。`commentary.json` 改以 `rallies`
+儲存逐拍 events 與可選 summary；身分映射必須明確提供，精彩分數僅為可選上下文。
+欄位、依賴與相容性說明見 [Commentary contract v1](docs/commentary-contract.md)。
 
 音訊階段已實作並註冊至 runner：`audio_highlight` 以 `audio_signals.json`
 分別輸出每個 segment 的 `cheer_confidence`、`cheer_intensity` 與
