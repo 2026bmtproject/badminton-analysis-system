@@ -38,8 +38,31 @@ matches/   # 每場分析的資料（不進 repo）
 音訊階段已實作並註冊至 runner：`audio_highlight` 以 `audio_signals.json`
 分別輸出每個 segment 的 `cheer_confidence`、`cheer_intensity` 與
 `n_cheer_windows`，這些 measurement 在 stage boundary 保持分離。後續
-`highlight_ranking` 才負責決定它們如何與其他比賽訊號形成最終 ranking policy；
-目前尚未定義或實作任何組合公式、threshold policy 或 `HighlightScore` producer。
+`highlight_ranking` 已實作並註冊至 runner，使用下述 audio-only v1 政策產生 `HighlightScore`。
+
+### 精彩片段排序（highlight_ranking）
+
+只依賴已完成的 `audio_highlight`，採用透明啟發式政策 `audio_additive_v1`：
+
+```text
+I_effective = cheer_intensity if cheer_intensity is not None else 0.0
+score = 0.5 * cheer_confidence + 0.5 * I_effective
+```
+
+權重是固定政策參數，不是學得的係數。confidence 是 detector evidence，不是校準機率；
+intensity 沿用既有同場相對量測，不做百分位重算。null intensity 貢獻零分，來源中的有效
+`0.0` 仍與 null 有別。score 範圍為 `[0,1]`，越高表示此政策下越精彩；分數部分依賴
+同場尺度，不是機率，也未做跨場校準。`n_cheer_windows` 僅驗證支持數一致性，不參與加分。
+v1 不融合比分、球種或回合時長，也不做 top-N、threshold、clip selection 或 rendering。
+
+每筆輸入產生一筆分數，寫入 `stages/highlight_ranking/highlights.json` 的 `highlights` 陣列，
+按 `segment_index` 升冪儲存；頂層 `policy` 記錄公式參數與排序規則。消費端若需要排名，
+以 score 降冪、來源 cheer_confidence 降冪、segment_index 升冪排序，使用完整浮點值，
+不先四捨五入、不使用 epsilon 判定同分。空輸入或無效量測會明確失敗。
+
+```bash
+uv run python -m modules.highlight_ranking matches/TTYvsASY
+```
 
 ### 音訊歡呼訊號（audio_highlight）
 

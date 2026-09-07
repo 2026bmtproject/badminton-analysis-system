@@ -335,11 +335,15 @@ class AudioSegmentSignals:
 
 @dataclass
 class HighlightScore:
-    """DRAFT — highlight_ranking. Artifact: ``highlights.json``
+    """Produced by highlight_ranking. Artifact: ``highlights.json``
     (key ``highlights``).
 
-    Final downstream highlight-ranking score per segment. Its numerical
-    meaning and ranking policy are not yet defined or validated.
+    Current policy: ``audio_additive_v1``, a fixed audio-only heuristic.
+    Score is in [0, 1]; higher means more highlight-worthy under that policy.
+    It is partially match-relative through cheer intensity, not a probability
+    or globally calibrated across matches. Records are stored by segment_index
+    ascending. Ranked consumers use full-precision score descending, source
+    cheer_confidence descending, then segment_index ascending (no epsilon ties).
     """
 
     segment_index: int
