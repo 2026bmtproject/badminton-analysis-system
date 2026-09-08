@@ -13,6 +13,7 @@ dependencies = [
     "setuptools<82",
     "opencv-python",
     "pillow",
+    "pydantic>=2.13.4,<3",
     "pyyaml>=6.0.3",
     "rtmlib>=0.0.13",
     "scipy>=1.14",

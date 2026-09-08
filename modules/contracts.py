@@ -42,6 +42,10 @@ from __future__ import annotations
 import bisect
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
+
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass as validated_dataclass
 
 # --------------------------------------------------------------------------- #
 # Match layout
@@ -350,14 +354,61 @@ class HighlightScore:
     score: float
 
 
-@dataclass
-class CommentaryLine:
-    """DRAFT — commentary. Artifact: ``commentary.json`` (key ``lines``).
-    Final narration keyed to a segment/time."""
+_CommentaryIndex = Annotated[int, Field(ge=0, strict=True)]
+_CommentaryText = Annotated[str, Field(min_length=1, pattern=r"\S")]
+_CommentaryProvenance = Annotated[list[_CommentaryText], Field(min_length=1)]
 
-    segment_index: int
-    start_sec: float
-    text: str
+
+@validated_dataclass(config=ConfigDict(extra="forbid", allow_inf_nan=False))
+class StrokeCommentaryEvent:
+    """One mapped stroke; indices and source timing are supplied by Python.
+
+    ``stroke_index`` is StrokeLabel.event_index in the full-match events array,
+    never a rally-local index. Provenance IDs must reference verified facts.
+    """
+
+    segment_index: _CommentaryIndex
+    stroke_index: _CommentaryIndex
+    frame: _CommentaryIndex
+    time_sec: Annotated[float, Field(ge=0, strict=True)]
+    text: _CommentaryText
+    source_fact_ids: _CommentaryProvenance
+
+
+@validated_dataclass(config=ConfigDict(extra="forbid"))
+class RallyCommentarySummary:
+    """Untimed rally summary: no invented start_sec or LLM-produced timing."""
+
+    segment_index: _CommentaryIndex
+    text: _CommentaryText
+    source_fact_ids: _CommentaryProvenance
+
+
+@validated_dataclass(config=ConfigDict(extra="forbid"))
+class CommentaryRally:
+    """Production commentary.json record (key ``rallies``).
+
+    Events must be ordered by (time_sec, frame, stroke_index), with unique
+    full-match stroke indices and nondecreasing source frames. HighlightScore
+    is optional context and must never gate ordinary mapped stroke events.
+    """
+
+    segment_index: _CommentaryIndex
+    events: list[StrokeCommentaryEvent]
+    summary: RallyCommentarySummary | None = None
+
+    def __post_init__(self) -> None:
+        if any(event.segment_index != self.segment_index for event in self.events):
+            raise ValueError("all events must match rally segment_index")
+        if self.summary is not None and self.summary.segment_index != self.segment_index:
+            raise ValueError("summary must match rally segment_index")
+        indices = [event.stroke_index for event in self.events]
+        if len(indices) != len(set(indices)):
+            raise ValueError("stroke_index must be unique within a rally")
+        keys = [(event.time_sec, event.frame, event.stroke_index) for event in self.events]
+        frames = [event.frame for event in self.events]
+        if keys != sorted(keys) or frames != sorted(frames):
+            raise ValueError("events must be in deterministic source-time order")
 
 
 # --------------------------------------------------------------------------- #
@@ -430,8 +481,9 @@ PIPELINE: dict[str, StageSpec] = {
     ),
     "commentary": StageSpec(
         "commentary", "賽評生成",
-        ["stroke_classification", "score_recognition", "highlight_ranking"],
-        "commentary.json", CommentaryLine, "lines",
+        ["match_segmentation", "event_detection", "stroke_classification", "score_recognition"],
+        "commentary.json", CommentaryRally, "rallies",
+        optional_dependencies=["highlight_ranking", "pose", "court_detection", "shuttle_tracking"],
     ),
 }
 
