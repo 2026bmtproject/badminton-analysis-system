@@ -41,8 +41,10 @@ import time
 
 # === court geometry ===
 
-H_LINES = np.array([0.00, 0.76, 4.72, 6.705, 8.685, 12.65, 13.41])
-V_LINES = np.array([0.00, 0.46, 3.05, 5.64, 6.10])
+from modules.common.court_geometry import HORIZONTAL_LINES_M, VERTICAL_LINES_M
+
+H_LINES = np.array(HORIZONTAL_LINES_M)
+V_LINES = np.array(VERTICAL_LINES_M)
 
 OUTPUT_IDX = [
     (0, 0), (0, 4), (6, 0), (6, 4),
