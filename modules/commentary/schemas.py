@@ -9,7 +9,7 @@ frame/time; Python attaches verified source timing at the artifact boundary.
 from typing import Annotated, Literal
 
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 Player = Literal["a", "b"]
@@ -19,10 +19,10 @@ FactId = Annotated[str, Field(min_length=1, pattern=r"\S")]
 NonNegativeInt = Annotated[int, Field(ge=0, strict=True)]
 
 
-NonNegativeFloat = Annotated[float, Field(ge=0)]
+NonNegativeFloat = Annotated[float, Field(ge=0, strict=True)]
 
 
-Probability = Annotated[float, Field(ge=0, le=1)]
+Probability = Annotated[float, Field(ge=0, le=1, strict=True)]
 
 
 class StrictModel(BaseModel):
@@ -55,6 +55,25 @@ class RallyFact(StrictModel):
     rally_length: NonNegativeInt
     highlight_score: Probability | None
 
+    @model_validator(mode="after")
+    def validate_timeline(self) -> "RallyFact":
+        tolerance = 0.001 + 1e-9
+        if self.end_sec < self.start_sec:
+            raise ValueError("end_sec must be >= start_sec")
+        if abs(self.duration_sec - (self.end_sec - self.start_sec)) > tolerance:
+            raise ValueError("duration_sec must match rally time range within 0.001 s")
+        indexes = [event.event_index for event in self.events]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("event_index must be unique")
+        keys = [(event.time_sec, event.frame, event.event_index) for event in self.events]
+        if keys != sorted(keys) or [e.frame for e in self.events] != sorted(e.frame for e in self.events):
+            raise ValueError("events must be in deterministic source-time order")
+        if any(not self.start_sec - tolerance <= e.time_sec <= self.end_sec + tolerance for e in self.events):
+            raise ValueError("event time outside rally time range")
+        if self.rally_length != len(self.events):
+            raise ValueError("rally_length must equal len(events)")
+        return self
+
 
 StrokeConfidenceBand = Literal["reliable", "cautious", "low"]
 
@@ -69,11 +88,13 @@ StrokePatternName = Literal[
 
 
 class AnalyzedStroke(StrictModel):
+    """Retains unknown observations; confidence band is low when confidence is unknown."""
+
     fact_id: FactId
     event_index: NonNegativeInt
-    player: Player
-    stroke_type: str
-    confidence: Probability
+    player: Player | None
+    stroke_type: str | None
+    confidence: Probability | None
     confidence_band: StrokeConfidenceBand
     salience: Probability
 
@@ -102,7 +123,7 @@ class RallyAnalysis(StrictModel):
 
 class GeneratedCommentary(StrictModel):
     segment_index: NonNegativeInt
-    text: Annotated[str, Field(min_length=1, max_length=240)]
+    text: Annotated[str, Field(min_length=1, max_length=240, pattern=r"\S")]
     source_fact_ids: Annotated[list[FactId], Field(min_length=1)]
 
 
@@ -140,13 +161,13 @@ class StrokeEventAnalysis(StrictModel):
 
 
 class GeneratedStrokeText(StrictModel):
-    text: Annotated[str, Field(min_length=1, max_length=120)]
+    text: Annotated[str, Field(min_length=1, max_length=120, pattern=r"\S")]
     source_fact_ids: Annotated[list[FactId], Field(min_length=1)]
 
 
 class GeneratedStrokeBatchItem(StrictModel):
     stroke_index: NonNegativeInt
-    text: Annotated[str, Field(min_length=1, max_length=120)]
+    text: Annotated[str, Field(min_length=1, max_length=120, pattern=r"\S")]
     source_fact_ids: Annotated[list[FactId], Field(min_length=1)]
 
 

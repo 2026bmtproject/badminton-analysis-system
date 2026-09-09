@@ -1,0 +1,1 @@
+"""Direct production stage adapters."""
