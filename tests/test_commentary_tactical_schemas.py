@@ -15,8 +15,19 @@ def candidate():
 
 
 @pytest.mark.parametrize("cls", [GeneratedTacticalFact, TacticalFact])
+@pytest.mark.parametrize("blank", ["", " ", "\t", " \n\t"])
+def test_nonblank_tactical_text(cls, blank):
+    data = candidate()
+    if cls is TacticalFact:
+        data.update(fact_id="tactical:3:0", segment_index=3)
+    for changes in ({"description": blank}, {"limitations": [blank]}):
+        with pytest.raises(ValidationError):
+            cls(**(data | changes))
+
+
+@pytest.mark.parametrize("cls", [GeneratedTacticalFact, TacticalFact])
 @pytest.mark.parametrize("changes", [
-    {"end_event_index": 41}, {"start_event_index": -1}, {"confidence": 1.1},
+    {"start_event_index": -1}, {"confidence": 1.1},
     {"players": ["top"]}, {"players": ["a", "a"]},
     {"evidence_fact_ids": ["stroke:42", "stroke:42"]},
     {"evidence_fact_ids": ["stroke:42"]}, {"evidence_fact_ids": ["", "stroke:49"]},
@@ -39,3 +50,12 @@ def test_tactical_result_round_trip_and_segment_integrity():
     for change in ({"segment_index": 4}, {"facts": [fact, fact]}):
         with pytest.raises(ValidationError):
             TacticalAnalysisResult(**(data | change))
+
+
+@pytest.mark.parametrize("cls", [GeneratedTacticalFact, TacticalFact])
+def test_event_references_need_not_increase_numerically(cls):
+    data = candidate() | {"start_event_index":104, "end_event_index":97}
+    if cls is TacticalFact:
+        data.update(fact_id="tactical:3:0", segment_index=3)
+    fact = cls(**data)
+    assert cls.model_validate_json(fact.model_dump_json()) == fact
