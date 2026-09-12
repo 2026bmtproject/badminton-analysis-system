@@ -31,21 +31,19 @@ class GeneratedTacticalFact(StrictModel):
     """Provider-produced candidate before deterministic provenance validation."""
 
     pattern_type: TacticalPatternType
-    description: Annotated[str, Field(min_length=1, max_length=160)]
+    description: Annotated[str, Field(min_length=1, max_length=160, pattern=r"\S")]
     confidence: Probability
     salience: Probability
     start_event_index: NonNegativeInt
     end_event_index: NonNegativeInt
     players: Annotated[list[Player], Field(max_length=2)]
     evidence_fact_ids: Annotated[list[FactId], Field(min_length=2, max_length=12)]
-    limitations: Annotated[list[str], Field(max_length=6)]
+    limitations: Annotated[list[FactId], Field(max_length=6)]
 
     @model_validator(mode="after")
     def validate_generated_fact(self) -> "GeneratedTacticalFact":
-        if self.end_event_index < self.start_event_index:
-            raise ValueError(
-                "end_event_index must be greater than or equal to start_event_index"
-            )
+        # Event indices are identities, not timestamps. The analyzer validates
+        # temporal endpoints against compact rally positions.
         if len(set(self.players)) != len(self.players):
             raise ValueError("players must not contain duplicates")
         if len(set(self.evidence_fact_ids)) != len(self.evidence_fact_ids):
@@ -62,21 +60,19 @@ class TacticalFact(StrictModel):
     fact_id: FactId
     segment_index: NonNegativeInt
     pattern_type: TacticalPatternType
-    description: Annotated[str, Field(min_length=1, max_length=160)]
+    description: Annotated[str, Field(min_length=1, max_length=160, pattern=r"\S")]
     confidence: Probability
     salience: Probability
     start_event_index: NonNegativeInt
     end_event_index: NonNegativeInt
     players: Annotated[list[Player], Field(max_length=2)]
     evidence_fact_ids: Annotated[list[FactId], Field(min_length=2, max_length=12)]
-    limitations: Annotated[list[str], Field(max_length=6)]
+    limitations: Annotated[list[FactId], Field(max_length=6)]
 
     @model_validator(mode="after")
     def validate_tactical_fact(self) -> "TacticalFact":
-        if self.end_event_index < self.start_event_index:
-            raise ValueError(
-                "end_event_index must be greater than or equal to start_event_index"
-            )
+        # Temporal range validation belongs to the evidence gate, which has
+        # the rally order. Numerically decreasing source references are valid.
         if len(set(self.players)) != len(self.players):
             raise ValueError("players must not contain duplicates")
         if len(set(self.evidence_fact_ids)) != len(self.evidence_fact_ids):
@@ -86,7 +82,7 @@ class TacticalFact(StrictModel):
 
 class TacticalAnalysisResult(StrictModel):
     schema_version: Literal["tactical-facts-v1"]
-    prompt_version: Annotated[str, Field(min_length=1)]
+    prompt_version: FactId
     provider_model: str | None = None
     segment_index: NonNegativeInt
     facts: Annotated[list[TacticalFact], Field(max_length=5)]
