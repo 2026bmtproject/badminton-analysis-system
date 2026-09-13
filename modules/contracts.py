@@ -358,6 +358,46 @@ class HighlightScore:
     score: float
 
 
+@dataclass
+class PlayerIdentityEpoch:
+    """Produced by player_identity. Artifact: ``identity.json`` (key ``epochs``).
+
+    One record per **court-end epoch** — the stretch of rallies between two end
+    changes, which the laws of badminton place at the end of game 1, the end of
+    game 2, and the moment the leading side reaches 11 in the deciding game.
+    *When* ends change is therefore derived from the score alone; no vision is
+    involved. Within one epoch the mapping is constant by definition.
+
+    ``top``/``bottom`` name which scoreboard row — ``RallyScore``'s "a" or "b" —
+    is playing that half of the court. This is the one place in the pipeline that
+    joins a court position (:data:`POSE_PLAYERS`, geometry) to an identity (a
+    scoreboard row), which is why nothing upstream asserts it.
+
+    ``votes`` and ``agreement`` are the evidence behind the row, not a calibrated
+    probability: each vote is one rally where the serving row (from the score
+    delta) and the serving side (from the serve stroke) were both known, and
+    ``agreement`` is the share of them agreeing with *this record's* mapping —
+    so a convention-filled epoch whose own handful of votes point elsewhere shows
+    that disagreement rather than hiding it. ``resolved_by`` is
+    ``"vote"`` when the epoch carried enough of its own votes, or
+    ``"convention"`` when it was too sparse and was filled from the neighbouring
+    epochs plus the match's scoreboard convention. Epochs that could be resolved
+    neither way are not records at all — they go to the envelope's
+    ``unresolved`` list with their vote counts, because a guessed identity is
+    worse for a downstream analyst than a missing one.
+    """
+
+    epoch_index: int
+    game_index: int
+    first_segment: int
+    last_segment: int
+    top: str                                # "a" | "b" — the scoreboard row up top
+    bottom: str                             # the other row
+    votes: int
+    agreement: float                        # winning side's share of ``votes``, in [0, 1]
+    resolved_by: str                        # "vote" | "convention"
+
+
 _CommentaryIndex = Annotated[int, Field(ge=0, strict=True)]
 _CommentaryText = Annotated[str, Field(min_length=1, pattern=r"\S")]
 _CommentaryProvenance = Annotated[list[_CommentaryText], Field(min_length=1)]
@@ -482,6 +522,15 @@ PIPELINE: dict[str, StageSpec] = {
     "stroke_classification": StageSpec(
         "stroke_classification", "球種辨識 (BST)",
         ["event_detection", "pose", "shuttle_tracking"], "strokes.json", StrokeLabel, "strokes",
+    ),
+    "player_identity": StageSpec(
+        "player_identity", "球員身分對應 — scoreboard row <-> court side",
+        # score_recognition is a *hard* dependency here, unlike in event_detection where
+        # it powers one precision rule and being optional is the right trade. Without the
+        # scoreboard there is no identity to map a court position to, so a run without it
+        # would have nothing to say.
+        ["stroke_classification", "score_recognition"], "identity.json",
+        PlayerIdentityEpoch, "epochs",
     ),
     "commentary": StageSpec(
         "commentary", "賽評生成",
