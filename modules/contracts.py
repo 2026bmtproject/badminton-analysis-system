@@ -141,12 +141,16 @@ class RallyScore:
     ``score_a``/``score_b`` stay scalar and hold the segment's **final** score —
     the one thing every consumer can rely on, and correct even when a segment
     turns out to hold more than one rally. score_recognition detects that from
-    the score jump against the previous segment and bisects the segment to
-    recover the intermediate rally(ies):
+    the score jump between two consecutive segments and bisects **both** of them.
+    Segments are cut on camera changes rather than on rallies, so the segment
+    holding the missed rally is as often the earlier one — whose own read then
+    came back with the pre-rally score — as the one the jump surfaced on:
 
     * ``sub_scores`` — every distinct ``[a, b]`` the scoreboard showed inside the
       segment, in order, e.g. ``[[3, 2], [3, 3]]``. ``None`` for the normal
-      single-rally case (the scalar score is the whole story).
+      single-rally case (the scalar score is the whole story). A rally that played
+      out entirely between two segments belongs to neither and leaves this None on
+      both; the meta ``refine`` note records that it was seen.
     * ``split_secs`` — absolute match-time second(s) at which the score changed,
       localized to ~``min_split_sec`` precision. ``len(split_secs) ==
       len(sub_scores) - 1``. Frame-accuracy is deliberately not attempted: the

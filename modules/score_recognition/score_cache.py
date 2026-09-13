@@ -9,7 +9,7 @@ Two kinds of entry share the directory, because both are the same question asked
 frame range — "what does the scoreboard say between these two frames?":
 
 * the first pass, one per segment;
-* the bisection windows ``refine_merged_segments`` reads inside a merged segment.
+* the bisection windows ``refine_merged_segments`` reads inside a segment.
 
 **Nothing is cached unless both scores came back.** A failed or partial read is a
 transient fact about the API, not about the video, and pinning one would make a bad
