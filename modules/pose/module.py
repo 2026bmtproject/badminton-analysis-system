@@ -34,7 +34,7 @@ import numpy as np
 from modules.artifacts import read_segments, write_artifact
 from modules.base import BaseModule, StageResult
 from modules.common import console
-from modules.common.video import iter_segment_frames
+from modules.common.video import iter_segment_frames, video_size
 from modules.contracts import (
     PIPELINE,
     POSE_PLAYERS,
@@ -44,8 +44,10 @@ from modules.contracts import (
 )
 from modules.pose import detection_cache
 from modules.pose.select import (
+    BAND_ESCAPE_TOLERANCE,
     PlayerTracker,
     SelectConfig,
+    band_escape,
     build_static_anchors,
     candidate_margins,
     candidate_mask,
@@ -125,7 +127,7 @@ class PoseModule(BaseModule):
             ),
             court=(
                 None if image_to_court is None
-                else detection_cache.court_fingerprint(image_to_court)
+                else detection_cache.court_note(image_to_court)
             ),
         )
 
@@ -146,19 +148,32 @@ class PoseModule(BaseModule):
                 "pose",
                 f"adopted {console.count(adopted, 'segment')} from the pre-manifest cache",
             )
-        if cache.stale_notes():
+        # A moved court is not a question of taste: either the new band reaches
+        # people the old one never posed, or it does not. See _court_verdict.
+        status = detection_cache.court_status(cache, image_to_court)
+        stale_court = False
+        if status == "moved":
+            stale_court, message = _court_verdict(
+                detection_cache.cached_court(cache),
+                image_to_court,
+                video_size(str(video)),
+                self.config.select,
+            )
+            console.field("court", message)
+        elif status == "unknown":
             console.warn(
-                "the court has changed since these detections were cached.\n"
-                "People just outside the old candidate band were never posed,\n"
-                "so a court that moved a lot wants --refresh-cache. A re-click\n"
-                "of the same corners does not: the band is far wider than the\n"
-                "selection inside it."
+                "the court has moved since these detections were cached, and this\n"
+                "cache predates recording which court that was — so whether the\n"
+                "band still covers the people who were posed cannot be measured.\n"
+                "If the court was repaired rather than nudged, rebuild it with:\n"
+                f"  uv run python -m modules.pose {match_path} --refresh-cache"
             )
 
-        plan = cache.plan(segments, force=self.config.refresh_cache)
+        plan = cache.plan(segments, force=self.config.refresh_cache or stale_court)
+        notes = detection_cache.earned_notes(cache, plan, status)
         pending = plan.missing
         if not pending:
-            cache.commit(plan)
+            cache.commit(plan, notes=notes)
             if on_progress:
                 on_progress(1.0)
             return
@@ -211,7 +226,7 @@ class PoseModule(BaseModule):
 
         # Only once every rally landed: the manifest records a *complete* pass. A run
         # that dies partway still leaves atomically-written entries for the next `plan`.
-        cache.commit(plan)
+        cache.commit(plan, notes=notes)
         if on_progress:
             on_progress(1.0)
 
@@ -311,6 +326,34 @@ class PoseModule(BaseModule):
         )
         console.field("players", f"found in {found}/{len(records)} (frame, player) slots")
         return StageResult(output_json)
+
+
+def _court_verdict(
+    previous: np.ndarray,
+    image_to_court: np.ndarray,
+    frame_size: tuple[int, int],
+    config: SelectConfig,
+) -> tuple[bool, str]:
+    """Whether a moved court invalidates the cached detections, and what to say.
+
+    The cache is exactly the people who passed the old candidate band, so the only
+    thing that can have gone wrong is the repaired court letting a player stand
+    somewhere that band never reached. ``band_escape`` measures precisely that, and on
+    a real broadcast court it reads a clean zero for corners moved up to ~40 px and
+    tens of percent for a court fitted to the wrong part of the frame — so the
+    tolerance separates grid noise from a hole, not one judgement call from another.
+
+    Above it, people who should now be selected have no skeleton at all and no amount
+    of re-running the selection will invent them; the GPU pass has to happen, and the
+    stage does it rather than asking.
+    """
+    escape = band_escape(previous, image_to_court, frame_size, config)
+    if escape > BAND_ESCAPE_TOLERANCE:
+        return True, (
+            f"moved — {escape:.0%} of where a player can now be was never posed, "
+            "recomputing detections"
+        )
+    return False, "moved, but everywhere a player can be was already posed; cache kept"
 
 
 class _FrameCounter:

@@ -169,14 +169,20 @@ class SegmentCache:
             )
         return Plan(entries)
 
-    def commit(self, plan: Plan) -> None:
-        """Write ``manifest.json`` describing the current view of the cache."""
+    def commit(self, plan: Plan, *, notes: dict | None = None) -> None:
+        """Write ``manifest.json`` describing the current view of the cache.
+
+        ``notes`` overrides :attr:`notes` for this write. A note describes the entries
+        that are *in* the cache, so a run that recomputed only some of them has not
+        made the current value true of the rest — the caller passes the value the run
+        actually earned, and ``None`` means "mine".
+        """
         self.dir.mkdir(parents=True, exist_ok=True)
         manifest = {
             "format": FORMAT,
             "params": self.params,
             "params_key": self.params_key,
-            "notes": self.notes or {},
+            "notes": (self.notes if notes is None else notes) or {},
             "entries": [
                 {
                     "index": e.index,
