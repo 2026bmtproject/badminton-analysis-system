@@ -127,9 +127,9 @@ class ScoreRecognitionConfig:
     # resolution is cheaper to decode without hurting Gemini's scoreboard read.
     # Nothing in cache -> read the source as-is (never generate a downscale).
     min_scan_height: int = DEFAULT_MIN_SCAN_HEIGHT
-    # After the first pass, bisect any segment whose score jumps by >1 against the
-    # previous one (a merged multi-rally segment) to recover the intermediate
-    # rally(ies). Only anomalous segments pay for this, so it is nearly free.
+    # After the first pass, bisect both segments bracketing a score that jumps by
+    # >1 between consecutive reads, to recover the rally missed in one of them.
+    # Only the segments around an anomaly pay for this, so it is nearly free.
     refine_merged_segments: bool = True
     # Smallest window (seconds) the refine bisection will resolve down to — also
     # the precision of the recovered split time. Kept coarse on purpose: the
@@ -433,15 +433,19 @@ def score_segment(
     return best, attempts
 
 
-# ── Merged-segment refine (bisection) ──────────────────────────────────────────
+# ── Missed-rally refine (bisection) ────────────────────────────────────────────
 #
-# match_segmentation can merge two rallies into one segment when the dead time
-# between them is too short to cut on. The scoreboard then changes mid-segment,
-# and a single composite of the whole segment only recovers the *last* rally's
-# score — the intermediate rally silently vanishes. We catch this at the match
-# level (the score jumps by >1 against the previous segment) and bisect the
-# offending segment to recover every rally it holds, plus the second each score
-# change happened at.
+# Segments are cut on camera changes, not on rallies, so a segment can hold two
+# rallies and a whole rally can play out between two segments. Either way a
+# single composite of a segment yields *one* score and the other rally silently
+# vanishes. We catch that at the match level (the score jumps by >1 against the
+# previous segment) and bisect to recover every score the board went through,
+# plus the second each change happened at.
+#
+# Every segment the two disagreeing reads bracket is bisected, not just the one
+# the jump surfaced on. Bisecting only that one — what this used to do — finds
+# nothing whenever the missed rally sat in the *previous* segment, whose own read
+# came back with the earlier score; that failure is why this exists.
 #
 # The core resolver below is a pure function: it takes a ``read_fn(a, b)`` that
 # returns the dominant ``(score_a, score_b)`` of a frame window (or None), so it
@@ -477,11 +481,15 @@ def _resolve_runs(
     if s_start == s_end:
         return [(s_start, start)]
 
-    # Binary-search the first frame where the score leaves s_start.
+    # Binary-search the first frame where the score leaves s_start. A window that
+    # reads None is the scoreboard being off screen or a call that came back
+    # unparseable — no evidence the score moved — so counting it as a change would
+    # drag the boundary earlier on every unreadable probe.
     lo, hi = start, end
     while hi - lo > window:
         mid = (lo + hi) // 2
-        if local(mid) == s_start:
+        seen = local(mid)
+        if seen is None or seen == s_start:
             lo = mid
         else:
             hi = mid
@@ -558,7 +566,7 @@ def refine_merged_segment(
     fps: float,
     min_split_sec: float = DEFAULT_MIN_SPLIT_SEC,
 ) -> "tuple[list[list[int]] | None, list[float] | None]":
-    """Recover the rally scores inside one merged segment."""
+    """Recover the rally scores inside one segment, or ``(None, None)`` if it held one."""
     window = max(3, int(min_split_sec * fps))
     runs = _resolve_runs(read_fn, int(start_frame), int(end_frame), window)
     if len(runs) < 2:
@@ -588,8 +596,9 @@ def _refine_merged_segments(
     stop_event: "threading.Event | None" = None,
     cache: "ScoreCache | None" = None,
 ) -> None:
-    """Second pass: bisect every jump-flagged segment to recover its rallies."""
+    """Second pass: bisect both segments around every score jump to find the missed rally."""
     info_by_index = {info.get("segment_index"): info for info in infos}
+    rally_by_index = {rally.segment_index: rally for rally in rallies}
 
     def read_fn(a: int, b: int) -> "tuple[int, int] | None":
         return _read_window_score(
@@ -597,6 +606,10 @@ def _refine_merged_segments(
         )
 
     prev: "tuple[int, int] | None" = None
+    prev_index: int | None = None
+    # Two jumps in a row share the segment between them; bisecting it twice would
+    # re-buy every window. Remembers whether each bisection found a change.
+    bisected: dict[int, bool] = {}
     for rally in rallies:
         cur = (
             (rally.score_a, rally.score_b)
@@ -606,29 +619,54 @@ def _refine_merged_segments(
         if prev is not None and cur is not None and _is_score_jump(prev, cur):
             if stop_event is not None and stop_event.is_set():
                 break
-            seg = segments[rally.segment_index]
-            try:
-                sub_scores, split_secs = refine_merged_segment(
-                    read_fn, int(seg["start_frame"]), int(seg["end_frame"]),
-                    fps, config.min_split_sec,
-                )
-            except Exception as e:  # never let a refine crash the stage
-                sub_scores, split_secs, err = None, None, str(e)[:120]
-            else:
-                err = None
-
-            info = info_by_index.get(rally.segment_index)
-            if sub_scores and len(sub_scores) >= 2:
-                rally.sub_scores = sub_scores
-                rally.split_secs = split_secs
-                if info is not None:
-                    info["refine"] = f"merged -> {sub_scores} @ {split_secs}s"
-                console.item(f"seg {rally.segment_index}: merged rally recovered "
+            # Bisect every segment the two disagreeing reads bracket, not just the
+            # one the jump surfaced on. Each is searched on its own frame range so
+            # the dead time between them is never probed: nothing is played there,
+            # and on a long changeover that would be most of the bisection's cost.
+            recovered, err = [], None
+            for index in range(prev_index, rally.segment_index + 1):
+                target = rally_by_index.get(index)
+                if target is None:
+                    continue
+                if index in bisected:
+                    if bisected[index]:
+                        recovered.append(index)
+                    continue
+                seg = segments[index]
+                try:
+                    sub_scores, split_secs = refine_merged_segment(
+                        read_fn, int(seg["start_frame"]), int(seg["end_frame"]),
+                        fps, config.min_split_sec,
+                    )
+                except Exception as e:  # never let a refine crash the stage
+                    err = str(e)[:120]
+                    continue
+                bisected[index] = bool(sub_scores and len(sub_scores) >= 2)
+                if not bisected[index]:
+                    continue
+                # The scalar score is deliberately left alone. What it means is
+                # unsettled — contracts.py calls it the segment's final score, but
+                # the board only moves a few seconds *after* the camera cuts away,
+                # so what the first pass reads is the score going *into* the rally.
+                # Rewriting it from sub_scores would pick a side of that question.
+                target.sub_scores = sub_scores
+                target.split_secs = split_secs
+                seg_info = info_by_index.get(index)
+                if seg_info is not None:
+                    seg_info["refine"] = f"merged -> {sub_scores} @ {split_secs}s"
+                console.item(f"seg {index}: merged rally recovered "
                              f"-> {sub_scores} @ {split_secs}s")
-            elif info is not None:
-                info["refine"] = f"jump seen but not resolved{f' ({err})' if err else ''}"
+                recovered.append(index)
+
+            if not recovered:
+                info = info_by_index.get(rally.segment_index)
+                if info is not None:
+                    # Neither segment's board moved, so the missed rally played out
+                    # in the dead time between them and belongs to no segment.
+                    detail = f" ({err})" if err else " (fell between segments)"
+                    info["refine"] = f"jump seen but not resolved{detail}"
         if cur is not None:
-            prev = cur
+            prev, prev_index = cur, rally.segment_index
 
 
 def recognize_scores(
@@ -649,11 +687,13 @@ def recognize_scores(
     per-segment debug info (attempt trail, notes, errors).
 
     When ``fps`` is given and ``config.refine_merged_segments`` is on, a second
-    pass bisects any segment whose score jumps by more than one rally against the
-    previous segment, recovering the merged rally(ies) into ``sub_scores`` /
-    ``split_secs`` (see :class:`~modules.contracts.RallyScore`). ``fps`` is
-    required only because the split times are reported in seconds; without it the
-    refine pass is skipped and the first-pass scalar scores are returned as-is.
+    pass looks for a score jumping by more than one rally between two consecutive
+    reads and bisects both segments it brackets — the missed rally is as often in
+    the earlier one as in the one the jump surfaced on — recovering it into
+    ``sub_scores`` / ``split_secs`` (see :class:`~modules.contracts.RallyScore`).
+    ``fps`` is required only because the split times are reported in seconds;
+    without it the refine pass is skipped and the first-pass scalar scores are
+    returned as-is.
 
     ``cache`` is optional so this function stays runnable against a bare video path;
     the stage always passes one (see :mod:`modules.score_recognition.score_cache`),

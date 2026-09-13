@@ -391,9 +391,36 @@ def test_refine_merged_segment_single_rally_returns_none():
     assert refine_merged_segment(read_fn, 0, 400, 25.0) == (None, None)
 
 
+def test_resolve_runs_unreadable_probe_is_not_treated_as_a_change():
+    # The board is off screen across the middle; the only real change is at 700.
+    read_fn = scoreboard_reader([(0, (3, 2)), (700, (3, 3))], absent=[(200, 600)])
+    runs = _resolve_runs(read_fn, 0, 900, window=50)
+    assert [s for s, _ in runs] == [(3, 2), (3, 3)]
+    assert runs[1][1] >= 600   # not dragged back into the unreadable stretch
+
+
 # --------------------------------------------------------------------------- #
-# merged-segment refine — end-to-end through recognize_scores
+# missed-rally refine — end-to-end through recognize_scores
 # --------------------------------------------------------------------------- #
+
+
+def run_refine(monkeypatch, segments, finals, timeline, fps=25.0):
+    """Drive recognize_scores with a scripted first pass and scoreboard timeline."""
+    def fake_score_segment(video_path, start_frame, end_frame, api_key, config, **kwargs):
+        a, b = finals[next(i for i, s in enumerate(segments)
+                           if s["start_frame"] == start_frame)]
+        best = {"score_a": a, "score_b": b, "method": "dominant_cluster", "note": ""}
+        return best, [dict(best)]
+
+    window_reader = scoreboard_reader(timeline)
+
+    def fake_window(video_path, start, end, api_key, config, rate_limiter=None,
+                    stop_event=None, cache=None):
+        return window_reader(start, end)
+
+    monkeypatch.setattr(recognizer, "score_segment", fake_score_segment)
+    monkeypatch.setattr(recognizer, "_read_window_score", fake_window)
+    return recognize_scores("dummy.mp4", segments, api_key="k", fps=fps)
 
 
 def test_recognize_scores_refines_a_merged_segment(monkeypatch):
@@ -404,26 +431,11 @@ def test_recognize_scores_refines_a_merged_segment(monkeypatch):
         {"start_frame": 200, "end_frame": 745},    # seg1 -> merged 3:2, 3:3
         {"start_frame": 800, "end_frame": 900},    # seg2 -> 4:3
     ]
-    finals = {0: (2, 2), 1: (3, 3), 2: (4, 3)}
-
-    def fake_score_segment(video_path, start_frame, end_frame, api_key, config, **kwargs):
-        # Map a segment by its start_frame to its final score.
-        a, b = finals[next(i for i, s in enumerate(segments)
-                           if s["start_frame"] == start_frame)]
-        best = {"score_a": a, "score_b": b, "method": "dominant_cluster", "note": ""}
-        return best, [dict(best)]
-
-    # Refine reads windows inside seg1 [200,745]; scoreboard flips at frame 472.
-    window_reader = scoreboard_reader([(200, (3, 2)), (472, (3, 3))])
-
-    def fake_window(video_path, start, end, api_key, config, rate_limiter=None,
-                    stop_event=None, cache=None):
-        return window_reader(start, end)
-
-    monkeypatch.setattr(recognizer, "score_segment", fake_score_segment)
-    monkeypatch.setattr(recognizer, "_read_window_score", fake_window)
-
-    rallies, meta = recognize_scores("dummy.mp4", segments, api_key="k", fps=25.0)
+    rallies, _ = run_refine(
+        monkeypatch, segments,
+        finals={0: (2, 2), 1: (3, 3), 2: (4, 3)},
+        timeline=[(200, (3, 2)), (472, (3, 3))],   # flips mid-seg1
+    )
 
     merged = rallies[1]
     assert (merged.score_a, merged.score_b) == (3, 3)   # scalar stays the final score
@@ -432,6 +444,91 @@ def test_recognize_scores_refines_a_merged_segment(monkeypatch):
     # Untouched segments carry no sub-scores.
     assert rallies[0].sub_scores is None
     assert rallies[2].sub_scores is None
+
+
+def test_recognize_scores_refines_the_segment_before_the_jump(monkeypatch):
+    """The regression this pass exists for: seg0 holds the missed rally but the
+    jump only shows up on seg1, so bisecting seg1 alone finds nothing."""
+    segments = [
+        {"start_frame": 0, "end_frame": 500},      # seg0 -> really 2:2 then 3:2
+        {"start_frame": 600, "end_frame": 900},    # seg1 -> 4:2, where the jump shows
+    ]
+    rallies, _ = run_refine(
+        monkeypatch, segments,
+        finals={0: (2, 2), 1: (4, 2)},             # seg0 read the *earlier* score
+        timeline=[(0, (2, 2)), (300, (3, 2)), (550, (4, 2))],
+    )
+
+    # The missed rally is written onto seg0, where the board actually changed.
+    assert rallies[0].sub_scores == [[2, 2], [3, 2]]
+    assert rallies[0].split_secs[0] == pytest.approx(300 / 25.0, abs=2.0)
+    # The scalar is left exactly as the first pass read it — see the note in
+    # _refine_merged_segments on why refine does not get to redefine it.
+    assert (rallies[0].score_a, rallies[0].score_b) == (2, 2)
+    # seg1 is a clean single-rally segment and must not be marked as merged.
+    assert rallies[1].sub_scores is None
+    assert (rallies[1].score_a, rallies[1].score_b) == (4, 2)
+
+
+def test_recognize_scores_bisects_a_shared_segment_only_once(monkeypatch):
+    """Back-to-back jumps overlap on the segment between them. Bisecting it twice
+    would re-buy every window of it, so the second jump must reuse the first's work."""
+    segments = [
+        {"start_frame": 0, "end_frame": 100},      # seg0 -> 2:2
+        {"start_frame": 200, "end_frame": 745},    # seg1 -> holds 3:2 then 3:3
+        {"start_frame": 800, "end_frame": 1345},   # seg2 -> holds 4:3 then 5:3
+    ]
+    bisections: list[tuple[int, int]] = []
+
+    def fake_score_segment(video_path, start_frame, end_frame, api_key, config, **kwargs):
+        a, b = {0: (2, 2), 1: (3, 3), 2: (5, 3)}[
+            next(i for i, s in enumerate(segments) if s["start_frame"] == start_frame)]
+        best = {"score_a": a, "score_b": b, "method": "dominant_cluster", "note": ""}
+        return best, [dict(best)]
+
+    reader = scoreboard_reader(
+        [(0, (3, 2)), (472, (3, 3)), (800, (4, 3)), (1072, (5, 3))]
+    )
+    real_refine = recognizer.refine_merged_segment
+
+    def spy_refine(read_fn, start_frame, end_frame, fps, min_split_sec=2.0):
+        bisections.append((start_frame, end_frame))
+        return real_refine(read_fn, start_frame, end_frame, fps, min_split_sec)
+
+    monkeypatch.setattr(recognizer, "score_segment", fake_score_segment)
+    monkeypatch.setattr(recognizer, "_read_window_score",
+                        lambda v, s, e, k, c, *a, **kw: reader(s, e))
+    monkeypatch.setattr(recognizer, "refine_merged_segment", spy_refine)
+
+    rallies, _ = recognize_scores("dummy.mp4", segments, api_key="k", fps=25.0)
+
+    # Both jumps resolve...
+    assert rallies[1].sub_scores == [[3, 2], [3, 3]]
+    assert rallies[2].sub_scores == [[4, 3], [5, 3]]
+    # ...and seg1, which both jumps' spans cover, was bisected exactly once.
+    assert bisections.count((200, 745)) == 1
+    assert bisections == list(dict.fromkeys(bisections))
+
+
+def test_recognize_scores_reports_a_rally_missed_between_segments(monkeypatch):
+    """A rally played out entirely in the dead time belongs to no segment, so
+    neither gets sub_scores — but the refine note has to say it was seen."""
+    segments = [
+        {"start_frame": 0, "end_frame": 300},      # seg0 -> 2:2
+        {"start_frame": 600, "end_frame": 900},    # seg1 -> 4:2
+    ]
+    rallies, meta = run_refine(
+        monkeypatch, segments,
+        finals={0: (2, 2), 1: (4, 2)},
+        timeline=[(0, (2, 2)), (400, (3, 2)), (500, (4, 2))],   # both changes in the gap
+    )
+
+    assert rallies[0].sub_scores is None
+    assert rallies[1].sub_scores is None
+    assert (rallies[0].score_a, rallies[0].score_b) == (2, 2)
+    assert (rallies[1].score_a, rallies[1].score_b) == (4, 2)
+    note = meta["attempts"][1]["refine"]
+    assert "fell between segments" in note
 
 
 def test_recognize_scores_without_fps_skips_refine(monkeypatch):
