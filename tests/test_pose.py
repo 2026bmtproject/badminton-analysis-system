@@ -23,16 +23,19 @@ from modules.pose import csv_export, detection_cache
 from modules.pose.module import (
     MAX_AUTO_WORKERS,
     PROGRESS_STRIDE,
+    _court_verdict,
     _FrameCounter,
     _run_concurrently,
     _to_record,
     default_workers,
 )
 from modules.pose.select import (
+    BAND_ESCAPE_TOLERANCE,
     COURT_LENGTH_M,
     COURT_WIDTH_M,
     PlayerTracker,
     SelectConfig,
+    band_escape,
     build_static_anchors,
     candidate_margins,
     candidate_mask,
@@ -713,20 +716,206 @@ def test_refresh_cache_recomputes_a_matching_cache(tmp_path):
     assert len(plan.missing) == len(segments)
 
 
-def test_a_moved_court_warns_instead_of_rebuilding(tmp_path):
-    """The homography decides who was posed, but a rebuild costs the whole GPU pass.
+# --------------------------------------------------------------------------- #
+# A moved court: does the cache still cover it?
+# --------------------------------------------------------------------------- #
+FRAME_SIZE = (1920, 1080)
 
-    So it is recorded as a note rather than keyed: the cache stays usable and the stage
-    gets to say the band was measured against a different court.
+#: The corners BROADCAST is built from, as the court tool would hand them over.
+GOOD_CORNERS = [(760, 260), (1160, 260), (1420, 900), (500, 900)]
+
+#: A court fitted to only the far half of the frame — the shape a failed auto-detect
+#: takes, and the one that leaves the near player outside the candidate band entirely.
+BROKEN_CORNERS = [(760, 260), (1160, 260), (1290, 580), (630, 580)]
+
+
+def court_at(corners) -> np.ndarray:
+    """The image -> court matrix for a court whose corners sit at these pixels."""
+    return court_from_image(
+        homography_from_corners(
+            [(0, 0), (COURT_WIDTH_M, 0), (COURT_WIDTH_M, COURT_LENGTH_M), (0, COURT_LENGTH_M)],
+            corners,
+        )
+    )
+
+
+def nudged(corners, pixels: int):
+    """The same court, re-fitted a few pixels off — what a hand fine-tune produces."""
+    return [(x + pixels, y - pixels) for x, y in corners]
+
+
+def test_an_unmoved_court_escapes_nothing():
+    court = court_at(GOOD_CORNERS)
+    assert band_escape(court, court, FRAME_SIZE) == 0.0
+
+
+@pytest.mark.parametrize("pixels", [4, 8, 16])
+def test_a_re_fitted_court_stays_inside_what_was_posed(pixels):
+    """The whole point of the candidate band being wider than the selection margins.
+
+    A hand fine-tune moves the corners a little; the people it can newly select were
+    all posed anyway, so the cached pass is still complete and costs nothing.
+    """
+    escape = band_escape(court_at(GOOD_CORNERS), court_at(nudged(GOOD_CORNERS, pixels)), FRAME_SIZE)
+
+    assert escape == 0.0
+
+
+def test_a_repaired_court_escapes_the_posed_band():
+    """The failure this exists for: a court that was wrong, then corrected.
+
+    Half the real court was never inside the old band, so half the players were never
+    posed and no amount of re-running the selection can find them.
+    """
+    escape = band_escape(court_at(BROKEN_CORNERS), court_at(GOOD_CORNERS), FRAME_SIZE)
+
+    assert escape > 0.25
+    assert escape > BAND_ESCAPE_TOLERANCE
+
+
+def test_escape_is_asymmetric():
+    """Shrinking onto ground already posed is free; growing off it is not.
+
+    The question is containment, not difference — which is why the same pair of courts
+    gives an answer in one direction and zero in the other.
+    """
+    broken, good = court_at(BROKEN_CORNERS), court_at(GOOD_CORNERS)
+
+    assert band_escape(good, broken, FRAME_SIZE) == 0.0
+    assert band_escape(broken, good, FRAME_SIZE) > 0.0
+
+
+def test_a_court_reaching_no_pixel_of_the_frame_escapes_nothing():
+    """Nobody can be selected off-frame, so there is nobody to have missed."""
+    offscreen = court_at([(9000, 9000), (9400, 9000), (9400, 9600), (9000, 9600)])
+
+    assert band_escape(court_at(GOOD_CORNERS), offscreen, FRAME_SIZE) == 0.0
+
+
+def test_the_verdict_rebuilds_only_when_the_band_escaped():
+    good, broken = court_at(GOOD_CORNERS), court_at(BROKEN_CORNERS)
+
+    rebuild, message = _court_verdict(broken, good, FRAME_SIZE, SelectConfig())
+    assert rebuild and "recomputing" in message
+
+    rebuild, message = _court_verdict(
+        good, court_at(nudged(GOOD_CORNERS, 8)), FRAME_SIZE, SelectConfig()
+    )
+    assert not rebuild and "cache kept" in message
+
+
+# --------------------------------------------------------------------------- #
+# ...and what the manifest is then allowed to claim
+# --------------------------------------------------------------------------- #
+def court_cache(tmp_path, corners):
+    return base_cache(tmp_path, court=detection_cache.court_note(court_at(corners)))
+
+
+def committed_court(tmp_path):
+    notes = json.loads(
+        (detection_cache.pose_dir(tmp_path) / "manifest.json").read_text(encoding="utf-8")
+    )["notes"]
+    return notes["court"]
+
+
+def test_an_unmoved_court_reads_as_same(tmp_path):
+    segments = make_segments()
+    fill_cache(court_cache(tmp_path, GOOD_CORNERS), segments)
+
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    assert detection_cache.court_status(cache, court_at(GOOD_CORNERS)) == "same"
+
+
+def test_a_moved_court_is_readable_rather_than_merely_different(tmp_path):
+    """The note holds the matrix, so "it moved" can become "by this much"."""
+    segments = make_segments()
+    fill_cache(court_cache(tmp_path, BROKEN_CORNERS), segments)
+
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    assert detection_cache.court_status(cache, court_at(GOOD_CORNERS)) == "moved"
+    assert detection_cache.court_note(
+        detection_cache.cached_court(cache)
+    ) == detection_cache.court_note(court_at(BROKEN_CORNERS))
+
+
+def test_a_run_that_recomputed_nothing_does_not_claim_the_new_court(tmp_path):
+    """The bug this whole mechanism turns on.
+
+    ``court`` names the court the *entries* were filtered against. A pass that reused
+    every one of them has not made the new court true of any of them, so committing it
+    would leave a manifest insisting the cache is current while it is not — and the
+    next run, seeing no change, would never look again.
     """
     segments = make_segments()
-    fill_cache(base_cache(tmp_path, court="aaaa"), segments)
+    fill_cache(court_cache(tmp_path, BROKEN_CORNERS), segments)
 
-    moved = base_cache(tmp_path, court="bbbb")
-    assert moved.stale_notes() == ["court"]
-    assert not moved.plan(segments).missing        # still reusable
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    plan = cache.plan(segments)                    # every entry a hit
+    cache.commit(plan, notes=detection_cache.earned_notes(cache, plan, "moved"))
 
-    assert base_cache(tmp_path, court="aaaa").stale_notes() == []
+    assert committed_court(tmp_path) == detection_cache.court_note(court_at(BROKEN_CORNERS))
+    assert detection_cache.court_status(
+        court_cache(tmp_path, GOOD_CORNERS), court_at(GOOD_CORNERS)
+    ) == "moved"
+
+
+def test_a_partial_recompute_does_not_claim_the_new_court_either(tmp_path):
+    """Half the entries under the new court still leaves half under the old one."""
+    segments = make_segments()
+    fill_cache(court_cache(tmp_path, BROKEN_CORNERS), segments)
+
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    plan = cache.plan([*segments, {"start_frame": 200, "end_frame": 249}])
+    assert plan.hits and plan.missing
+    cache.commit(plan, notes=detection_cache.earned_notes(cache, plan, "moved"))
+
+    assert committed_court(tmp_path) == detection_cache.court_note(court_at(BROKEN_CORNERS))
+
+
+def test_a_full_recompute_earns_the_new_court(tmp_path):
+    """Which is what --refresh-cache, or an escaped band, buys."""
+    segments = make_segments()
+    fill_cache(court_cache(tmp_path, BROKEN_CORNERS), segments)
+
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    plan = cache.plan(segments, force=True)
+    cache.commit(plan, notes=detection_cache.earned_notes(cache, plan, "moved"))
+
+    assert committed_court(tmp_path) == detection_cache.court_note(court_at(GOOD_CORNERS))
+    assert detection_cache.court_status(
+        court_cache(tmp_path, GOOD_CORNERS), court_at(GOOD_CORNERS)
+    ) == "same"
+
+
+def test_a_pre_matrix_note_cannot_measure_a_moved_court(tmp_path):
+    """Caches written before the note held a matrix say that it moved, not where to."""
+    segments = make_segments()
+    fill_cache(base_cache(tmp_path, court="a-fingerprint"), segments)
+
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    assert detection_cache.court_status(cache, court_at(GOOD_CORNERS)) == "unknown"
+    assert detection_cache.cached_court(cache) is None
+
+    # ...and it keeps saying so, rather than quietly adopting a court it cannot vouch for.
+    plan = cache.plan(segments)
+    cache.commit(plan, notes=detection_cache.earned_notes(cache, plan, "unknown"))
+    assert committed_court(tmp_path) == "a-fingerprint"
+
+
+def test_a_pre_matrix_note_is_upgraded_when_the_court_has_not_moved(tmp_path):
+    """An unmoved court makes rewriting the note truthful, so take the chance."""
+    segments = make_segments()
+    court = court_at(GOOD_CORNERS)
+    fill_cache(base_cache(tmp_path, court=detection_cache.court_fingerprint(court)), segments)
+
+    cache = court_cache(tmp_path, GOOD_CORNERS)
+    assert detection_cache.court_status(cache, court) == "same"
+
+    plan = cache.plan(segments)
+    cache.commit(plan, notes=detection_cache.earned_notes(cache, plan, "same"))
+    assert detection_cache.court_note(
+        detection_cache.cached_court(court_cache(tmp_path, GOOD_CORNERS))
+    ) == detection_cache.court_note(court)
 
 
 def test_court_fingerprint_ignores_float_noise(tmp_path):
@@ -736,6 +925,22 @@ def test_court_fingerprint_ignores_float_noise(tmp_path):
 
     assert detection_cache.court_fingerprint(base) == detection_cache.court_fingerprint(jittered)
     assert detection_cache.court_fingerprint(base) != detection_cache.court_fingerprint(base * 1.01)
+
+
+def test_a_court_note_is_indifferent_to_the_homography_s_scale(tmp_path):
+    """A homography times a constant is the same projection, so it is the same court.
+
+    Worth pinning because the note is read back and measured against, not just compared:
+    an inverse homography carries elements around 1e-2, and a note that recorded their
+    absolute size would both spuriously differ and come back blunt.
+    """
+    court = court_at(GOOD_CORNERS)
+
+    assert detection_cache.court_note(court) == detection_cache.court_note(court * 7.0)
+    assert np.allclose(
+        np.asarray(detection_cache.court_note(court)) * float(np.abs(court).max()),
+        court,
+    )
 
 
 def test_a_legacy_cache_is_adopted_by_renaming(tmp_path):

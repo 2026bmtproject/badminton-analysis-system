@@ -47,6 +47,20 @@ PLAYERS = POSE_PLAYERS
 CANDIDATE_X_MARGIN = 0.35
 CANDIDATE_Y_MARGIN = 0.45
 
+#: Probes per axis for :func:`band_escape`. 128 over a 1080p frame samples every ~15 px
+#: across and ~8 px down — finer than any edge worth resolving, and the whole test is
+#: two projections of 16k points.
+BAND_PROBE_GRID = 128
+
+#: How much of the new selection region may fall outside the old candidate band before
+#: a cached pose pass is refused. Near zero is affordable because :func:`band_escape`
+#: compares the two *different* regions the margins already separate, so a re-fit has
+#: to eat 0.61 m of sideline slack and 2.68 m of baseline slack before it registers at
+#: all: measured on the test court, corners moved 16 px still score exactly 0.0, while
+#: a court fitted to the wrong half of the frame scores 0.27. What survives at this
+#: scale is the probe grid resolving an edge, not a hole anyone can stand in.
+BAND_ESCAPE_TOLERANCE = 0.005
+
 
 @dataclass
 class SelectConfig:
@@ -190,6 +204,28 @@ def candidate_margins(config: SelectConfig | None = None) -> tuple[float, float]
     )
 
 
+def in_band(
+    points: np.ndarray,
+    image_to_court: np.ndarray,
+    margins: tuple[float, float],
+) -> np.ndarray:
+    """Bool per image point: standing there, is a person inside the widened court?
+
+    The one place a margin pair becomes a region, so :func:`candidate_mask` (who gets
+    posed) and :func:`band_escape` (whether a cache still covers who would be chosen)
+    are asking about the same geometry rather than two copies of it that can drift.
+    """
+    if len(points) == 0:
+        return np.zeros(0, dtype=bool)
+    x_margin, y_margin = margins
+    court = to_court(np.asarray(points, dtype=np.float64), image_to_court)
+    x, y = court[:, 0], court[:, 1]
+    return (
+        (x > -x_margin) & (x < 1 + x_margin)
+        & (y > -y_margin) & (y < 1 + y_margin)
+    )
+
+
 def candidate_mask(
     bboxes: np.ndarray,
     image_to_court: np.ndarray,
@@ -205,17 +241,63 @@ def candidate_mask(
     """
     if len(bboxes) == 0:
         return np.zeros(0, dtype=bool)
-
-    x_margin, y_margin = candidate_margins(config)
     feet = np.stack(
         [(bboxes[:, 0] + bboxes[:, 2]) / 2.0, bboxes[:, 3]], axis=1
     ).astype(np.float64)
-    court = to_court(feet, image_to_court)
-    x, y = court[:, 0], court[:, 1]
-    return (
-        (x > -x_margin) & (x < 1 + x_margin)
-        & (y > -y_margin) & (y < 1 + y_margin)
+    return in_band(feet, image_to_court, candidate_margins(config))
+
+
+def band_escape(
+    old_image_to_court: np.ndarray,
+    new_image_to_court: np.ndarray,
+    frame_size: tuple[int, int],
+    config: SelectConfig | None = None,
+) -> float:
+    """How much of the new selection region the old candidate band never posed. 0-1
+
+    The decision a moved court actually needs, and it is not symmetric. A pose cache
+    holds everyone who passed the **old candidate band**; the only people whose absence
+    can change an answer are the ones the **new selection margins** would have picked.
+    So a cached pass is still sound exactly when the second region lies inside the
+    first, and this returns how far it does not.
+
+    Comparing the two *different* regions is what makes the result sharp instead of a
+    percentage to haggle over. The candidate band is deliberately the wider one — 0.61 m
+    further past each sideline, 2.68 m past each baseline — and that slack now does the
+    job it was always described as doing: a court re-fitted onto nearly the same corners
+    moves the selection region well within it and scores a clean zero, while a court
+    that was actually somewhere else does not.
+
+    Probed on a grid of image points rather than by projecting either region's corners:
+    a corner six metres past a baseline can land beyond the horizon, where the
+    homography says nothing useful, while every probe here is a real pixel of a real
+    frame. Both courts go through :func:`in_band`, the same test that decided who was
+    posed, so where a projection does go strange the region reads as escaped and the
+    answer errs towards rebuilding.
+    """
+    config = config or SelectConfig()
+    width, height = frame_size
+    grid = np.stack(
+        np.meshgrid(
+            np.linspace(0.0, float(width - 1), BAND_PROBE_GRID),
+            np.linspace(0.0, float(height - 1), BAND_PROBE_GRID),
+        ),
+        axis=-1,
+    ).reshape(-1, 2)
+
+    selectable = in_band(
+        grid,
+        np.asarray(new_image_to_court, dtype=np.float64),
+        (config.x_margin, config.y_margin),
     )
+    if not selectable.any():
+        return 0.0          # the new court reaches no pixel of the frame; nothing to miss
+    posed = in_band(
+        grid,
+        np.asarray(old_image_to_court, dtype=np.float64),
+        candidate_margins(config),
+    )
+    return float((selectable & ~posed).sum() / selectable.sum())
 
 
 def _halves(

@@ -282,3 +282,23 @@ def test_atomic_savez_leaves_no_temp_file(tmp_path):
     assert [p.name for p in tmp_path.joinpath("sub").iterdir()] == ["entry.npz"]
     with np.load(target) as data:
         assert list(data["values"]) == [0, 1, 2, 3]
+
+
+def test_commit_can_write_notes_the_run_earned_rather_than_the_current_ones(tmp_path):
+    """A note describes the entries, so a caller that reused some gets to say so.
+
+    Without the override, a pass that recomputed nothing still stamps the manifest with
+    today's value and the cache loses its only record of what actually built it.
+    """
+    segs = segments((0, 99))
+    a = SegmentCache(tmp_path / "cache", PARAMS, notes={"court": "aaaa"})
+    fill(a, segs)
+
+    b = SegmentCache(tmp_path / "cache", PARAMS, notes={"court": "bbbb"})
+    b.commit(b.plan(segs), notes={"court": "aaaa"})
+
+    assert b.read_manifest()["notes"] == {"court": "aaaa"}
+    assert b.stale_notes() == ["court"]          # still different, still worth saying
+
+    b.commit(b.plan(segs))                   # None -> the cache's own notes
+    assert b.read_manifest()["notes"] == {"court": "bbbb"}
