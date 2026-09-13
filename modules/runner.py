@@ -42,6 +42,7 @@ from modules.contracts import resolve_input_video, stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.event_detection import EventDetectionModule
 from modules.match_segmentation import MatchSegmentationModule
+from modules.player_identity import PlayerIdentityModule
 from modules.pose import PoseModule
 from modules.score_recognition import ScoreRecognitionModule
 from modules.shuttle_tracking import ShuttleTrackingModule
@@ -64,6 +65,7 @@ def available_modules() -> dict[str, BaseModule]:
         PoseModule(),
         EventDetectionModule(),
         StrokeClassificationModule(),
+        PlayerIdentityModule(),
     ]
     return {m.name: m for m in modules}
 

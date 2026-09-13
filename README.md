@@ -19,6 +19,7 @@ modules/
 ├── shuttle_tracking/     # 羽球軌跡 (TrackNetV3)
 ├── event_detection/      # 擊球偵測
 ├── stroke_classification/# 球種辨識 (BST)
+├── player_identity/      # 球員身分對應（記分板列 <-> 場地半場）
 ├── audio_highlight/      # 音訊歡呼訊號 / audio measurements
 ├── highlight_ranking/    # 精彩片段排序 / downstream ranking policy
 ├── commentary/           # 賽評契約與 domain schemas（尚未接入 runtime）
@@ -276,6 +277,48 @@ ASG_vs_AA_2020：dense scan 約 25 秒，之後每次重跑偵測 **4.6 秒、�
 
 單相位、沒有 cache、沒有門檻：BST 對每一拍只跑一次（一整場約 900–1000 個窗，GPU 上 2 秒），argmax
 就是答案。
+
+### 球員身分對應（player_identity）
+
+輸出 `identity.json`：`epochs` 陣列，每個**換邊區間**一筆，記錄那段期間記分板的哪一列
+（`RallyScore` 的 `a` / `b`）在球場的哪一半（`top` / `bottom`）。這是整條管線唯一把**場地位置**
+（幾何）接上**身分**（記分板列）的地方，所以上游沒有任何階段會去斷言它。
+
+換邊時機由規則決定，不必看影像：第一局結束、第二局結束、決勝局領先方到 11 分。區間內映射恆定。
+
+政策 `serve_vote_v1` 讓兩個獨立訊號在每個回合交會：
+
+```text
+發球的是哪一列 = 比分較前一回合增加的那一列   （得分制下，贏球者發下一球）
+發球的是哪一邊 = 該回合第一拍的擊球者          （但僅限那一拍被判為「發球」時）
+```
+
+那個 gate 是整個政策的關鍵。`event_detection` 在一段裡的第一拍**經常是回擊而不是發球**，而把回擊
+當成發球不是增加雜訊，是把答案**反過來**。不設 gate 時同樣的投票只有 55–82%，而且會在真實比賽上
+自信地答錯；設了 gate 是 92–100%。寧可丟掉四成到八成的回合。
+
+票以區間為單位匯集。票數足夠（`MIN_VOTES`）就自己解出（`resolved_by: "vote"`）；太稀疏的區間改由
+**記分板慣例**補（`"convention"`）—— 慣例本身也是推出來的，不是寫死的：比較已解出的區間是否隨換邊
+翻轉，得到 `fixed_rows`（轉播記分板列不動，映射每次換邊翻轉）或 `tracked_rows`（graphic 跟著場地
+換行，映射恆定）。兩種都解不出來的區間**不會進 `epochs`**，而是連同票數進 envelope 的 `unresolved`：
+對下游賽評來說，看得見的缺口遠好過猜出來的身分。
+
+`agreement` 是該區間中與**這筆記錄的映射**一致的票數比例，不是校準過的機率。
+
+`cache/dense_scan/`（`event_detection` 的逐幀掃描）若存在會被當作**補丁**使用，只填 gate 拒絕掉的
+回合，不覆蓋 gate 的答案 —— 固定視窗的掃描在「誰擊的球」這件事上比錨在兩拍之間的窗口糊，兩者在重疊
+處約每六筆不一致一筆，而錨定的那個是對的。快取不存在、來自不同權重、或 segment 幀範圍已經對不上時，
+就只是少幾張票。
+
+```bash
+uv run python -m modules.player_identity matches/MK_vs_CT_2019
+uv run python -m modules.player_identity matches/MK_vs_CT_2019 --no-dense
+```
+
+只是兩份既有 artifact 上的算術，重跑是毫秒等級 —— 這正是它獨立成一個 stage 而不是寄生在
+`stroke_classification` 的原因：runner 會在上游變動時把階段標記為 stale，而 `score_recognition`
+偏偏是最常被重讀重調的階段，把那條 staleness 掛在一個沒有 cache 的階段上，等於每次比分一改就重跑
+整場 BST。
 
 ### 球種模型（common/bst）
 
