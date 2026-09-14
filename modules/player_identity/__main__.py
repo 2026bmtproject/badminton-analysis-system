@@ -11,8 +11,13 @@ def main() -> None:
     parser.add_argument("match_path", type=Path)
     parser.add_argument("--no-dense", action="store_true",
                         help="ignore cache/dense_scan even when it is present")
+    parser.add_argument("--no-visual", action="store_true",
+                        help="leave sparse epochs unresolved instead of using HSV appearance")
     args = parser.parse_args()
-    PlayerIdentityModule(use_dense=not args.no_dense).run(args.match_path)
+    PlayerIdentityModule(
+        use_dense=not args.no_dense,
+        use_visual=not args.no_visual,
+    ).run(args.match_path)
 
 
 if __name__ == "__main__":

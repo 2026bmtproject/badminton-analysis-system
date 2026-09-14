@@ -381,7 +381,12 @@ class PlayerIdentityEpoch:
     that disagreement rather than hiding it. ``resolved_by`` is
     ``"vote"`` when the epoch carried enough of its own votes, or
     ``"convention"`` when it was too sparse and was filled from the neighbouring
-    epochs plus the match's scoreboard convention. Epochs that could be resolved
+    epochs plus the match's scoreboard convention. ``"hsv_fallback"`` means HSV
+    matched the epoch to an a/b appearance anchor established by serve-vote.
+    ``"hsv_default"`` means no such anchor existed: the first visually distinct
+    top/bottom pair was deterministically named a/b and those names are stable
+    match-local labels, not independent proof of scoreboard-row binding. Epochs
+    that could be resolved
     neither way are not records at all — they go to the envelope's
     ``unresolved`` list with their vote counts, because a guessed identity is
     worse for a downstream analyst than a missing one.
@@ -395,7 +400,7 @@ class PlayerIdentityEpoch:
     bottom: str                             # the other row
     votes: int
     agreement: float                        # winning side's share of ``votes``, in [0, 1]
-    resolved_by: str                        # "vote" | "convention"
+    resolved_by: str                        # "vote" | "convention" | HSV fallback source
 
 
 _CommentaryIndex = Annotated[int, Field(ge=0, strict=True)]
@@ -531,6 +536,7 @@ PIPELINE: dict[str, StageSpec] = {
         # would have nothing to say.
         ["stroke_classification", "score_recognition"], "identity.json",
         PlayerIdentityEpoch, "epochs",
+        optional_dependencies=["pose"],
     ),
     "commentary": StageSpec(
         "commentary", "賽評生成",

@@ -8,12 +8,22 @@ stage most likely to be re-read and re-tuned. Hanging that staleness on a stage
 with no cache would buy a full BST pass over the match every time a score changed.
 """
 from pathlib import Path
+from typing import Protocol
 
 from modules.artifacts import read_records, write_artifact
 from modules.base import BaseModule, StageResult
 from modules.common import console
 from modules.contracts import PIPELINE, RallyScore, StrokeLabel, artifact_path
 from modules.player_identity.policy import IdentityResult, infer_identity, policy_metadata
+from modules.player_identity.visual import (
+    HsvFallbackOutcome,
+    HsvIdentityFallback,
+    VisualFallbackUnavailable,
+)
+
+
+class VisualFallback(Protocol):
+    def resolve(self, match_path: str | Path, primary: IdentityResult) -> HsvFallbackOutcome: ...
 
 
 class PlayerIdentityModule(BaseModule):
@@ -21,10 +31,17 @@ class PlayerIdentityModule(BaseModule):
     dependencies = PIPELINE[name].dependencies
     optional_dependencies = PIPELINE[name].optional_dependencies
 
-    def __init__(self, use_dense: bool = True) -> None:
+    def __init__(
+        self,
+        use_dense: bool = True,
+        use_visual: bool = True,
+        visual_fallback: VisualFallback | None = None,
+    ) -> None:
         #: The dense scan is a fallback, not an input: it recovers serves the stroke
         #: gate rejected. Absent or stale, the policy simply has fewer votes.
         self.use_dense = use_dense
+        self.use_visual = use_visual
+        self.visual_fallback = visual_fallback
 
     def get_output_path(self, match_path) -> Path:
         return artifact_path(match_path, self.name)
@@ -39,18 +56,36 @@ class PlayerIdentityModule(BaseModule):
             dense = open_dense_serves(match_path)
 
         result = infer_identity(strokes, scores, dense=dense)
+        visual = None
+        # The primary policy always runs first. Constructing the fallback lazily is
+        # significant: a fully resolved match does not even read pose/video.
+        if self.use_visual and result.unresolved:
+            fallback = self.visual_fallback or HsvIdentityFallback()
+            try:
+                outcome = fallback.resolve(match_path, result)
+            except VisualFallbackUnavailable as exc:
+                visual = {
+                    "status": "unavailable",
+                    "policy": "hsv_fallback_v1",
+                    "reason": str(exc),
+                }
+            else:
+                result, visual = outcome.result, outcome.metadata
 
         output = self.get_output_path(match_path)
+        extra = {
+            "policy": policy_metadata(),
+            "convention": result.convention,
+            "unresolved": result.unresolved,
+            "dense_serves": dense.describe() if dense is not None else None,
+        }
+        if visual is not None:
+            extra["visual_fallback"] = visual
         write_artifact(
             PIPELINE[self.name],
             result.epochs,
             output,
-            extra={
-                "policy": policy_metadata(),
-                "convention": result.convention,
-                "unresolved": result.unresolved,
-                "dense_serves": dense.describe() if dense is not None else None,
-            },
+            extra=extra,
         )
         self._report(result)
         return StageResult(output)

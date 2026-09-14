@@ -6,13 +6,15 @@ import pytest
 
 from modules.base import StageState, StageStatus, read_status, write_status
 from modules.common.bst.classes import STROKE_CLASSES, UNKNOWN_INDEX
-from modules.contracts import PIPELINE, artifact_path, cache_path, stage_path
+from modules.contracts import PIPELINE, PlayerIdentityEpoch, artifact_path, cache_path, stage_path
 from modules.player_identity import PlayerIdentityModule
 from modules.player_identity.dense_serves import (
     DENSE_CONF_MIN,
     open_dense_serves,
 )
 from modules.player_identity.policy import SERVE_STROKE
+from modules.player_identity.policy import IdentityResult
+from modules.player_identity.visual import HsvFallbackOutcome
 
 BST_NAME = "bst_test_weight.pt"
 SHUTTLE_METHOD = "inpaint"
@@ -106,6 +108,50 @@ def test_single_epoch_match_reports_no_convention(tmp_path):
         PlayerIdentityModule(use_dense=False).run(match).read_text(encoding="utf-8"))
     # One game means no end change, so there is nothing to compare and no convention.
     assert envelope["convention"] is None
+
+
+class FakeVisualFallback:
+    def __init__(self):
+        self.calls = []
+
+    def resolve(self, match_path, primary):
+        self.calls.append((match_path, primary))
+        row = primary.unresolved[0]
+        epoch = PlayerIdentityEpoch(
+            row["epoch_index"], row["game_index"], row["first_segment"],
+            row["last_segment"], "a", "b", row["votes"], 1.0, "hsv_default",
+        )
+        return HsvFallbackOutcome(
+            IdentityResult([*primary.epochs, epoch], primary.convention, []),
+            {"status": "resolved", "policy": "hsv_fallback_v1"},
+        )
+
+
+def test_resolved_primary_never_invokes_or_changes_visual_fallback(tmp_path):
+    match, _ = build_match(tmp_path, 12)
+    fallback = FakeVisualFallback()
+    output = PlayerIdentityModule(
+        use_dense=False, visual_fallback=fallback,
+    ).run(match)
+    envelope = json.loads(output.read_text(encoding="utf-8"))
+    assert fallback.calls == []
+    assert envelope["epochs"][0]["resolved_by"] == "vote"
+    assert "visual_fallback" not in envelope
+
+
+def test_unresolved_primary_invokes_fallback_and_persists_source(tmp_path):
+    match, _ = build_match(tmp_path, 3)
+    fallback = FakeVisualFallback()
+    output = PlayerIdentityModule(
+        use_dense=False, visual_fallback=fallback,
+    ).run(match)
+    envelope = json.loads(output.read_text(encoding="utf-8"))
+    assert len(fallback.calls) == 1
+    assert envelope["epochs"][0]["resolved_by"] == "hsv_default"
+    assert envelope["visual_fallback"] == {
+        "status": "resolved", "policy": "hsv_fallback_v1"
+    }
+    assert envelope["unresolved"] == []
 
 
 # ---------------------------------------------------------------- dense scan
