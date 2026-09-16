@@ -255,23 +255,37 @@ def test_incomplete_provider_error_propagates(facts):
     assert len(provider.calls) == 1
 
 
-@pytest.mark.parametrize("bad", [
-    "球員 a 拿下這一分。", "球員 a 正手殺球。",
-    "球速達到每小時三百公里。", "球員 a 一路跑向網前。", "球員 a 心態緊張。",
-    "目前比分是 4 比 3。", "球員 a 的調動造成對手失誤。",
+@pytest.mark.parametrize(("bad", "code"), [
+    ("球員 a 拿下這一分。", "unsupported_outcome_or_score"),
+    ("球員 a 正手殺球。", "unsupported_stroke_side"),
+    ("球速達到每小時三百公里。", "unsupported_motion_or_physics"),
+    ("球員 a 一路跑向網前。", "unsupported_motion_or_physics"),
+    ("球員 a 心態緊張。", "unsupported_psychology"),
+    ("目前比分是 4 比 3。", "unsupported_outcome_or_score"),
+    ("球員 a 的調動造成對手失誤。", "unsupported_outcome_or_score"),
 ])
-def test_obvious_forbidden_wording_fails_closed(facts, bad):
+def test_obvious_forbidden_generated_wording_uses_safe_fallback(facts, bad, code):
     data = json.loads(response())
     data["events"][0]["text"] = bad
-    with pytest.raises(CommentaryGenerationError, match="forbidden|score"):
-        service_result(facts, json.dumps(data, ensure_ascii=False))
+    result, _ = service_result(facts, json.dumps(data, ensure_ascii=False))
+    assert result.commentary.events[0].text == "球員 a 以小球回擊。"
+    diagnostic = result.event_output_diagnostics[0]
+    assert diagnostic.reviewer_verdict == "pass"
+    assert diagnostic.deterministic_gate == "failed"
+    assert diagnostic.deterministic_violation_code == code
+    assert diagnostic.text_source == "deterministic_fallback"
 
 
 def test_low_confidence_requires_cautious_wording(facts):
     data = json.loads(response())
     data["events"][-1]["text"] = "球員 a 擊出殺球。"
-    with pytest.raises(CommentaryGenerationError, match="cautious"):
-        service_result(facts, json.dumps(data, ensure_ascii=False))
+    result, _ = service_result(facts, json.dumps(data, ensure_ascii=False))
+    assert result.commentary.events[-1].text == "球員 a 這拍可能以殺球回擊。"
+    diagnostic = result.event_output_diagnostics[-1]
+    assert diagnostic.reviewer_verdict == "pass"
+    assert diagnostic.deterministic_gate == "failed"
+    assert diagnostic.deterministic_violation_code == "missing_cautious_wording"
+    assert diagnostic.text_source == "deterministic_fallback"
 
 
 def test_look_like_marker_satisfies_cautious_wording(facts):
@@ -509,6 +523,11 @@ def test_semantic_reviewer_pass_accepts_grounded_prose(facts, text):
     result, _, reviewer = run_with_reviewer(
         facts, generated=json.dumps(generated, ensure_ascii=False))
     assert result.commentary.events[0].text == text
+    diagnostic = result.event_output_diagnostics[0]
+    assert diagnostic.reviewer_verdict == "pass"
+    assert diagnostic.deterministic_gate == "passed"
+    assert diagnostic.deterministic_violation_code is None
+    assert diagnostic.text_source == "generated"
     assert len(reviewer.calls) == 1
 
 
@@ -561,6 +580,8 @@ def test_nonpass_event_semantic_verdict_uses_safe_fallback(facts, text, verdict,
     diagnostic = result.event_output_diagnostics[0]
     assert diagnostic.reviewer_verdict == verdict
     assert diagnostic.violation_codes == [code]
+    assert diagnostic.deterministic_gate == "not_evaluated"
+    assert diagnostic.deterministic_violation_code is None
     assert diagnostic.text_source == "deterministic_fallback"
     assert result.commentary.events[1].text == generated["events"][1]["text"]
     assert result.event_output_diagnostics[1].text_source == "generated"
@@ -579,6 +600,33 @@ def test_uncertain_broadcast_interpretation_uses_safe_fallback(facts):
     assert result.commentary.events[0].text == "球員 a 以小球回擊。"
     assert result.event_review_verdicts[0].verdict == "uncertain"
     assert result.event_output_diagnostics[0].text_source == "deterministic_fallback"
+
+
+@pytest.mark.parametrize(("text", "violation_code"), [
+    ("球員 a 一路跑向前場後打出小球。", "unsupported_motion_or_physics"),
+    ("球員 a 以小球贏得這一分。", "unsupported_outcome_or_score"),
+])
+def test_reviewer_pass_but_deterministic_violation_falls_back_per_event(
+    facts, text, violation_code,
+):
+    generated = json.loads(response())
+    generated["events"][0]["text"] = text
+    result, provider, reviewer = run_with_reviewer(
+        facts, generated=json.dumps(generated, ensure_ascii=False))
+
+    assert [event.stroke_index for event in result.commentary.events] == [104, 97, 205]
+    assert result.commentary.events[0].text == "球員 a 以小球回擊。"
+    assert result.commentary.events[1].text == generated["events"][1]["text"]
+    diagnostic = result.event_output_diagnostics[0]
+    assert diagnostic.reviewer_verdict == "pass"
+    assert diagnostic.violation_codes == []
+    assert diagnostic.deterministic_gate == "failed"
+    assert diagnostic.deterministic_violation_code == violation_code
+    assert diagnostic.text_source == "deterministic_fallback"
+    assert result.event_output_diagnostics[1].deterministic_gate == "passed"
+    assert result.event_output_diagnostics[1].text_source == "generated"
+    assert result.commentary.summary is not None
+    assert len(provider.calls) == len(reviewer.calls) == 1
 
 
 def test_confirmed_reliable_court_fact_is_available_to_reviewer(facts):

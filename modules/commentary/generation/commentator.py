@@ -32,6 +32,26 @@ class CommentaryGenerationError(ValueError):
     """A complete provider response cannot safely satisfy the output contract."""
 
 
+DeterministicViolationCode = Literal[
+    "unsupported_fine_stroke_class",
+    "unsupported_outcome_or_score",
+    "unsupported_stroke_side",
+    "unsupported_motion_or_physics",
+    "unsupported_psychology",
+    "multiple_sentences",
+    "missing_cautious_wording",
+    "unsupported_score_wording",
+]
+
+
+class CommentaryTextValidationError(CommentaryGenerationError):
+    """One prose field failed a deterministic post-review safety gate."""
+
+    def __init__(self, message: str, *, violation_code: DeterministicViolationCode):
+        super().__init__(message)
+        self.violation_code = violation_code
+
+
 class CommentaryGenerationMetadata(StrictModel):
     prompt_version: Literal["rally-commentator-v1"] = COMMENTATOR_VERSION
     requested_model: str | None
@@ -45,6 +65,8 @@ class CommentaryEventOutputDiagnostic(StrictModel):
     event_index: NonNegativeInt
     reviewer_verdict: Literal["pass", "reject", "uncertain"]
     violation_codes: list[ReviewViolationCode]
+    deterministic_gate: Literal["passed", "failed", "not_evaluated"]
+    deterministic_violation_code: DeterministicViolationCode | None
     text_source: Literal["generated", "deterministic_fallback"]
 
 
@@ -75,6 +97,13 @@ _FORBIDDEN = {
     "motion_or_physics": ("球速", "速度", "公里", "km/h", "3D", "三維", "飛行軌跡", "落點",
                           "一路跑", "跑向", "跑動", "移動到", "衝向"),
     "psychology": ("緊張", "心態", "信心動搖", "心理"),
+}
+
+_FORBIDDEN_VIOLATION_CODES: dict[str, DeterministicViolationCode] = {
+    "outcome_or_score": "unsupported_outcome_or_score",
+    "stroke_side": "unsupported_stroke_side",
+    "motion_or_physics": "unsupported_motion_or_physics",
+    "psychology": "unsupported_psychology",
 }
 
 _DEPTH_WORDS = {"rear": "後場", "mid": "中場", "front": "前場"}
@@ -111,19 +140,32 @@ def _validate_text(
         if fine in text and fine not in allowed
     )
     if hidden:
-        raise CommentaryGenerationError(
-            f"{label} reconstructs unsupported hidden fine stroke class"
+        raise CommentaryTextValidationError(
+            f"{label} reconstructs unsupported hidden fine stroke class",
+            violation_code="unsupported_fine_stroke_class",
         )
     for category, phrases in _FORBIDDEN.items():
         if any(phrase.casefold() in text.casefold() for phrase in phrases):
-            raise CommentaryGenerationError(f"{label} contains forbidden {category} wording")
+            raise CommentaryTextValidationError(
+                f"{label} contains forbidden {category} wording",
+                violation_code=_FORBIDDEN_VIOLATION_CODES[category],
+            )
     sentences = [part for part in _SENTENCE_END.split(text) if part.strip()]
     if len(sentences) > 1:
-        raise CommentaryGenerationError(f"{label} must be one concise sentence")
+        raise CommentaryTextValidationError(
+            f"{label} must be one concise sentence",
+            violation_code="multiple_sentences",
+        )
     if cautious and not _CAUTIOUS_WORDS.search(text):
-        raise CommentaryGenerationError(f"{label} requires cautious wording")
+        raise CommentaryTextValidationError(
+            f"{label} requires cautious wording",
+            violation_code="missing_cautious_wording",
+        )
     if re.search(r"\d+\s*比\s*\d+", text):
-        raise CommentaryGenerationError(f"{label} contains unsupported score wording")
+        raise CommentaryTextValidationError(
+            f"{label} contains unsupported score wording",
+            violation_code="unsupported_score_wording",
+        )
 
 
 def generate_commentary(*, provider: LLMProvider, reviewer: LLMProvider,
@@ -176,19 +218,36 @@ def generate_commentary(*, provider: LLMProvider, reviewer: LLMProvider,
         authored = by_index[index]
         verdict = verdicts[index]
         use_generated = verdict.verdict == "pass"
+        deterministic_gate = "not_evaluated"
+        deterministic_violation_code = None
+        if use_generated:
+            try:
+                _validate_text(
+                    authored.text, cautious=context.confidence_band != "reliable",
+                    label=f"event {index}", canonical_stroke_type=context.stroke_type,
+                )
+                deterministic_gate = "passed"
+            except CommentaryTextValidationError as exc:
+                use_generated = False
+                deterministic_gate = "failed"
+                deterministic_violation_code = exc.violation_code
         text = authored.text if use_generated else _safe_event_fallback(context)
-        _validate_text(
-            text, cautious=context.confidence_band != "reliable",
-            label=f"event {index}", canonical_stroke_type=context.stroke_type,
-        )
+        if not use_generated:
+            # A fallback is trusted only after the same deterministic gate passes.
+            _validate_text(
+                text, cautious=context.confidence_band != "reliable",
+                label=f"event {index} fallback", canonical_stroke_type=context.stroke_type,
+            )
         output.append(StrokeCommentaryEvent(
             segment_index=plan.segment_index, stroke_index=index,
-            frame=context.frame, time_sec=context.time_sec, text=text,
+            frame=context.frame, time_sec=context.time_sec, player=context.player, text=text,
             source_fact_ids=[context.source_fact_id],
         ))
         event_diagnostics.append(CommentaryEventOutputDiagnostic(
             event_index=index, reviewer_verdict=verdict.verdict,
             violation_codes=list(verdict.violation_codes),
+            deterministic_gate=deterministic_gate,
+            deterministic_violation_code=deterministic_violation_code,
             text_source="generated" if use_generated else "deterministic_fallback",
         ))
     summary = None

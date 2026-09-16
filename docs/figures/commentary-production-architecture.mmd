@@ -1,0 +1,108 @@
+flowchart LR
+    V["Input Video<br/>match.mp4"]
+
+    subgraph UP["Upstream Perception"]
+        direction TB
+        MS["Match Segmentation<br/>segments.json"]
+        CD["Court Detection<br/>court.json"]
+        PO["Pose / RTMPose<br/>pose.json"]
+        ST["Shuttle Tracking / TrackNetV3<br/>shuttle.json"]
+        ED["Event Detection<br/>events.json"]
+        SC["Stroke Classification / BST<br/>strokes.json"]
+        SR["Score Recognition / Gemini<br/>scores.json"]
+        AH["Audio Highlight"]
+        HR["Highlight Ranking<br/>highlights.json"]
+    end
+
+    subgraph PI["Player Identity"]
+        direction TB
+        SV["serve_vote_v1<br/>MIN_VOTES = 5"]
+        HSV["Pose-guided HSV fallback<br/>shirt + shorts / 2×2 matching"]
+        ES["Temporal confirmation<br/>visual epoch splitting"]
+        ID["PlayerIdentityEpoch[]<br/>top/bottom ↔ stable a/b"]
+        SV -->|"unresolved"| HSV --> ES --> ID
+        SV -->|"resolved"| ID
+    end
+
+    subgraph FC["Deterministic Fact Construction"]
+        direction TB
+        UA["read_commentary_inputs()"]
+        RF["RallyFact"]
+        CRF["CompactRallyFacts<br/>stroke + optional pose/court/shuttle"]
+        DA["Deterministic Rally Analysis<br/>confidence bands + pattern hints"]
+        UA --> RF --> CRF --> DA
+    end
+
+    subgraph TI["Bounded Tactical Interpretation"]
+        direction TB
+        TG["Gemini Tactical Generator<br/>1 request / rally"]
+        DG["Python Evidence Grounding<br/>fact ID / player / chronology / quality"]
+        TR["Gemini Batch Tactical Reviewer<br/>0 or 1 request / rally"]
+        TO["Accepted TacticalObservation[]<br/>epistemic_status = model_interpretation"]
+        TG --> DG --> TR --> TO
+    end
+
+    subgraph CG["Commentary Generation"]
+        direction TB
+        CP["Deterministic CommentaryPlan"]
+        GC["Gemini Commentator<br/>0 or 1 structured request / rally"]
+        CP --> GC
+    end
+
+    subgraph CV["Commentary Validation"]
+        direction TB
+        WC["Python Wire + Exact Coverage Validation"]
+        GR["Gemini Batch Semantic Reviewer<br/>1 request / non-empty rally"]
+        PG["Python Final Gates<br/>lexical safety"]
+        FB["Per-event Deterministic Fallback"]
+        RV["Validated event stream"]
+        WC --> GR --> PG
+        PG -->|"event pass"| RV
+        PG -->|"review reject/uncertain<br/>or deterministic failure"| FB --> RV
+    end
+
+    OUT["Production Output<br/>CommentaryRally[]<br/>commentary.json"]
+
+    V --> MS
+    MS --> CD
+    MS --> ST
+    MS --> SR
+    CD --> PO
+    ST --> ED
+    PO --> ED
+    ED --> SC
+    PO --> SC
+    ST --> SC
+    SC --> SV
+    SR --> SV
+    PO -.->|"optional visual evidence"| HSV
+
+    MS --> UA
+    ED --> UA
+    SC --> UA
+    SR --> UA
+    ID --> UA
+    PO -.->|"optional"| UA
+    CD -.->|"optional"| UA
+    ST -.->|"optional"| UA
+    AH --> HR
+    HR -.->|"optional context"| UA
+
+    DA --> TG
+    CRF --> TG
+    CRF --> CP
+    TO --> CP
+    GC --> WC
+    RV --> OUT
+
+    classDef hard fill:#e7f0ff,stroke:#2457a6,stroke-width:1.5px,color:#102a43;
+    classDef optional fill:#fff8dc,stroke:#a67c00,stroke-width:1.2px,stroke-dasharray:5 3,color:#4a3b00;
+    classDef llm fill:#f1e8ff,stroke:#7048a8,stroke-width:1.5px,color:#34204f;
+    classDef guard fill:#e8f7ed,stroke:#237a42,stroke-width:1.5px,color:#153d24;
+    classDef output fill:#e6f7f7,stroke:#167070,stroke-width:2px,color:#123f3f;
+
+    class V,MS,CD,PO,ST,ED,SC,SR,SV,ES,ID,UA,RF,CRF,DA,CP hard;
+    class AH,HR optional;
+    class TG,TR,GC,GR llm;
+    class DG,WC,PG,FB,RV guard;
+    class OUT output;

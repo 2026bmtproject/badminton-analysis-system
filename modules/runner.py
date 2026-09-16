@@ -38,6 +38,7 @@ from modules.highlight_ranking import HighlightRankingModule
 from modules.common import console
 from modules.common.ffmpeg_utils import probe_frame_timeline_fault
 from modules.common.progress import SmoothProgress
+from modules.commentary import CommentaryModule
 from modules.contracts import resolve_input_video, stage_path, topological_order
 from modules.court_detection import CourtDetectionModule
 from modules.event_detection import EventDetectionModule
@@ -66,6 +67,7 @@ def available_modules() -> dict[str, BaseModule]:
         EventDetectionModule(),
         StrokeClassificationModule(),
         PlayerIdentityModule(),
+        CommentaryModule(),
     ]
     return {m.name: m for m in modules}
 

@@ -17,7 +17,7 @@ from modules.contracts import (
 
 def event(index=42, frame=1200, time=40.0, **changes):
     data = dict(segment_index=3, stroke_index=index, frame=frame, time_sec=time,
-                text="A plays a drop.", source_fact_ids=[f"stroke:{index}"])
+                player="a", text="A plays a drop.", source_fact_ids=[f"stroke:{index}"])
     return StrokeCommentaryEvent(**(data | changes))
 
 
@@ -35,7 +35,7 @@ def test_artifact_round_trip_preserves_full_match_indices(tmp_path, with_summary
     assert [item.stroke_index for item in restored.events] == [42, 49]
     assert {f.name for f in fields(rally)} == {"segment_index", "events", "summary"}
     assert {f.name for f in fields(StrokeCommentaryEvent)} == {
-        "segment_index", "stroke_index", "frame", "time_sec", "text", "source_fact_ids",
+        "segment_index", "stroke_index", "frame", "time_sec", "player", "text", "source_fact_ids",
     }
     assert {f.name for f in fields(RallyCommentarySummary)} == {
         "segment_index", "text", "source_fact_ids",
@@ -45,6 +45,7 @@ def test_artifact_round_trip_preserves_full_match_indices(tmp_path, with_summary
 @pytest.mark.parametrize("changes", [
     {"stroke_index": -1}, {"stroke_index": True}, {"frame": -1},
     {"time_sec": -0.1}, {"time_sec": float("inf")}, {"time_sec": float("nan")},
+    {"player": "top"}, {"player": ""},
     {"source_fact_ids": []}, {"source_fact_ids": [""]},
     {"source_fact_ids": [" "]}, {"text": ""}, {"text": " "},
 ])
@@ -54,7 +55,8 @@ def test_event_rejects_invalid_values(changes):
 
 
 @pytest.mark.parametrize("cls,data", [
-    (StrokeCommentaryEvent, dict(segment_index=3, stroke_index=42, frame=1200, time_sec=40, text="Hit")),
+    (StrokeCommentaryEvent, dict(segment_index=3, stroke_index=42, frame=1200, time_sec=40,
+                                 player="a", text="Hit")),
     (RallyCommentarySummary, dict(segment_index=3, text="Summary")),
 ])
 def test_provenance_is_required(cls, data):
@@ -91,7 +93,10 @@ def test_direct_dependencies_and_order():
     assert spec.record_type is CommentaryRally
     assert spec.record_key == "rallies"
     assert spec.output_filename == "commentary.json"
-    assert spec.dependencies == ["match_segmentation", "event_detection", "stroke_classification", "score_recognition"]
+    assert spec.dependencies == [
+        "match_segmentation", "event_detection", "stroke_classification", "score_recognition",
+        "player_identity",
+    ]
     assert spec.optional_dependencies == ["highlight_ranking", "pose", "court_detection", "shuttle_tracking"]
     order = pipeline_order()
     for dependency in spec.dependencies + spec.optional_dependencies:

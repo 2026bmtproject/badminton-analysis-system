@@ -135,7 +135,7 @@ def test_runner_registration_and_dependencies():
     assert isinstance(module, HighlightRankingModule)
     assert module.dependencies == PIPELINE[module.name].dependencies == ["audio_highlight"]
     assert module.optional_dependencies == PIPELINE[module.name].optional_dependencies == []
-    assert "commentary" not in modules
+    assert "commentary" in modules
     order = topological_order({name: [*m.dependencies, *m.optional_dependencies]
                                for name, m in modules.items()})
     assert order.index("match_segmentation") < order.index("audio_highlight") < order.index(module.name)

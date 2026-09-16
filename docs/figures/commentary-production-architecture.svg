@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1540" viewBox="0 0 2000 1540" role="img" aria-labelledby="t d">
+<title id="t">羽球自動賽評 Production Architecture</title>
+<desc id="d">Video perception, player identity, deterministic facts, Gemini tactical interpretation, commentary generation, validation, fallback and output.</desc>
+<defs>
+ <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker>
+ <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a16207"/></marker>
+ <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity=".12"/></filter>
+ <style>
+ text{font-family:"Microsoft JhengHei","Noto Sans CJK TC",Arial,sans-serif;fill:#0f172a}
+ .T{font-size:34px;font-weight:700}.S{font-size:17px;fill:#475569}.B{font-size:21px;font-weight:700}
+ .N{font-size:18px;font-weight:700;text-anchor:middle}.D{font-size:14px;fill:#475569;text-anchor:middle}
+ .L{font-size:13px;fill:#475569;text-anchor:middle;paint-order:stroke;stroke:#f8fafc;stroke-width:5px}
+ .F{fill:none;stroke:#475569;stroke-width:2.4;marker-end:url(#a)}
+ .O{fill:none;stroke:#a16207;stroke-width:2.2;stroke-dasharray:8 6;marker-end:url(#ao)}
+ </style>
+</defs><rect width="2000" height="1540" fill="#f8fafc"/>
+<text x="55" y="58" class="T">羽球自動賽評 Production Architecture</text>
+<text x="55" y="88" class="S">Canonical facts 由 upstream + Python 掌控；Gemini 僅提出受限詮釋與語言表達</text>
+<rect x="35" y="115" width="1130" height="400" rx="18" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="57" y="147" class="B">1  Upstream Perception</text>
+<text x="1143" y="146" class="S" text-anchor="end">production artifacts</text>
+<rect x="55" y="265" width="150" height="86" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="130.0" y="295" class="N">Input Video</text>
+<text x="130.0" y="319" class="D">match.mp4</text>
+<rect x="245" y="155" width="205" height="80" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="347.5" y="185" class="N">Match Segmentation</text>
+<text x="347.5" y="209" class="D">segments.json</text>
+<rect x="495" y="145" width="180" height="80" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="585.0" y="175" class="N">Court Detection</text>
+<text x="585.0" y="199" class="D">court.json</text>
+<rect x="720" y="145" width="165" height="80" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="802.5" y="175" class="N">Pose</text>
+<text x="802.5" y="199" class="D">pose.json</text>
+<rect x="495" y="280" width="180" height="80" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="585.0" y="310" class="N">Shuttle Tracking</text>
+<text x="585.0" y="334" class="D">shuttle.json</text>
+<rect x="720" y="280" width="165" height="80" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="802.5" y="310" class="N">Event Detection</text>
+<text x="802.5" y="334" class="D">events.json</text>
+<rect x="930" y="215" width="205" height="86" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="1032.5" y="245" class="N">Stroke Classification</text>
+<text x="1032.5" y="269" class="D">strokes.json</text>
+<text x="1032.5" y="288" class="D">full-match event_index</text>
+<rect x="245" y="390" width="205" height="80" rx="12" fill="#e8f1ff" stroke="#2563a7" stroke-width="1.8" filter="url(#s)"/>
+<text x="347.5" y="420" class="N">Score Recognition</text>
+<text x="347.5" y="444" class="D">scores.json · Gemini</text>
+<rect x="930" y="395" width="205" height="80" rx="12" fill="#fff8dc" stroke="#a16207" stroke-width="1.8" stroke-dasharray="7 5" filter="url(#s)"/>
+<text x="1032.5" y="425" class="N">Highlight Ranking</text>
+<text x="1032.5" y="449" class="D">optional context only</text>
+<polyline points="205,308 225,308 225,195 245,195" class="F"/>
+<polyline points="450,195 495,185" class="F"/>
+<polyline points="675,185 720,185" class="F"/>
+<polyline points="450,195 470,195 470,320 495,320" class="F"/>
+<polyline points="675,320 720,320" class="F"/>
+<polyline points="885,320 905,320 905,258 930,258" class="F"/>
+<polyline points="885,185 905,185 905,238 930,238" class="F"/>
+<polyline points="675,320 700,320 700,340 905,340 905,278 930,278" class="F"/>
+<polyline points="205,308 225,308 225,430 245,430" class="F"/>
+<polyline points="205,308 220,308 220,435 905,435 930,435" class="O"/>
+<text x="700" y="426" class="L">audio → optional ranking</text>
+<rect x="1195" y="115" width="370" height="400" rx="18" fill="#fffdf9" stroke="#fed7aa" stroke-width="1.5"/>
+<text x="1217" y="147" class="B">2  Player Identity</text>
+<rect x="1220" y="165" width="320" height="78" rx="12" fill="#fff3df" stroke="#b45309" stroke-width="1.8" filter="url(#s)"/>
+<text x="1380.0" y="195" class="N">serve_vote_v1</text>
+<text x="1380.0" y="219" class="D">primary · MIN_VOTES = 5</text>
+<rect x="1220" y="285" width="320" height="82" rx="12" fill="#fff3df" stroke="#b45309" stroke-width="1.8" filter="url(#s)"/>
+<text x="1380.0" y="315" class="N">Pose-guided HSV</text>
+<text x="1380.0" y="339" class="D">shirt + shorts · 2×2 match</text>
+<rect x="1220" y="410" width="320" height="72" rx="12" fill="#fff3df" stroke="#b45309" stroke-width="1.8" filter="url(#s)"/>
+<text x="1380.0" y="440" class="N">PlayerIdentityEpoch[]</text>
+<text x="1380.0" y="464" class="D">temporal split · abstain when weak</text>
+<polyline points="1135,258 1175,258 1175,204 1220,204" class="F"/>
+<text x="1174" y="190" class="L">strokes</text>
+<polyline points="450,430 1180,430 1180,224 1220,224" class="F"/>
+<text x="1178" y="413" class="L">scores</text>
+<polyline points="1380,243 1380,285" class="F"/>
+<text x="1435" y="270" class="L">votes &lt; 5</text>
+<polyline points="1380,367 1380,410" class="F"/>
+<polyline points="1540,204 1550,204 1550,446 1540,446" class="O"/>
+<text x="1590" y="332" class="L">primary resolved</text>
+<polyline points="885,185 1170,185 1170,326 1220,326" class="O"/>
+<text x="1085" y="175" class="L">pose evidence</text>
+<rect x="1595" y="115" width="370" height="400" rx="18" fill="#fbfffc" stroke="#bbf7d0" stroke-width="1.5"/>
+<text x="1617" y="147" class="B">3  Deterministic Facts</text>
+<rect x="1620" y="155" width="320" height="74" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="1780.0" y="185" class="N">Upstream Adapter</text>
+<text x="1780.0" y="209" class="D">selected segment + joins</text>
+<rect x="1620" y="260" width="320" height="70" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="1780.0" y="290" class="N">RallyFact</text>
+<text x="1780.0" y="314" class="D">canonical rally/event facts</text>
+<rect x="1620" y="360" width="320" height="86" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="1780.0" y="390" class="N">CompactRallyFacts</text>
+<text x="1780.0" y="414" class="D">stroke + pose/court/shuttle</text>
+<text x="1780.0" y="433" class="D">stable evidence fact IDs</text>
+<polyline points="1540,446 1580,446 1580,192 1620,192" class="F"/>
+<text x="1582" y="336" class="L">identity mapping</text>
+<polyline points="1165,490 1570,490 1570,212 1620,212" class="F"/>
+<text x="1365" y="481" class="L">hard + optional artifacts</text>
+<polyline points="1780,229 1780,260" class="F"/>
+<polyline points="1780,330 1780,360" class="F"/>
+<rect x="35" y="555" width="1930" height="245" rx="18" fill="#fcfaff" stroke="#ddd6fe" stroke-width="1.5"/>
+<text x="57" y="587" class="B">4  Tactical Observation v2</text>
+<text x="1943" y="586" class="S" text-anchor="end">1 generator + 0/1 reviewer per rally</text>
+<rect x="75" y="630" width="280" height="92" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="215.0" y="660" class="N">Deterministic Analysis</text>
+<text x="215.0" y="684" class="D">confidence bands</text>
+<text x="215.0" y="703" class="D">sequence / pattern hints</text>
+<rect x="420" y="630" width="280" height="92" rx="12" fill="#f2eaff" stroke="#7048a8" stroke-width="1.8" filter="url(#s)"/>
+<text x="560.0" y="660" class="N">Gemini Generator</text>
+<text x="560.0" y="684" class="D">structured proposals</text>
+<text x="560.0" y="703" class="D">open vocabulary</text>
+<rect x="765" y="630" width="280" height="92" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="905.0" y="660" class="N">Python Grounding</text>
+<text x="905.0" y="684" class="D">fact ID · player · chronology</text>
+<text x="905.0" y="703" class="D">quality / evidence gates</text>
+<rect x="1110" y="630" width="280" height="92" rx="12" fill="#f2eaff" stroke="#7048a8" stroke-width="1.8" filter="url(#s)"/>
+<text x="1250.0" y="660" class="N">Gemini Batch Reviewer</text>
+<text x="1250.0" y="684" class="D">semantic hard-fact review</text>
+<rect x="1455" y="630" width="455" height="92" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="1682.5" y="660" class="N">Accepted Observations</text>
+<text x="1682.5" y="684" class="D">TacticalObservation[] · grounded</text>
+<text x="1682.5" y="703" class="D">epistemic_status = model_interpretation</text>
+<polyline points="1780,446 1780,540 215,540 215,630" class="F"/>
+<text x="1000" y="532" class="L">compact facts</text>
+<polyline points="355,676 420,676" class="F"/>
+<polyline points="700,676 765,676" class="F"/>
+<polyline points="1045,676 1110,676" class="F"/>
+<polyline points="1390,676 1455,676" class="F"/>
+<rect x="35" y="840" width="1930" height="235" rx="18" fill="#fcfaff" stroke="#ddd6fe" stroke-width="1.5"/>
+<text x="57" y="872" class="B">5  Commentary Generation</text>
+<text x="1943" y="871" class="S" text-anchor="end">one structured request per non-empty rally</text>
+<rect x="95" y="915" width="360" height="88" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="275.0" y="945" class="N">CommentaryPlan</text>
+<text x="275.0" y="969" class="D">all eligible events exactly once</text>
+<text x="275.0" y="988" class="D">optional accepted tactical context</text>
+<rect x="600" y="915" width="360" height="88" rx="12" fill="#f2eaff" stroke="#7048a8" stroke-width="1.8" filter="url(#s)"/>
+<text x="780.0" y="945" class="N">Gemini Commentator</text>
+<text x="780.0" y="969" class="D">Traditional Chinese event lines</text>
+<text x="780.0" y="988" class="D">optional rally summary</text>
+<rect x="1105" y="915" width="360" height="88" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="1285.0" y="945" class="N">Python Wire Validation</text>
+<text x="1285.0" y="969" class="D">schema · indices · exact coverage</text>
+<text x="1285.0" y="988" class="D">provider / structure fails closed</text>
+<rect x="1610" y="915" width="290" height="88" rx="12" fill="#f2eaff" stroke="#7048a8" stroke-width="1.8" filter="url(#s)"/>
+<text x="1755.0" y="945" class="N">Generated Draft</text>
+<text x="1755.0" y="969" class="D">untrusted prose</text>
+<polyline points="1780,446 1950,446 1950,860 275,860 275,915" class="F"/>
+<text x="1020" y="852" class="L">CompactRallyFacts</text>
+<polyline points="1683,722 1683,820 405,820 405,915" class="O"/>
+<text x="1120" y="812" class="L">optional tactical observations</text>
+<polyline points="455,959 600,959" class="F"/>
+<polyline points="960,959 1105,959" class="F"/>
+<polyline points="1465,959 1610,959" class="F"/>
+<rect x="35" y="1115" width="1930" height="350" rx="18" fill="#fbfffc" stroke="#bbf7d0" stroke-width="1.5"/>
+<text x="57" y="1147" class="B">6  Review, Deterministic Gates &amp; Output</text>
+<text x="1943" y="1146" class="S" text-anchor="end">event prose degrades locally</text>
+<rect x="80" y="1215" width="300" height="92" rx="12" fill="#f2eaff" stroke="#7048a8" stroke-width="1.8" filter="url(#s)"/>
+<text x="230.0" y="1245" class="N">Gemini Batch Reviewer</text>
+<text x="230.0" y="1269" class="D">pass / reject / uncertain</text>
+<text x="230.0" y="1288" class="D">broadcast interpretation allowed</text>
+<rect x="455" y="1215" width="300" height="92" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="605.0" y="1245" class="N">Python Final Gates</text>
+<text x="605.0" y="1269" class="D">identity · stroke · court</text>
+<text x="605.0" y="1288" class="D">motion / physics · uncertainty</text>
+<rect x="830" y="1215" width="300" height="92" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="980.0" y="1245" class="N">Event Decision</text>
+<text x="980.0" y="1269" class="D">pass → generated text</text>
+<text x="980.0" y="1288" class="D">reject / fail → fallback</text>
+<rect x="1205" y="1190" width="300" height="140" rx="12" fill="#e8f7ed" stroke="#237a42" stroke-width="1.8" filter="url(#s)"/>
+<text x="1355.0" y="1220" class="N">Deterministic Fallback</text>
+<text x="1355.0" y="1244" class="D">canonical player + stroke</text>
+<text x="1355.0" y="1263" class="D">preserve diagnostics</text>
+<text x="1355.0" y="1282" class="D">one bad line ≠ rally abort</text>
+<rect x="1580" y="1215" width="330" height="92" rx="12" fill="#e5f7f7" stroke="#0f766e" stroke-width="1.8" filter="url(#s)"/>
+<text x="1745.0" y="1245" class="N">CommentaryRally[]</text>
+<text x="1745.0" y="1269" class="D">commentary.json</text>
+<text x="1745.0" y="1288" class="D">validated + persisted</text>
+<polyline points="1755,1003 1755,1095 230,1095 230,1215" class="F"/>
+<text x="980" y="1087" class="L">one batch review</text>
+<polyline points="380,1261 455,1261" class="F"/>
+<polyline points="755,1261 830,1261" class="F"/>
+<polyline points="1130,1261 1205,1261" class="O"/>
+<text x="1165" y="1248" class="L">fallback when needed</text>
+<polyline points="1130,1285 1160,1285 1160,1380 1745,1380 1745,1307" class="F"/>
+<text x="1450" y="1372" class="L">generated event passes</text>
+<polyline points="1505,1261 1580,1261" class="F"/>
+<text x="605" y="1350" class="L">summary hard failure → summary = None（rally remains valid）</text>
+<line x1="70" y1="1500" x2="125" y2="1500" class="F"/><text x="140" y="1505" class="S">hard dependency / main flow</text>
+<line x1="430" y1="1500" x2="485" y2="1500" class="O"/><text x="500" y="1505" class="S">optional context / fallback</text>
+<rect x="820" y="1482" width="35" height="25" rx="5" fill="#f2eaff" stroke="#7048a8"/><text x="870" y="1502" class="S">Gemini boundary</text>
+<rect x="1110" y="1482" width="35" height="25" rx="5" fill="#e8f7ed" stroke="#237a42"/><text x="1160" y="1502" class="S">Python facts / validation</text>
+<text x="1930" y="1505" class="S" text-anchor="end">Full-match event_index is never renumbered</text></svg>
