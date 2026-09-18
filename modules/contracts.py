@@ -420,6 +420,7 @@ class StrokeCommentaryEvent:
     stroke_index: _CommentaryIndex
     frame: _CommentaryIndex
     time_sec: Annotated[float, Field(ge=0, strict=True)]
+    player: Annotated[str, Field(pattern=r"^[ab]$")]
     text: _CommentaryText
     source_fact_ids: _CommentaryProvenance
 
@@ -540,7 +541,8 @@ PIPELINE: dict[str, StageSpec] = {
     ),
     "commentary": StageSpec(
         "commentary", "賽評生成",
-        ["match_segmentation", "event_detection", "stroke_classification", "score_recognition"],
+        ["match_segmentation", "event_detection", "stroke_classification", "score_recognition",
+         "player_identity"],
         "commentary.json", CommentaryRally, "rallies",
         optional_dependencies=["highlight_ranking", "pose", "court_detection", "shuttle_tracking"],
     ),

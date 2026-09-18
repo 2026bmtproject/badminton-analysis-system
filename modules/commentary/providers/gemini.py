@@ -2,7 +2,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from google import genai
 from google.genai import types
@@ -18,6 +18,7 @@ class GeminiConfig:
     model: str
     timeout_seconds: float = 30.0
     max_output_tokens: int = 2048
+    thinking_level: Literal["minimal", "low", "medium", "high"] | None = None
 
     def __post_init__(self):
         if not isinstance(self.model, str) or not self.model.strip():
@@ -27,6 +28,8 @@ class GeminiConfig:
             raise ValueError("timeout_seconds must be finite and at least 0.001")
         if type(self.max_output_tokens) is not int or self.max_output_tokens < 32:
             raise ValueError("max_output_tokens must be an integer >= 32")
+        if self.thinking_level not in {None, "minimal", "low", "medium", "high"}:
+            raise ValueError("thinking_level must be minimal, low, medium, high, or None")
 
 
 class _Models(Protocol):
@@ -67,6 +70,10 @@ class GeminiProvider:
                     response_mime_type="application/json",
                     response_json_schema=response_schema.model_json_schema(),
                     max_output_tokens=self.config.max_output_tokens,
+                    thinking_config=(
+                        types.ThinkingConfig(thinking_level=self.config.thinking_level)
+                        if self.config.thinking_level is not None else None
+                    ),
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),
             )

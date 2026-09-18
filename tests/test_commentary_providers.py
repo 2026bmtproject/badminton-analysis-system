@@ -49,6 +49,7 @@ def test_gemini_structured_single_request_metadata():
     assert kwargs["contents"] == "payload"
     assert kwargs["config"].response_json_schema == TacticalResponse.model_json_schema()
     assert kwargs["config"].response_mime_type == "application/json"
+    assert kwargs["config"].thinking_config is None
     assert kwargs["config"].automatic_function_calling.disable
     assert result.model == "test-version"
     assert result.usage.input_tokens == 10 and result.usage.total_tokens == 14
@@ -79,6 +80,20 @@ def test_gemini_transport_error_is_sanitized():
     client.models.generate_content.assert_called_once()
 
 
+def test_gemini_low_thinking_keeps_structured_output_contract():
+    client = Mock()
+    client.models.generate_content.return_value = sdk_response()
+    provider = GeminiProvider(
+        GeminiConfig(model="gemini-3.8-flash", thinking_level="low"),
+        client=client,
+    )
+    generate(provider)
+    config = client.models.generate_content.call_args.kwargs["config"]
+    assert config.thinking_config.thinking_level is types.ThinkingLevel.LOW
+    assert config.response_mime_type == "application/json"
+    assert config.response_json_schema == TacticalResponse.model_json_schema()
+
+
 def test_owned_client_timeout_retry_credentials_and_close(monkeypatch):
     import modules.commentary.providers.gemini as module
     factory = Mock()
@@ -96,7 +111,8 @@ def test_owned_client_timeout_retry_credentials_and_close(monkeypatch):
 
 
 @pytest.mark.parametrize("kwargs", [{"model":" "}, {"timeout_seconds":True},
-    {"timeout_seconds":float("inf")}, {"timeout_seconds":0}, {"max_output_tokens":True}])
+    {"timeout_seconds":float("inf")}, {"timeout_seconds":0}, {"max_output_tokens":True},
+    {"thinking_level":"automatic"}])
 def test_invalid_config(kwargs):
     with pytest.raises(ValueError):
         GeminiConfig(**({"model":"test"} | kwargs))

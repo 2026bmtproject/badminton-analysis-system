@@ -1,1 +1,5 @@
-"""Commentary contracts and domain schemas; runtime migration is pending."""
+"""Grounded commentary contracts, runtime, and production orchestration."""
+
+from modules.commentary.module import CommentaryModule
+
+__all__ = ["CommentaryModule"]
