@@ -33,6 +33,9 @@ from modules.contracts import (
 ARTIFACT_VERSION = "commentary-rallies-v1"
 SEGMENT_ARTIFACT_VERSION = "commentary-segment-v1"
 DEFAULT_MODEL = "gemini-3.8-flash"
+TACTICAL_GENERATOR_THINKING_LEVEL = "medium"
+TACTICAL_REVIEWER_THINKING_LEVEL = "low"
+COMMENTATOR_THINKING_LEVEL = "medium"
 COMMENTARY_REVIEWER_THINKING_LEVEL = "low"
 FAILURE_DIAGNOSTIC_VERSION = "commentary-provider-failure-v1"
 FAILURE_DIAGNOSTIC_NAME = "failure_diagnostic.json"
@@ -287,9 +290,9 @@ class _ObservedProvider:
 class CommentaryModuleConfig:
     model: str = DEFAULT_MODEL
     timeout_seconds: float = 30.0
-    tactical_generator_max_output_tokens: int = 4096
+    tactical_generator_max_output_tokens: int = 8192
     tactical_reviewer_max_output_tokens: int = 4096
-    commentator_max_output_tokens: int = 4096
+    commentator_max_output_tokens: int = 8192
     commentary_reviewer_max_output_tokens: int = 4096
 
     def __post_init__(self) -> None:
@@ -334,9 +337,9 @@ class CommentaryModuleConfig:
                 "commentary_reviewer": self.commentary_reviewer_max_output_tokens,
             },
             "thinking_level": {
-                "tactical_generator": None,
-                "tactical_reviewer": "low",
-                "commentator": None,
+                "tactical_generator": TACTICAL_GENERATOR_THINKING_LEVEL,
+                "tactical_reviewer": TACTICAL_REVIEWER_THINKING_LEVEL,
+                "commentator": COMMENTATOR_THINKING_LEVEL,
                 "commentary_reviewer": COMMENTARY_REVIEWER_THINKING_LEVEL,
             },
         }
@@ -443,12 +446,18 @@ class CommentaryModule(BaseModule):
                 )))
 
             yield CommentaryProviders(
-                tactical_generator=open_provider(config.tactical_generator_max_output_tokens),
+                tactical_generator=open_provider(
+                    config.tactical_generator_max_output_tokens,
+                    thinking_level=TACTICAL_GENERATOR_THINKING_LEVEL,
+                ),
                 tactical_reviewer=open_provider(
                     config.tactical_reviewer_max_output_tokens,
-                    thinking_level="low",
+                    thinking_level=TACTICAL_REVIEWER_THINKING_LEVEL,
                 ),
-                commentator=open_provider(config.commentator_max_output_tokens),
+                commentator=open_provider(
+                    config.commentator_max_output_tokens,
+                    thinking_level=COMMENTATOR_THINKING_LEVEL,
+                ),
                 commentary_reviewer=open_provider(
                     config.commentary_reviewer_max_output_tokens,
                     thinking_level=COMMENTARY_REVIEWER_THINKING_LEVEL,

@@ -10,7 +10,7 @@ gemini_api_key: ""
 commentary:
   model: "gemini-3.8-flash"
   timeout_seconds: 30
-  tactical_generator_max_output_tokens: 4096
+  tactical_generator_max_output_tokens: 8192
   tactical_reviewer_max_output_tokens: 4096
-  commentator_max_output_tokens: 4096
+  commentator_max_output_tokens: 8192
   commentary_reviewer_max_output_tokens: 4096
