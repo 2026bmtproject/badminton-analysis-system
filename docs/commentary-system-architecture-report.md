@@ -259,9 +259,9 @@ Production provider 為 `GeminiProvider`，透過 `google-genai` 的 `GenerateCo
 
 | Phase | Purpose | Model | Thinking level | Max output tokens | Requests / rally | Failure behavior |
 |---|---|---|---|---:|---:|---|
-| `tactical_generation` | 提出 open-vocabulary observations | `gemini-3.8-flash` | `None`（model default） | 4096 | 1 | provider/schema failure fail closed |
+| `tactical_generation` | 提出 open-vocabulary observations | `gemini-3.8-flash` | `medium` | 8192 | 1 | provider/schema failure fail closed |
 | `tactical_review` | batch semantic review | `gemini-3.8-flash` | `low` | 4096 | 0 或 1 | fail closed |
-| `commentary_generation` | 一次產生所有 eligible event prose 與 summary | `gemini-3.8-flash` | `None`（model default） | 4096 | 0 或 1 | fail closed |
+| `commentary_generation` | 一次產生所有 eligible event prose 與 summary | `gemini-3.8-flash` | `medium` | 8192 | 0 或 1 | fail closed |
 | `commentary_review` | batch evidence/semantic review | `gemini-3.8-flash` | `low` | 4096 | 0 或 1 | fail closed |
 
 所有 provider timeout 預設 30 秒。`HttpRetryOptions(attempts=1)` 表示不做自動 retry，也沒有 model fallback。空 rally 不需要 Commentator/reviewer；有事件但 tactical generator 回傳空清單時，仍會執行 Commentary 兩階段。

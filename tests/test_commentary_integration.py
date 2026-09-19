@@ -180,7 +180,7 @@ def test_readiness_requires_completed_hard_artifacts(tmp_path):
     assert not module.check_ready(match)
 
 
-def test_only_semantic_reviewers_use_low_thinking(monkeypatch):
+def test_generation_uses_medium_and_reviewers_use_low_thinking(monkeypatch):
     import modules.commentary.providers.gemini as gemini_module
 
     configs = []
@@ -200,8 +200,8 @@ def test_only_semantic_reviewers_use_low_thinking(monkeypatch):
     module = CommentaryModule(config=CommentaryModuleConfig())
     with module._provider_bundle(module.config) as providers:
         assert providers.commentary_reviewer.config.thinking_level == "low"
-    assert [config.thinking_level for config in configs] == [None, "low", None, "low"]
-    assert [config.max_output_tokens for config in configs] == [4096, 4096, 4096, 4096]
+    assert [config.thinking_level for config in configs] == ["medium", "low", "medium", "low"]
+    assert [config.max_output_tokens for config in configs] == [8192, 4096, 8192, 4096]
 
 
 def test_identity_normal_reverse_unavailable_and_ambiguous(tmp_path):
