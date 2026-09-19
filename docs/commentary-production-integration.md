@@ -1,9 +1,11 @@
 # Commentary production integration
 
-`CommentaryModule` is the production stage that joins the commentary components
-already owned by this repository. It runs after `player_identity` and writes
-`stages/commentary/commentary.json` through the normal artifact and checkpoint
-system.
+`CommentaryModule` joins the commentary components already owned by this
+repository. It is registered but excluded from the default runner because a
+generated rally normally uses three or four Gemini requests. Production usage is
+therefore on demand: select one or more segment indices after the upstream match
+analysis has completed. Explicit full-match mode remains available for export and
+offline analysis.
 
 The runtime path is:
 
@@ -20,6 +22,11 @@ Each rally makes at most one request for each of the four model roles. A valid
 empty tactical result continues to commentary. Provider, structured-response,
 canonical-join, or coverage failures fail the stage and do not publish a partial
 artifact.
+
+All selected segments complete cheap validation before production providers are
+opened. The CLI then reports the eligible count and an approximate request range of
+`3 × eligible` through `4 × eligible`. This is a request-count estimate, not a price or
+runtime guarantee.
 
 ## Identity and unsupported segments
 
@@ -78,6 +85,20 @@ code/config-version fingerprint mechanism, so prompt/model/config invalidation
 requires an explicit forced run; the artifact records the effective non-secret
 runtime configuration for diagnosis.
 
+On-demand output is deliberately separate:
+
+```text
+stages/commentary/segments/segment_007.json
+stages/commentary/segments/segment_007.failure.json
+```
+
+`commentary-segment-v1` embeds the existing `CommentaryRally` plus identity,
+tactical, commentary and non-secret runtime diagnostics. It is atomically replaced
+only after that segment succeeds. Selected runs never overwrite `commentary.json` or
+the whole-stage `status.json`; a failed regeneration therefore leaves an earlier
+successful segment artifact intact. Only `--all` or runner `--with-commentary` owns
+the canonical `commentary-rallies-v1` artifact and normal stage status.
+
 ## Configuration and execution
 
 `config.yaml` may contain:
@@ -94,16 +115,28 @@ commentary:
 
 `COMMENTARY_GEMINI_MODEL` overrides the configured model. Credentials continue
 to use `GEMINI_API_KEY` or the existing root `gemini_api_key`; they are never
-written to the artifact. The normal command is:
+written to the artifact. The intended commands are:
 
 ```powershell
-uv run python -m modules.runner matches/TTYvsASY
+uv run python -m modules.runner matches/Kunlavut
+uv run python -m modules.commentary matches/Kunlavut --segment 7
+uv run python -m modules.commentary matches/Kunlavut --segment 7 --segment 12
+uv run python -m modules.commentary matches/Kunlavut --all
+uv run python -m modules.runner matches/Kunlavut --with-commentary
 ```
 
-The runner has no global `--gpu` option. Existing compute stages select their
-devices through their current interfaces. Commentary is also directly runnable
-with `uv run python -m modules.commentary matches/TTYvsASY` after its dependencies
-have completed.
+The default runner stops after the upstream analysis and prints a short on-demand
+hint; it does not emit the expensive-run warning because it makes no Commentary
+requests. `--segment` is repeatable, sorted and deduplicated. Supplying neither a
+segment nor `--all` is rejected before provider creation. `--segment` and `--all`
+are mutually exclusive.
+
+Commentary progress counts eligible rallies rather than video frames and exposes
+the active high-level phase: fact preparation, tactical generation/review,
+Commentator generation/review and deterministic validation/artifact writing. A
+skipped tactical review is reported explicitly. Full-match mode shows a stronger
+cost/latency warning but has no interactive confirmation, so scripted workflows
+remain possible.
 
 Runner/UI rendering, subtitles, artifact-to-frontend wiring, ReID,
 forehand/backhand, performance experiments, and multi-rally decomposition remain

@@ -22,6 +22,7 @@ to treat unknown as stale instead.
 Usage::
 
     uv run python -m modules.runner matches/MK_vs_CT_2019
+    uv run python -m modules.runner matches/MK_vs_CT_2019 --with-commentary
     uv run python -m modules.runner matches/MK_vs_CT_2019 --force
 """
 
@@ -72,6 +73,19 @@ def available_modules() -> dict[str, BaseModule]:
     return {m.name: m for m in modules}
 
 
+def default_modules(*, with_commentary: bool = False) -> dict[str, BaseModule]:
+    """Implemented stages selected for a normal run.
+
+    Commentary remains registered and directly runnable, but its 3-4 Gemini calls per
+    rally are an explicit opt-in rather than a side effect of ordinary match analysis.
+    """
+
+    modules = available_modules()
+    if not with_commentary:
+        modules.pop("commentary")
+    return modules
+
+
 def _status_of(match_path: Path, name: str) -> StageStatus | None:
     state = read_status(stage_path(match_path, name))
     return state.status if state else None
@@ -118,6 +132,7 @@ def run_pipeline(
     modules: dict[str, BaseModule] | None = None,
     force: bool = False,
     strict_stale: bool = False,
+    with_commentary: bool = False,
 ) -> bool:
     """Run every registered stage in dependency order.
 
@@ -129,7 +144,8 @@ def run_pipeline(
         raise FileNotFoundError(f"match path not found: {match_path}")
     _reject_gapped_input_video(match_path)
 
-    modules = available_modules() if modules is None else modules
+    using_default_modules = modules is None
+    modules = default_modules(with_commentary=with_commentary) if modules is None else modules
     # Optional dependencies order the run without gating it: a stage that reads
     # score_recognition's output when it exists must still be scheduled after it, or a
     # full-pipeline run would produce that output one stage too late to ever be read.
@@ -193,6 +209,12 @@ def run_pipeline(
             f"{console.count(untracked, 'stage')} predate input tracking and were left "
             "alone.\nRun with --strict-stale to rebuild them anyway."
         )
+    if using_default_modules and not with_commentary:
+        console.info(
+            "Commentary was not generated. Use `python -m modules.commentary "
+            f"{match_path} --segment N` on demand, or add --with-commentary for "
+            "full-match Commentary."
+        )
     console.blank()
     console.header(f"pipeline complete in {console.duration(time.perf_counter() - started)}")
     return True
@@ -205,12 +227,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strict-stale", action="store_true",
                         help="also re-run completed stages whose status.json predates "
                              "input tracking, instead of leaving them alone")
+    parser.add_argument(
+        "--with-commentary", action="store_true",
+        help="explicitly generate full-match Commentary (3-4 Gemini calls per rally)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    ok = run_pipeline(args.match_path, force=args.force, strict_stale=args.strict_stale)
+    ok = run_pipeline(
+        args.match_path,
+        force=args.force,
+        strict_stale=args.strict_stale,
+        with_commentary=args.with_commentary,
+    )
     raise SystemExit(0 if ok else 1)
 
 

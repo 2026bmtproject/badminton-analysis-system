@@ -6,18 +6,20 @@
 
 ## 1. 系統目標
 
-目前系統可從一場羽球轉播影片完成以下 production flow：
+目前系統先將一場羽球轉播影片轉為可重用的 canonical artifacts，再由使用者或系統選擇需要賽評的 rally。一般分析不會自動為全場呼叫 Gemini：
 
 ```text
 video
 → CV / recognition stages
 → player identity epochs
+→ persisted canonical artifacts
+→ select one or more rally segments
 → deterministic RallyFact / CompactRallyFacts
 → grounded TacticalObservation v2
 → per-event Traditional Chinese commentary
 → semantic review
 → deterministic final validation and per-event fallback
-→ commentary.json
+→ segment_###.json (on demand) or commentary.json (explicit full match)
 ```
 
 架構的核心是將「觀測事實」、「確定性衍生結果」、「模型詮釋」與「最終文字」分層。`event_index`、frame、time、player、canonical `stroke_type` 與 provenance 均由 upstream artifacts 與 Python 建立；Gemini 只能在提供的 evidence 上提出戰術觀察及文字表達，不能成為 canonical event identity 或時間資料的來源。最終 artifact 仍由 Python 組裝與驗證。
@@ -28,7 +30,7 @@ video
 
 **圖 1　Production system overview。** CV 與 deterministic stages 建立 canonical facts；Gemini 只負責受限的 tactical interpretation 與 language realization，Python 保留 grounding、identity、coverage 與 final safety authority。主圖使用可縮放 SVG；Mermaid 原始檔保留於 `docs/figures/commentary-production-architecture.mmd`，供快速修改與版本比較。
 
-實際 runner 已在 `modules.runner.available_modules()` 註冊 `CommentaryModule`。Pipeline 依 `StageSpec.dependencies` 與 `optional_dependencies` 排序；hard dependency 未完成時不執行 Commentary，optional artifact 缺少時則降級。
+`modules.runner.available_modules()` 保留 `CommentaryModule` 註冊，但預設 runner 會將它從執行集合排除。`--with-commentary` 才明確啟用全場模式；互動式產品與開發流程使用 `python -m modules.commentary <match> --segment N`。Pipeline 仍依 `StageSpec.dependencies` 與 `optional_dependencies` 排序；hard dependency 未完成時不能執行 Commentary，optional artifact 缺少時則降級。
 
 ## 3. Upstream Perception Pipeline
 
@@ -268,7 +270,7 @@ Production provider 為 `GeminiProvider`，透過 `google-genai` 的 `GenerateCo
 
 ## 12. Failure Observability
 
-`CommentaryModule` 用 `_ObservedProvider` 為四個 phase 加上 rally/phase context。`ProviderError` 會寫入：
+`CommentaryModule` 用 `_ObservedProvider` 為四個 phase 加上 rally/phase context。全場 `ProviderError` 會寫入：
 
 ```text
 stages/commentary/failure_diagnostic.json
@@ -279,7 +281,7 @@ Safe diagnostic 包含：failed timestamp、segment、phase、error code、安�
 
 API credential、system prompt、user payload 與 raw partial response 不會寫入。Error message 會替換 request text、authorization/API-key patterns，且最多保留 512 characters。
 
-新的 run 開始時先移除 stale failure diagnostic。`commentary.json` 只在所有 jobs 完成後寫到 temporary path，再以 replace 發布；失敗不會發布半套新 artifact。Base stage status 仍記錄 failed state。這裡的 safe diagnostic 專門處理 provider failure；schema/grounding/coverage 等非-provider exception 由 stage error/status 呈現。
+On-demand failure 則寫到 `stages/commentary/segments/segment_###.failure.json`，不碰全場 diagnostic 或 status。成功 segment 使用 `commentary-segment-v1` 自描述 envelope，經 `.json.tmp` 原子替換；失敗重跑不會破壞既有成功檔。全場 `commentary.json` 仍只在所有 jobs 完成後發布，並維持 `commentary-rallies-v1` 與 Base stage status 語意。
 
 ## 13. Real Kunlavut Production Result
 
@@ -452,7 +454,7 @@ Artifact boundary samples 證明 mapping 作用於每個 segment：
 
 ## 21. Final System Status
 
-目前 production MVP 已完成並在 Kunlavut 實際跑通：
+目前 production MVP 已完成並在 Kunlavut 實際跑通。下列全場流程是明確 opt-in 的 batch/export 模式；日常產品路徑在 persisted artifacts 後選擇個別 rally：
 
 ```text
 video
@@ -467,6 +469,8 @@ video
 ```
 
 Kunlavut 23/23 segments 都有 `CommentaryRally` record，299/299 eligible events 完整覆蓋，無 unsupported segment。這代表 production integration、runner registration、identity consumption、structured Gemini phases、diagnostics 與 final artifact contract 均已存在，不是規劃中的元件。
+
+成本與延遲邊界也反映在 execution mode：一個有內容的 rally 通常使用 tactical generator、可選 tactical reviewer、Commentator 與 commentary reviewer，共約 3–4 次 Gemini request。Selected CLI 先做 identity、sub-rally 與 canonical input preflight，再依 eligible 數顯示 request 範圍，之後才開 provider。Full-match `--all`／`--with-commentary` 顯示更強警告，但不加入互動式確認。
 
 後續增強可包含：verified player display names、scoreboard-bound visual identity anchor、pose/shuttle evidence capabilities、降低 reviewer payload 與 pose repeated scans、受控 retry/orchestration、更多 badminton-specific evaluation，以及在有新 trusted upstream facts 後加入 forehand/backhand 或速度資訊。這些均不屬於目前架構圖中的已實作能力。
 
