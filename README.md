@@ -36,9 +36,11 @@ matches/   # 每場分析的資料（不進 repo）
 階段間的輸入輸出格式（每個 `stages/*/*.json` 的 schema）與依賴關係都定義在
 [`modules/contracts.py`](modules/contracts.py)。
 
-賽評目前只完成第一層契約遷移，尚未註冊至 runner。`commentary.json` 改以 `rallies`
-儲存逐拍 events 與可選 summary；身分映射必須明確提供，精彩分數僅為可選上下文。
-欄位、依賴與相容性說明見 [Commentary contract v1](docs/commentary-contract.md)。
+賽評已完成 production integration，但因每個 rally 通常需要 3–4 次 Gemini request，
+預設 runner 只跑 upstream analysis，不會自動產生全場賽評。使用者可按 segment
+on demand 生成；`commentary.json` 的全場 batch 模式需明確 opt in。欄位、依賴與
+相容性說明見 [Commentary contract v1](docs/commentary-contract.md) 與
+[Commentary production integration](docs/commentary-production-integration.md)。
 
 音訊階段已實作並註冊至 runner：`audio_highlight` 以 `audio_signals.json`
 分別輸出每個 segment 的 `cheer_confidence`、`cheer_intensity` 與
@@ -162,6 +164,12 @@ uv run python -m modules.runner matches/MK_vs_CT_2019 --force
 
 # 連「status.json 早於輸入指紋機制」的階段也一併重跑（預設會保留不動）
 uv run python -m modules.runner matches/MK_vs_CT_2019 --strict-stale
+
+# 只為選定 rally 產生賽評（--segment 可重複）
+uv run python -m modules.commentary matches/MK_vs_CT_2019 --segment 7
+
+# 明確 opt in 全場賽評
+uv run python -m modules.runner matches/MK_vs_CT_2019 --with-commentary
 ```
 
 ## 命令列工具（單一工具 / 任意路徑）
