@@ -237,7 +237,7 @@ $$\mathrm{MAD} = \frac{1}{MN}\sum_{x=1}^{M}\sum_{y=1}^{N} \left| I_1(x,y) - I_2(
 取樣採每隔三個影格一次，並與前一個取樣影格計算 MAD。間隔取樣一方面縮短處理時間，一方面避免特寫片段和固定機位比賽片段混淆。特寫中球員動作緩慢、背景固定，MAD 偏低且接近固定機位比賽片段，間隔取樣把緩慢位移放大、拉高其 MAD。固定機位比賽片段中球員佔比小、動作劇烈，間隔取樣影響有限。兩類片段因此在 MAD 上分開。
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/mad_timeline.png">
+  <img src="./report_pic/match_segmentation/mad_timeline.png">
   <figcaption>部分片段 MAD </figcaption> 
 </figure>
 
@@ -250,7 +250,7 @@ $$\mathrm{MAD} = \frac{1}{MN}\sum_{x=1}^{M}\sum_{y=1}^{N} \left| I_1(x,y) - I_2(
 分析前先對 MAD 取以 10 為底的對數。鏡頭切換到完全不同畫面時每個像素都不一樣，會產生極大 MAD，使分佈右側出現長尾。取對數可壓縮長尾，使高低兩側尺度相當。實作取 $\log_{10}(\max(\mathrm{MAD}, 1))$，因為 MAD 可能為 0，需要地板值 1。
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/log_transform.png">
+  <img src="./report_pic/match_segmentation/log_transform.png">
   <figcaption>取對數</figcaption> 
 </figure>
 
@@ -259,7 +259,7 @@ $$\mathrm{MAD} = \frac{1}{MN}\sum_{x=1}^{M}\sum_{y=1}^{N} \left| I_1(x,y) - I_2(
 **門檻方法：** 設門檻的問題與影像二值化相似，二值化統計像素亮度並切成兩類，本階段統計影格 MAD 並切成兩類，故沿用二值化的門檻計算方法。本系統採 Otsu 法，它只要求兩類均值不同即可分離，不限制分佈形狀、不需調參，正好適用於本階段低 MAD 側有尖峰、高 MAD 側是不對稱長尾的情形。
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/rally_split_hist.png">
+  <img src="./report_pic/match_segmentation/rally_split_hist.png">
   <figcaption>固定機位比賽片段與其他片段的 MAD 分佈</figcaption> 
 </figure>
 
@@ -312,7 +312,7 @@ $$\mathrm{MAD} = \frac{1}{MN}\sum_{x=1}^{M}\sum_{y=1}^{N} \left| I_1(x,y) - I_2(
 **三類切分：** 直接做兩類 Otsu 會產生系統性偏差，高 MAD 側佔全片 68% 且橫跨 2.75 至 128，類內變異遠大於低 MAD 側，會把切點從谷底推進高 MAD 團內部，讓大量非固定機位比賽影格進入下一步。改用三類切分，上切點（10.80）吸收長尾壓力，下切點（2.81）回到谷底，取下切點為門檻。三類 Otsu 的效果等價於先移除長尾再做兩類 Otsu。
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/otsu_3class.png">
+  <img src="./report_pic/match_segmentation/otsu_3class.png">
   <figcaption>三類 Otsu 的兩個切點</figcaption>
 </figure>
 
@@ -329,7 +329,7 @@ d(i,j) = \frac{1}{4}\sum_{a=1}^{2}\sum_{b=1}^{2} \mathrm{MAD}\!\left(v_i^{(a)},\
 $$
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/cross_matrix.png">
+  <img src="./report_pic/match_segmentation/cross_matrix.png">
   <figcaption>跨片段兩兩 MAD 矩陣（依平均差異排序）</figcaption> 
 </figure>
 
@@ -338,7 +338,7 @@ $$
 實測固定機位比賽片段間 $\bar{d}(i)$ 的極差在 5% 以內，最小的非固定機位比賽片段比全體最小值大 13%，門檻取全體最小值的 1.07 倍。此門檻成立的前提是固定機位比賽片段屬於最緊密的群，若影片含大量彼此相似的畫面，會形成新的低 $\bar{d}(i)$ 群使門檻失效，對此的替代方案（KNN 局部密度）見〈設計取捨〉。
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/cross_avg.png">
+  <img src="./report_pic/match_segmentation/cross_avg.png">
   <figcaption>跨片段平均差異的分佈與門檻</figcaption> 
 </figure>
 
@@ -353,7 +353,7 @@ $$
 **做邊界對齊：** 在每個邊界附近逐影格計算相鄰 MAD，尋找同時滿足絕對值門檻與區域中位數倍率的尖峰，此尖峰對應剪接點，起點設為切入尖峰所在的影格，終點設為切出尖峰的前一張影格。
 
 <figure>
-  <img src="./docs/report_pic/match_segmentation/cut_spike.png">
+  <img src="./report_pic/match_segmentation/cut_spike.png">
   <figcaption>邊界尖峰偵測與修正</figcaption>
 </figure>
 
@@ -406,7 +406,7 @@ flowchart LR
 合成採 dominant_cluster（主群集平均）：對每個像素的亮度值分箱，只平均落入最多值的那一箱。overlay 出現時亮度幾乎固定，會全擠進同一箱。背景每幀不同而分散各箱。因此最密集的一簇即為記分板。這個方法不預設目標信號在時間上佔多數，即使轉播 overlay 只間歇出現仍能保留。
  
 <figure>
-  <img src="./docs/report_pic/score_recognition/overlay_recovery.png">
+  <img src="./report_pic/score_recognition/overlay_recovery.png">
   <figcaption>overlay 只出現在部分影格時，主群集平均的還原結果</figcaption>
 </figure>
 
@@ -417,7 +417,7 @@ flowchart LR
 實作上使用 Gemini 2.5 Flash，將 temperature 設為 0，並且關閉 thinking，減少結果變化的同時避免模型進行不必要的推理，多餘的推理浪費 token 、時間又容易出錯。
 
 <figure>
-  <img src="./docs/report_pic/score_recognition/transcription_pick.png">
+  <img src="./report_pic/score_recognition/transcription_pick.png">
   <figcaption>轉錄取代挑選：VLM 完整抄寫每隊數字，程式取最右一個為當前比分</figcaption>
 </figure>
  
@@ -483,7 +483,7 @@ flowchart TD
 $$M(x,y) = \mathrm{median}\{I_1(x,y),\dots,I_K(x,y)\}$$
 
 <figure>
-  <img src="./docs/report_pic/court_detection/composite_median.png">
+  <img src="./report_pic/court_detection/composite_median.png">
   <figcaption>四張取樣影格與合成圖</figcaption>
 </figure>
 
@@ -492,7 +492,7 @@ $$M(x,y) = \mathrm{median}\{I_1(x,y),\dots,I_K(x,y)\}$$
 本步驟要圈出球場在畫面中的範圍，好把範圍外的線段擋在後續場線偵測之外。實測對整張畫面掃描會得到近 200 條線段，真正屬於球場的只有 12 條。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/mask_scope.png">
+  <img src="./report_pic/court_detection/mask_scope.png">
   <figcaption>全畫面掃描到的線段，與落在球場遮罩內的部分</figcaption>
 </figure>
 
@@ -505,14 +505,14 @@ $$C(x,y) = \big[\,\lVert\,(a(x,y),\,b(x,y)) - \mathbf{c}\,\rVert < \tau_c\,\big]
 其中 $\sigma_a,\sigma_b$ 為 $S$ 在兩色度通道的標準差。捨棄亮度通道使光照與陰影不進入判斷。用中位數以避免取樣區塊內的現像素影響門檻。門檻取 $3\sigma$ 使其隨取樣塊自身的顏色離散程度放寬，下限 18 則用以容忍過於平滑的場地。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/lab_chroma.png">
+  <img src="./report_pic/court_detection/lab_chroma.png">
   <figcaption>取樣區塊、參考色與門檻的判定</figcaption>
 </figure>
 
 上述門檻得到的是逐像素獨立的判斷，還不是一塊完整區域。白色場線把場地切成數塊，雜訊與反光留下零星破洞。模組以形態學運算補洞去雜點、取面積最大的連通區域、再自畫面左上角向內填充背景，把內部空洞併回球場。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/morphology.png">
+  <img src="./report_pic/court_detection/morphology.png">
   <figcaption>形態學清理、最大連通區域與空洞填補各階段的遮罩變化</figcaption>
 </figure>
 
@@ -529,28 +529,28 @@ $$P_h(x,y) = \big[\,G(x,y)-G(x-d,y) > \tau\,\big] \wedge \big[\,G(x,y)-G(x+d,y) 
 $$P_v(x,y) = \big[\,G(x,y)-G(x,y-d) > \tau\,\big] \wedge \big[\,G(x,y)-G(x,y+d) > \tau\,\big]$$
 
 <figure>
-  <img src="./docs/report_pic/court_detection/line_pixels.png">
+  <img src="./report_pic/court_detection/line_pixels.png">
   <figcaption>局部亮度突起與場線像素的萃取結果</figcaption>
 </figure>
 
 上一步的輸出是散落的像素，以機率霍夫轉換（PPHT，`cv2.HoughLinesP`）把共線者組織成線段。場線常因球員殘影、地面反光與遮罩侵蝕而斷開，霍夫轉換靠投票決定共線性、不依賴像素連通，能跨越這些缺口。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/hough_families.png">
+  <img src="./report_pic/court_detection/hough_families.png">
   <figcaption>霍夫線段與兩族的角度粗分</figcaption>
 </figure>
 
 粗分後仍混有地面贊助商圖樣等非球場線段，以透視幾何篩選。球場的 12 條線分屬兩組平行線，在畫面上各自通過一個消失點。找消失點是離群比例可能很高的穩健估計問題，採 RANSAC，隨機取兩條線段、以交點為候選消失點，統計族內有多少線段方向指向它（以線段長度加權），重複數百次取支持度最高者。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/vp_ransac.png">
+  <img src="./report_pic/court_detection/vp_ransac.png">
   <figcaption>消失點 RANSAC 三次抽樣的候選點與其支持度</figcaption>
 </figure>
 
 球網遮擋常把一條球場線拆成方向略有出入的數段，同一條物理線會以不同位置重複參與運算，故先合併。同族線段方向相近、只在垂直於該方向的位置上分開，取一條參考線把每條線段化為一維位置，位置相近者歸為一簇，每簇以最小平方擬合出一條代表線。數百條線段因此收斂成十餘條物理線，既去除重複，也把後續窮舉的組合數壓到可行範圍。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/line_merge.png">
+  <img src="./report_pic/court_detection/line_merge.png">
   <figcaption>同族線段合併的前後對比</figcaption>
 </figure>
 
@@ -563,7 +563,7 @@ $$P_v(x,y) = \big[\,G(x,y)-G(x,y-d) > \tau\,\big] \wedge \big[\,G(x,y)-G(x,y+d) 
 DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，故對每個 $\mathrm{H}$ 加設合法性檢查：四角須為有限值、不超出畫面、不退化成細條、近端底線不短於遠端。此檢查貫穿後續所有產生 $\mathrm{H}$ 的階段。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/valid_h.png">
+  <img src="./report_pic/court_detection/valid_h.png">
   <figcaption>合法性檢查</figcaption>
 </figure>
 
@@ -574,7 +574,7 @@ $$S = \underbrace{\frac{1}{12}\sum_{k=1}^{12}\mathrm{cov}_k}_{\text{貼合度}} 
 此評分是整個場地偵測判斷好壞的統一依據，後續的候選選擇與邊界修正都以它裁決。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/distance_transform.png">
+  <img src="./report_pic/court_detection/distance_transform.png">
   <figcaption>場線像素與其距離轉換圖</figcaption>
 </figure>
 
@@ -585,7 +585,7 @@ $$S = \underbrace{\frac{1}{12}\sum_{k=1}^{12}\mathrm{cov}_k}_{\text{貼合度}} 
 **網格枚舉（主要方法）：** 從候選縱線任取兩條作左右邊界、橫線任取兩條作上下邊界，四線相交得一組四角，枚舉所有 $\binom{10}{2}\times\binom{12}{2}=2970$ 組合，取 12 線網格吻合度最高者。穩健的關鍵在於以最可靠的內部線反推最不可靠的外角，等於讓發球線與中線一起投票決定四角。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/grid_search.png">
+  <img src="./report_pic/court_detection/grid_search.png">
   <figcaption>網格枚舉的候選與其吻合度評分</figcaption>
 </figure>
 
@@ -600,19 +600,19 @@ $$S = \underbrace{\frac{1}{12}\sum_{k=1}^{12}\mathrm{cov}_k}_{\text{貼合度}} 
 **以 ICP 重估單應性：** 難點在建立線像素與球場模型的對應，影像中場線因透視而方向各異，難以直接配對。利用前一步的近似 $\mathrm{H}$，把每個線像素反投影回球場座標，那裡的縱線是 $x$ 為定值、橫線是 $y$ 為定值的直線，量出該像素離哪條最近即建立對應。再用全部點對重解 $\mathrm{H}$、以新 $\mathrm{H}$ 更新對應，反覆逼近。點對數以千計，採 RANSAC 版本把配錯到相鄰線的像素當離群值排除，對應的距離門檻隨迭代由寬到窄。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/icp.png">
+  <img src="./report_pic/court_detection/icp.png">
   <figcaption>ICP 第一輪與最終輪的網格與反投影殘差</figcaption>
 </figure>
 
 **邊界修正：** 透視壓縮下球場遠端的內、外邊界在畫面上靠得很近，全域解無從分辨，外邊界可能整條鎖到內側線上。本步驟只動四條外邊界，把某條投影線附近的像素依「離線多遠」投到一維直方圖，每條平行線形成一個峰，二維的找線因此降為一維的找顯著峰。遠端刻意偏取最外側的峰重新擬合邊界，因為兩種誤差不對稱，外邊界略往場外時場內物體的相對位置仍成立、下游影響有限，一旦鎖進內側則截斷場內內容、不可逆。搜尋帶寬由寬到窄逐級縮小。這是帶方向的推測，故結果不直接採用，而是回到吻合度評分重算，只有分數未明顯變差才取代原解。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/perp_profile.png">
+  <img src="./report_pic/court_detection/perp_profile.png">
   <figcaption>投影線的鄰近像素與其離線距離直方圖</figcaption>
 </figure>
 
 <figure>
-  <img src="./docs/report_pic/court_detection/boundary_refine.png">
+  <img src="./report_pic/court_detection/boundary_refine.png">
   <figcaption>遠端底線由內側峰改取最外側峰的前後對比</figcaption>
 </figure>
 
@@ -621,7 +621,7 @@ $$S = \underbrace{\frac{1}{12}\sum_{k=1}^{12}\mathrm{cov}_k}_{\text{貼合度}} 
 前述步驟以多假設並行：球場區域定位產生二至三組遮罩，場線偵測再對每組遮罩各給三種外角候選，故候選池大小為遮罩組數乘以三，每個候選都帶著它所依據的線像素圖。本步驟把這一池候選收斂成唯一答案，每個候選經角點重估與邊界修正後，在自己的線像素圖上算出吻合度評分，全部比較之下取最高者，其四角與單應性即為模組的最終輸出。
 
 <figure>
-  <img src="./docs/report_pic/court_detection/eval_pool.png">
+  <img src="./report_pic/court_detection/eval_pool.png">
   <figcaption>候選池的吻合度評分與勝出者的投影</figcaption>
 </figure>
 
@@ -683,7 +683,7 @@ flowchart TD
 第一階段為片段的每一幀還原畫面上所有人的骨架並快取，是整個模組的 GPU 時間瓶頸。先用人體偵測器（YOLOX）框出所有人，再採由上而下路線逐人裁切、放大回模型輸入尺寸後在滿解析度下估骨架（RTMPose），讓很小的球員仍能得到準確的關節點。由於逐人估骨架的成本隨人數線性成長，而每幀偵到的十幾二十人裡真正相關的只有兩到四人，估骨架前先借單應性把每個人的腳點反投影回球場座標，只讓落在放寬球場範圍內者進入姿態模型。
 
 <figure>
-  <img src="./docs/report_pic/pose/top_down.png">
+  <img src="./report_pic/pose/top_down.png">
   <figcaption>由上而下：先裁切放大再估骨架</figcaption>
 </figure>
 
@@ -696,14 +696,14 @@ flowchart TD
 **非對稱邊界放寬：** 單應性只在地平面上成立，球員起跳殺球時腳踝離地，反投影會把腳點推到底線之外。為此把場內範圍在底線方向（縱向）放寬、邊線方向（橫向）收緊。
 
 <figure>
-  <img src="./docs/report_pic/pose/court_select.png">
+  <img src="./report_pic/pose/court_select.png">
   <figcaption>腳點反投影至球場座標</figcaption>
 </figure>
 
 **靜態錨點排除干擾：** 尺寸與邊界仍擋不住一種情形，站在底線後、身高又與遠端球員相當的裁判，一旦真球員該幀被漏偵便可能頂替上來。關鍵在於是否移動，官員整場腳點落在同一處，球員則掃過整個球場。統計整場每個候選人的腳點落點，把在很高比例的幀裡被占用且幾乎不動的格子標為靜態錨點，之後腳點離錨點太近的候選人一律拒絕。
 
 <figure>
-  <img src="./docs/report_pic/pose/static_anchors.png">
+  <img src="./report_pic/pose/static_anchors.png">
   <figcaption>整場腳點落點：固定不動者被判為靜態錨點</figcaption>
 </figure>
 
@@ -755,7 +755,7 @@ flowchart LR
 先以 largest-blob 讀出一條基準軌跡——用信心門檻二值化後取面積最大的連通區塊，以其中心為位置、區塊峰值為該幀信心——這條基準軌跡是修補法的輸入，而選擇法另從同一份熱圖以低門檻自取候選（見下）。
 
 <figure>
-  <img src="./docs/report_pic/shuttle_tracking/heatmap_readout.png">
+  <img src="./report_pic/shuttle_tracking/heatmap_readout.png">
   <figcaption>從熱圖以 largest-blob 讀出基準軌跡</figcaption>
 </figure>
 
@@ -764,7 +764,7 @@ flowchart LR
 第一種方法先將熱圖二值化，取每幀面積最大的連通區塊作為基準位置，再由補洞網路（InpaintNet[1]）補回遮擋造成的缺幀。補值點的信心標為 0，使下游能區分實際偵測與模型推論。
 
 <figure>
-  <img src="./docs/report_pic/shuttle_tracking/inpaint_gaps.png">
+  <img src="./report_pic/shuttle_tracking/inpaint_gaps.png">
   <figcaption>補洞前後路徑差異：被遮擋的缺口補回，飛出畫面上緣的缺口留空</figcaption>
 </figure>
 
@@ -773,7 +773,7 @@ flowchart LR
 第二種方法改以全域路徑搜尋壓制孤立誤偵。它用極低門檻把每幀所有稍可能是球的區塊全留作候選，再找一條最像真實飛行的路徑穿過它們。把每幀候選當節點、相鄰候選間連邊，給節點獎勵（信心越高越好）、給邊代價（前後兩點推出的速度越不合物理越貴、跨幀越多越貴），以動態規劃取總分最高的路徑。如此微弱但連貫的偵測能勝過強烈但孤立的偵測。當某幀球員鞋子或場線在信心上壓過真球，只要接不上前後飛行就不會入選。最後才對剩餘缺口依長度與兩端運動狀態決定補或不補，並以卡爾曼濾波填值。
 
 <figure>
-  <img src="./docs/report_pic/shuttle_tracking/viterbi_path.png">
+  <img src="./report_pic/shuttle_tracking/viterbi_path.png">
   <figcaption>低門檻多候選與 Viterbi 選出的最佳路徑</figcaption>
 </figure>
 
@@ -848,7 +848,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 **連續球種區間：** 若把某個真實擊球影格前後半秒作為窗口輸入模型會得到球種 a，那麼對它鄰近的前後一兩影格做同樣的事，因窗口內容高度重疊，也極可能得到相同的球種 a，只是信心略低。反過來說，只要觀察到連續多個影格被判為同一球種，就代表該區間附近很可能存在一次擊球。
 
 <figure>
-  <img src="./docs/report_pic/event_detection/dense_evidence.png">
+  <img src="./report_pic/event_detection/dense_evidence.png">
   <figcaption>逐幀滑動窗口產生的球種、信心與擊球者證據：(a)–(c) 為三次擊球的窗口球路與擊球者骨架，圈記為擊球時刻；下方時間軸為同一段窗口，真實擊球附近會形成連續的同球種高信心區間</figcaption>
 </figure>
 
@@ -867,12 +867,12 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 本步驟刻意偏向敏感、高召回，先保留不確定候選，再交由後續規則排除。擊球時刻要用來為下一階段的球種模型切分析窗口，一旦漏掉一拍，窗口就會整段錯位，後續的比賽脈絡也會出現難以復原的斷點。
 
 <figure>
-  <img src="./docs/report_pic/event_detection/candidate_signals.png">
+  <img src="./report_pic/event_detection/candidate_signals.png">
   <figcaption>四種互補的擊球候選訊號：(a) 弧線底部的凸起、(b) 擊球前後速度向量的轉角與速率比、(c) 擊球前後的速率變化、(d) 回合開頭的兩個發球錨點</figcaption>
 </figure>
 
 <figure>
-  <img src="./docs/report_pic/event_detection/candidate_pool.png">
+  <img src="./report_pic/event_detection/candidate_pool.png">
   <figcaption>各訊號在完整回合中的候選分布與合併結果：(b) 中沒有任何單一訊號涵蓋全部人工標記，合併後的候選則全部涵蓋，但也多出數個回合結束後的候選</figcaption>
 </figure>
 
@@ -887,7 +887,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 **回合脈絡：** 已知擊球側的候選附近應能找到對側球員的其他擊球候選。目前規則要求在指定時間窗內至少存在兩個對側候選，否則將其視為落地彈跳、追蹤脫線或其他孤立訊號。
 
 <figure>
-  <img src="./docs/report_pic/event_detection/candidate_gates.png">
+  <img src="./report_pic/event_detection/candidate_gates.png">
   <figcaption>三道候選篩選規則及其保留／刪除結果：(a) 為一個回合的全部候選，被刪掉的三個標上編號；(b) 為同一批候選分到兩個半場，孤立的候選在對面半場找不到人回擊；編號的理由列在圖下</figcaption>
 </figure>
 
@@ -904,12 +904,12 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 **近端發球補漏：** 畫面下方球員發球時，部分軌跡可能被身體遮擋。若持續上升錨點附近尚無擊球，而 BST 同時提供下方球員的發球證據，系統便在附近被篩掉的候選中選擇最接近者。
 
 <figure>
-  <img src="./docs/report_pic/event_detection/fill_sequence.png">
+  <img src="./report_pic/event_detection/fill_sequence.png">
   <figcaption>由擊球序列與連續球種證據反推漏拍位置：(a) 相鄰兩拍同側、(b) 高信心球種區間內沒有擊球；兩者都再由弱轉折定出補上的位置</figcaption>
 </figure>
 
 <figure>
-  <img src="./docs/report_pic/event_detection/fill_trajectory.png">
+  <img src="./report_pic/event_detection/fill_trajectory.png">
   <figcaption>由輔助軌跡與發球錨點救回主軌跡漏拍：(a) 只有輔助軌跡看到的點落在球種訊號起點上，(b) 近端發球以持續上升錨點與下方球員的發球證據補回</figcaption>
 </figure>
 
@@ -924,12 +924,12 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 **計分板死時間：** 特定休息比分下的計分板死時間（如開局 0:0、局中技術暫停）。
 
 <figure>
-  <img src="./docs/report_pic/event_detection/prune_rally_edges.png">
+  <img src="./report_pic/event_detection/prune_rally_edges.png">
   <figcaption>利用回合有效邊界清除開頭誤偵與尾段落地球：(a)(b) 為兩個完整回合，橘色區間是回合的有效範圍，灰色是範圍之外；被刪掉的擊球標上編號，理由列在圖下</figcaption>
 </figure>
 
 <figure>
-  <img src="./docs/report_pic/event_detection/prune_scoreboard.png">
+  <img src="./report_pic/event_detection/prune_scoreboard.png">
   <figcaption>結合比分與發球證據判定計分板死時間：每個片段只看比分與有無發球證據兩件事，同一個休息比分的連續片段中，最後一個有發球證據的才是真回合；(a) 為開賽前的 0:0，(b) 為局中技術暫停</figcaption>
 </figure>
 
@@ -973,12 +973,12 @@ flowchart TD
 整理後的資料送入預訓練 BST，模型輸出 25 類機率，將結果依賽評需求整理為 8 類：高遠球、發球、小球、平快球、殺球、切球、撲球與勾球。若模型輸出未知類別，系統保留為未知。
 
 <figure>
-  <img src="./docs/report_pic/stroke_classification/bst_window.png">
+  <img src="./report_pic/stroke_classification/bst_window.png">
   <figcaption>依相鄰擊球時刻建立 BST 的 100 幀輸入窗口：(a) 窗口從上一拍延伸到下一拍之後，相鄰窗口彼此重疊；(b)–(d) 為窗口內的球員骨架、場上位置與羽球軌跡</figcaption>
 </figure>
 
 <figure>
-  <img src="./docs/report_pic/stroke_classification/bst_output.png">
+  <img src="./report_pic/stroke_classification/bst_output.png">
   <figcaption>BST 的 25 類預測：類別名稱同時給出擊球者與基礎球種，取最高機率的一類後再改名為報告用的 8 類；第二名的放小球同樣會改名為小球，但機率不會與第一名相加</figcaption>
 </figure>
 
