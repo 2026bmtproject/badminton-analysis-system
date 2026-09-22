@@ -64,3 +64,9 @@ matches/*
 !uv.lock
 !models/yamnet_mean_lr_v1/model.npz
 !models/yamnet_mean_lr_v1/metadata.json
+
+# ---- Experiment bundle (experiments/) ----
+# Ground truth, labelling/eval scripts and result tables are published so the
+# numbers in the report can be reproduced. Videos stay out (see dataset/).
+!experiments/**/*.csv
+!experiments/**/*.json
