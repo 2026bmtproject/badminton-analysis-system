@@ -1,0 +1,21 @@
+{
+  "_comment": "Hand-maintained. Folder code -> where the video came from and which split it belongs to. build_manifest.py merges this with probed video properties to produce videos.json.",
+  "videos": [
+    {"code": "ASG_vs_AA_2020",  "split": "dev",  "youtube_id": "yu9oyMXRGHY", "title": "Anthony Sinisuka GINTING vs Anders ANTONSEN | Indonesia Masters 2020 | Final"},
+    {"code": "ASY_vs_PC_2021",  "split": "dev",  "youtube_id": "TXT-qlniM90", "title": "An Se Young vs Pornpawee Chochuwong | TOYOTA Thailand Open 2021 | QF"},
+    {"code": "CTC_vs_CL_2019",  "split": "dev",  "youtube_id": "-aOI9_JxoWc", "title": "CHOU Tien Chen vs CHEN Long | BWF World Tour Finals 2019 | Group B"},
+    {"code": "MK_vs_CT_2019",   "split": "dev",  "youtube_id": "O669aZhH0LI", "title": "Kento MOMOTA vs CHOU Tien Chen | Fuzhou Open 2019 | Final"},
+    {"code": "PC_vs_PVS_2020",  "split": "dev",  "youtube_id": "Mawo3l3Hb9E", "title": "Pornpawee Chochuwong vs Pusarla V. Sindhu | HSBC BWF World Tour Finals 2020 | QF"},
+    {"code": "RI_vs_PVS_2021",  "split": "dev",  "youtube_id": "o51ingUOU20", "title": "Ratchanok Intanon vs Pusarla V. Sindhu | TOYOTA Thailand Open 2021 | QF"},
+    {"code": "TTY_vs_ASY_2023", "split": "dev",  "youtube_id": "XesqR0mQhbM", "title": "Tai Tzu Ying vs An Se Young | YONEX All England Open 2023 | SF"},
+    {"code": "test1",           "split": "test", "youtube_id": "uuZWoUBVVUk", "title": "Nguyen Thuy Linh vs Unnati Hooda | Precision, patience and tactical play"},
+    {"code": "test2",           "split": "test", "youtube_id": "SYyvDrUgClc", "title": "CHOU Tien Chen vs Kento MOMOTA | Denmark Open 2018 | Final"},
+    {"code": "test3",           "split": "test", "youtube_id": "xhUi2KpmVkI", "title": "Kento MOMOTA vs CHOU Tien Chen | Fuzhou Open 2018 | Final"},
+    {"code": "test4",           "split": "test", "youtube_id": "eugfCRwSBJo", "title": "Kento MOMOTA vs CHOU Tien Chen | Korea Open 2019 | Final"},
+    {"code": "test5",           "split": "test", "youtube_id": "li1sbr6S34g", "title": "CHOU Tien Chen vs NG Ka Long Angus | Sudirman Cup 2019 | Group Stage"},
+    {"code": "test6",           "split": "test", "youtube_id": "Y0tCJ6DWXKM", "title": "CHOU Tien Chen vs Kento MOMOTA | Malaysia Open 2018 | QF"},
+    {"code": "test7",           "split": "test", "youtube_id": "y6QbtrTV-K0", "title": "CHEN Long vs CHOU Tien Chen | Denmark Open 2019 | QF"},
+    {"code": "test8",           "split": "test", "youtube_id": "8E98Gpk-fOM", "title": "CHOU Tien Chen vs Jonatan CHRISTIE | Sudirman Cup 2019 | QF"},
+    {"code": "test9",           "split": "test", "youtube_id": "32j2Tg64Zbg", "title": "Anders ANTONSEN vs CHOU Tien Chen | Fuzhou Open 2019 | SF"}
+  ]
+}
