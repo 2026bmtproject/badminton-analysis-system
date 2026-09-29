@@ -19,12 +19,18 @@ experiments/
 │   ├── verify_video.py         確認你的影片和實驗時用的是同一支
 │   ├── video_fingerprint.py    比對影片用的共用邏輯
 │   └── build_manifest.py       產生 videos.json / videos.md〔維護者用〕
-└── match_segmentation/         賽事影片分段
+├── match_segmentation/         賽事影片分段
+│   ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
+│   ├── ans/                    真值，一場一個 csv
+│   ├── eval_segments.py        評分程式
+│   ├── results/                評分結果（由 eval_segments.py 產生）
+│   └── label_segments.py       標記程式〔維護者用〕
+└── court_detection/            場地偵測
     ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
-    ├── ans/                    真值，一場一個 csv
-    ├── eval_segments.py        評分程式
-    ├── results/                評分結果（由 eval_segments.py 產生）
-    └── label_segments.py       標記程式〔維護者用〕
+    ├── ans/                    真值，一場一個 json
+    ├── eval_court.py           評分程式
+    ├── results/                評分結果（由 eval_court.py 產生）
+    └── label_court.py          標記程式〔維護者用〕
 ```
 
 其他模組之後會以相同形狀加進來。
@@ -73,8 +79,4 @@ uv run python experiments/dataset/verify_video.py --all
 
 ## 三、跑評分
 
-各模組的跑法見該模組資料夾裡的 `README.md`。以賽事影片分段為例：
-
-```
-uv run python experiments/match_segmentation/eval_segments.py
-```
+各模組的跑法見該模組資料夾裡的 `README.md`。

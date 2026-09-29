@@ -1,0 +1,17 @@
+split,match,hits,TL,TR,BR,BL,max_dist_center
+dev,ASG_vs_AA_2020,3,miss,hit,hit,hit,10.43
+dev,ASY_vs_PC_2021,4,hit,hit,hit,hit,3.74
+dev,CTC_vs_CL_2019,0,miss,miss,miss,miss,395.72
+dev,MK_vs_CT_2019,4,hit,hit,hit,hit,3.31
+dev,PC_vs_PVS_2020,4,hit,hit,hit,hit,3.6
+dev,RI_vs_PVS_2021,4,hit,hit,hit,hit,3.62
+dev,TTY_vs_ASY_2023,4,hit,hit,hit,hit,4.47
+test,test1,4,hit,hit,hit,hit,3.62
+test,test2,4,hit,hit,hit,hit,6.45
+test,test3,4,hit,hit,hit,hit,2.85
+test,test4,4,hit,hit,hit,hit,5.69
+test,test5,0,miss,miss,miss,miss,440.27
+test,test6,2,hit,hit,miss,miss,69.88
+test,test7,4,hit,hit,hit,hit,5.12
+test,test8,0,miss,miss,miss,miss,33.89
+test,test9,4,hit,hit,hit,hit,2.91
