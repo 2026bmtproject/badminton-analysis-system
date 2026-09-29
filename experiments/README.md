@@ -2,7 +2,7 @@
 
 報告第四章的每一個數字都來自這個資料夾。這裡放的是：
 
-- **人工標記的真值**（各模組的 `ans/`）
+- **人工標記的真值**（各模組的 `ans/`；擊球時刻偵測的真值取自公開資料集 ShuttleSet）
 - **產生真值的標記程式**
 - **算出報告數字的評分程式**
 - **評分結果**（`results/`，由評分程式產生）
@@ -25,12 +25,17 @@ experiments/
 │   ├── eval_segments.py        評分程式
 │   ├── results/                評分結果（由 eval_segments.py 產生）
 │   └── label_segments.py       標記程式〔維護者用〕
-└── court_detection/            場地偵測
+├── court_detection/            場地偵測
+│   ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
+│   ├── ans/                    真值，一場一個 json
+│   ├── eval_court.py           評分程式
+│   ├── results/                評分結果（由 eval_court.py 產生）
+│   └── label_court.py          標記程式〔維護者用〕
+└── event_detection/            擊球時刻偵測
     ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
-    ├── ans/                    真值，一場一個 json
-    ├── eval_court.py           評分程式
-    ├── results/                評分結果（由 eval_court.py 產生）
-    └── label_court.py          標記程式〔維護者用〕
+    ├── ans/                    真值，取自 ShuttleSet（非我們標記，見 ans/SOURCE.md）
+    ├── eval_events.py          評分程式
+    └── results/                評分結果（由 eval_events.py 產生）
 ```
 
 其他模組之後會以相同形狀加進來。
