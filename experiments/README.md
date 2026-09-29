@@ -2,7 +2,7 @@
 
 報告第四章的每一個數字都來自這個資料夾。這裡放的是：
 
-- **人工標記的真值**（各模組的 `ans/`；擊球時刻偵測的真值取自公開資料集 ShuttleSet）
+- **人工標記的真值**（各模組的 `ans/`；擊球時刻偵測與球種分類的真值取自公開資料集 ShuttleSet）
 - **產生真值的標記程式**
 - **算出報告數字的評分程式**
 - **評分結果**（`results/`，由評分程式產生）
@@ -31,11 +31,16 @@ experiments/
 │   ├── eval_court.py           評分程式
 │   ├── results/                評分結果（由 eval_court.py 產生）
 │   └── label_court.py          標記程式〔維護者用〕
-└── event_detection/            擊球時刻偵測
+├── event_detection/            擊球時刻偵測
+│   ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
+│   ├── ans/                    真值，取自 ShuttleSet（非我們標記，見 ans/SOURCE.md）
+│   ├── eval_events.py          評分程式
+│   └── results/                評分結果（由 eval_events.py 產生）
+└── stroke_classification/      球種分類
     ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
-    ├── ans/                    真值，取自 ShuttleSet（非我們標記，見 ans/SOURCE.md）
-    ├── eval_events.py          評分程式
-    └── results/                評分結果（由 eval_events.py 產生）
+    ├── eval_strokes.py         評分程式（真值共用 event_detection/ans/）
+    ├── run_oracle.py           用答案擊球幀重跑球種分類，供對照〔需要 GPU〕
+    └── results/                評分結果（oracle.csv 由 run_oracle.py 產生，其餘由 eval_strokes.py）
 ```
 
 其他模組之後會以相同形狀加進來。
