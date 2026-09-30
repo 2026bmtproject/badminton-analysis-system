@@ -1,0 +1,44 @@
+{
+  "title": "羽球回看練習場",
+  "video": "/generated/demo.mp4",
+  "duration": 44,
+  "players": {
+    "a": "球員 A",
+    "b": "球員 B"
+  },
+  "identities": {
+    "0": {
+      "top": "a",
+      "bottom": "b"
+    },
+    "1": {
+      "top": "a",
+      "bottom": "b"
+    },
+    "3": {
+      "top": "b",
+      "bottom": "a"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "full",
+      "name": "完整示範",
+      "stages": [
+        "segments",
+        "scores",
+        "events",
+        "strokes",
+        "audio_signals",
+        "highlights",
+        "commentary",
+        "commentary_segments"
+      ]
+    },
+    {
+      "id": "minimal",
+      "name": "僅回合與擊球",
+      "stages": ["segments", "scores", "events"]
+    }
+  ]
+}

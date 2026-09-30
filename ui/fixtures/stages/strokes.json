@@ -1,0 +1,172 @@
+{
+  "strokes": [
+    {
+      "event_index": 0,
+      "frame": 62,
+      "segment_index": 0,
+      "player": "top",
+      "stroke_type": "發球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 1,
+      "frame": 100,
+      "segment_index": 0,
+      "player": "bottom",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 2,
+      "frame": 137,
+      "segment_index": 0,
+      "player": "top",
+      "stroke_type": "殺球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 3,
+      "frame": 175,
+      "segment_index": 0,
+      "player": "bottom",
+      "stroke_type": "小球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 4,
+      "frame": 212,
+      "segment_index": 0,
+      "player": "top",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 5,
+      "frame": 287,
+      "segment_index": 1,
+      "player": "top",
+      "stroke_type": "發球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 6,
+      "frame": 325,
+      "segment_index": 1,
+      "player": "bottom",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 7,
+      "frame": 362,
+      "segment_index": 1,
+      "player": "top",
+      "stroke_type": "殺球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 8,
+      "frame": 400,
+      "segment_index": 1,
+      "player": "bottom",
+      "stroke_type": "小球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 9,
+      "frame": 425,
+      "segment_index": 1,
+      "player": "top",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 10,
+      "frame": 462,
+      "segment_index": 1,
+      "player": "bottom",
+      "stroke_type": "切球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 11,
+      "frame": 562,
+      "segment_index": 2,
+      "player": "top",
+      "stroke_type": "發球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 12,
+      "frame": 600,
+      "segment_index": 2,
+      "player": "bottom",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 13,
+      "frame": 637,
+      "segment_index": 2,
+      "player": null,
+      "stroke_type": "未知球種",
+      "confidence": 0.0
+    },
+    {
+      "event_index": 14,
+      "frame": 725,
+      "segment_index": 2,
+      "player": "bottom",
+      "stroke_type": "小球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 15,
+      "frame": 762,
+      "segment_index": 2,
+      "player": "top",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 16,
+      "frame": 800,
+      "segment_index": 2,
+      "player": "bottom",
+      "stroke_type": "切球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 17,
+      "frame": 887,
+      "segment_index": 3,
+      "player": "top",
+      "stroke_type": "發球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 18,
+      "frame": 925,
+      "segment_index": 3,
+      "player": "bottom",
+      "stroke_type": "高遠球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 19,
+      "frame": 975,
+      "segment_index": 3,
+      "player": "top",
+      "stroke_type": "殺球",
+      "confidence": 0.91
+    },
+    {
+      "event_index": 20,
+      "frame": 1025,
+      "segment_index": 3,
+      "player": "bottom",
+      "stroke_type": "小球",
+      "confidence": 0.91
+    }
+  ]
+}

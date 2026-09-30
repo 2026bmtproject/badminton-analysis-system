@@ -1,0 +1,52 @@
+[
+  {
+    "schema_version": "commentary-segment-v1",
+    "segment_index": 0,
+    "rally": {
+      "segment_index": 0,
+      "events": [
+        {
+          "segment_index": 0,
+          "stroke_index": 0,
+          "frame": 62,
+          "time_sec": 2.48,
+          "player": "a",
+          "text": "球員 A 以發球展開來回。",
+          "source_fact_ids": ["rally:0:stroke:0"]
+        }
+      ],
+      "summary": null
+    },
+    "identity": {},
+    "tactical": {},
+    "commentary": {},
+    "runtime": {}
+  },
+  {
+    "schema_version": "commentary-segment-v1",
+    "segment_index": 1,
+    "rally": {
+      "segment_index": 1,
+      "events": [
+        {
+          "segment_index": 1,
+          "stroke_index": 7,
+          "frame": 362,
+          "time_sec": 14.48,
+          "player": "a",
+          "text": "隨選更新：球員 A 以殺球壓迫對手。",
+          "source_fact_ids": ["rally:1:stroke:7", "rally:1:stroke:7:pose"]
+        }
+      ],
+      "summary": {
+        "segment_index": 1,
+        "text": "隨選賽評覆寫此片段的整體解讀。",
+        "source_fact_ids": ["rally:1:stroke:7"]
+      }
+    },
+    "identity": {},
+    "tactical": {},
+    "commentary": {},
+    "runtime": {}
+  }
+]

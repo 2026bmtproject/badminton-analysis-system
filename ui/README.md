@@ -1,0 +1,96 @@
+# Match Intelligence Console
+
+這個 Vue／TypeScript 前端把後端既有分析 artifact 轉成可同步操作的影片、片段、擊球與多軌時間軸。前端只呈現後端可保證的資料，不推導勝者、比分轉換、精華政策或不存在的賽評。
+
+## 架構
+
+```text
+backend stage JSON / local catalog
+  → scripts/adapter.ts（後端 schema 驗證、跨 artifact join）
+  → cached/runtime JSON
+  → src/data/matchParser.ts（runtime 驗證、明確支援的舊 cache 相容）
+  → src/domain/models.ts（唯一前端 domain 與 capabilities）
+  → src/data/matchRepository.ts（catalog／已匯入 MatchModel 載入驗證）
+  → src/state/useReviewWorkspace.ts（selected state、video clock、唯一跨元件 seek）
+  → src/temporal/timeline.ts（共同 viewport 與 time ↔ percent）
+  → workspace / player / inspector / timeline presentation components
+```
+
+`ReviewPlayer` 是 analysis-aware video player，HTMLVideoElement 是唯一播放時鐘；`useReviewWorkspace` 由它更新 active Rally，並獨立保留使用者 selected Rally／Stroke。Match Bar 與 Watch current context 只代表 active playback；Inspector、全場 Rally locator 與 Timeline selection 代表 selected analysis state。片段、擊球、精華與賽評 marker 都經同一個 `seek()`。
+
+Timeline 的 Full Match／Fit Rally Temporal Lens 共用同一 viewport 與 time ↔ percent 映射。Full Match 保留全場尺度；Fit Rally 顯示局部精確 Stroke 證據。Rally lane 會選取 owning Rally 並 seek 點擊的 exact time；Score、Cheer、Highlight 使用 owning Rally start；Stroke 與賽評證據使用 exact Stroke time。播放器全場 locator 與 Timeline local locator 以相同 Rally index grammar 註冊全場／局部位置。
+
+Capabilities 由 adapter 的 stage state 與實際逐片段資料集中產生。optional artifact 缺失或錯誤只關閉對應軌道／內容，不阻止 segments 可用的比賽載入。`null` 保留為缺資料，`0` 保留為合法觀察值。
+
+賽評支援 `stages/commentary/commentary.json` 的 `commentary-rallies-v1` 全場 artifact，以及沒有全場 `status.json` 的 `stages/commentary/segments/segment_*.json` `commentary-segment-v1` 隨選 artifact。全場資料是基底；同片段的有效隨選結果以整個 Rally 為單位覆寫。前端分開保留全場 stage state 與逐片段可用率，不會因一筆隨選結果宣稱全場完成。事件以 full-match `stroke_index` 精確 join `Stroke.eventIndex` 並保留 backend `time_sec`；摘要沒有時間，不進 Timeline。`source_fact_ids` 原樣保留，只有精確的 `rally:<segment>:stroke:<eventIndex>` 可導向既有 Stroke，其他依據安全顯示為未解析 provenance。前端只讀既有 artifact，不合成或觸發賽評。
+
+後端 `modules/**`、`matches/**` 與 root pipeline 對此前端是唯讀資料來源。匯入器不修改 stages，也不載入 pose/shuttle 大型 JSON 至首屏。
+
+## 日常操作（Windows PowerShell）
+
+首次安裝：
+
+```powershell
+cd <repository>\ui
+npm.cmd ci
+```
+
+重新匯入既有真實分析結果並啟動：
+
+```powershell
+cd <repository>
+. .\windows-env.ps1
+cd ui
+npm.cmd run import:match -- yt_u7yDYU4b7CU
+npm.cmd run dev -- --port 5173 --strictPort
+```
+
+開啟 `http://127.0.0.1:5173`。啟動本身不分析、不下載模型、不呼叫 API。影片由既有 Vite plugin 經已登錄的同源 `/local-video/<id>` 路由提供，支援 Range；不接受任意本機路徑。
+
+示範資料：
+
+```powershell
+npm.cmd run demo
+npm.cmd run dev -- --port 5173 --strictPort
+```
+
+## 資料與語意
+
+- 真實 catalog：`public/matches/`；影片登錄：`.local/`。兩者為本機生成資料且不進 Git。
+- fixtures：`fixtures/`，由 `scripts/generate-data.ts` 產生互動驗證資料。
+- Score 只呈現 backend segment final score，不以前後片段推導。
+- Highlight 是後端 ranking score，不是機率或自動選片。
+- Cheer confidence 是訊號值，不宣稱 calibrated probability；`cheer_intensity: null` 不等於 `0`。
+- Identity 缺映射時維持畫面上方／下方／未知，不猜測姓名。
+- Commentary summary 是無時間的 Rally 內容；只有 production Commentary event 能成為 Timeline marker。
+
+## 目錄
+
+- `scripts/`：artifact adapter、真實匯入、受限影片路由與可重現的合成示範資料。
+- `src/domain/`：canonical frontend model 與 capabilities。
+- `src/data/`：catalog／MatchModel repository boundary。
+- `src/state/`：review workspace temporal/selection state。
+- `src/temporal/`：timeline viewport 與座標映射。
+- `src/components/workspace|inspector|timeline/`：純 presentation 與使用者事件。
+- `src/styles/`：design tokens 與 workspace、timeline、inspector、responsive styles。
+- `tests/`：adapter、資料匯入、playback 與 temporal invariants。
+
+## UI engineering rules
+
+- `src/styles/tokens.css` 是顏色、字級、間距、控制尺寸、圓角、陰影、層級與 motion 的唯一系統來源；元件樣式使用語意 token。
+- `AppIcon.vue` 是介面圖示的單一 `currentColor` outline/fill 系統。不要加入 emoji、第二套 icon library 或任意 inline SVG。
+- 重要控制至少使用 compact 36px hit area；小型 timeline 視覺 marker 的互動面積與圖形本身分開。
+- Match Library 是 overlay navigation，不是常駐 workspace 欄。桌面 Analysis 使用 Player／Inspector 並在下方共用 Timeline；900px 以下 Analysis 順序為 media／inspector／timeline，Watch 順序為 media／timeline／inspector。
+- Presentation component 只讀 `MatchModel`。Backend snake_case 只能存在於 `scripts/adapter.ts`，或 `matchParser.ts` 明確支援的舊 cache normalization。
+- `active` 表示影片播放位置，`selected` 表示使用者正在查看；不得用播放更新覆蓋 inspection selection。
+
+## 驗證
+
+```powershell
+npx.cmd --no-install vue-tsc --noEmit --noUnusedLocals --noUnusedParameters
+npm.cmd test
+npm.cmd run build
+npm.cmd ls --depth=0
+```
+
+人工驗證至少涵蓋：真實匯入影片的前／中／後段 Range seek；Rally、Score、Stroke、Cheer、Highlight 的選取與時間定位；active playback 與 selected analysis 狀態分離；缺失或錯誤 optional stage；鍵盤與 IME；以及 375×812、900×800、1280×800、1536×900 下無水平溢出。瀏覽器 console 不應有 error／warning，首屏不得下載 pose 或 shuttle artifact。

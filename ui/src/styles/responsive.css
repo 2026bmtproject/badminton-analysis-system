@@ -1,0 +1,168 @@
+@media (max-width: 1150px) {
+  .topbar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .match-identity {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .header-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+@media (max-width: 900px) {
+  .rally-detail-macro {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .review-main {
+    padding: var(--space-4);
+  }
+  .rally-panel {
+    width: 100%;
+    height: clamp(30rem, 68vh, 42rem);
+    min-height: 0;
+    border: 0;
+  }
+}
+@media (max-width: 760px) {
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    min-height: 0;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+  .header-navigation {
+    flex: 1 1 auto;
+  }
+  .header-actions {
+    margin-left: auto;
+  }
+  .match-identity {
+    order: 3;
+    width: 100%;
+    gap: var(--space-2);
+  }
+  .player-name {
+    font-size: var(--type-meta);
+    font-weight: var(--weight-regular);
+  }
+  .match-score-context {
+    min-width: 96px;
+  }
+  .match-score-context strong {
+    font-size: 28px;
+    line-height: 30px;
+  }
+  .review-main {
+    padding: var(--space-3);
+    overflow-x: clip;
+  }
+  .control-row {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .now-playing {
+    order: 4;
+    width: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
+  .player-icon-button {
+    width: var(--control-compact);
+  }
+  .controls {
+    padding: var(--space-1) var(--space-3) var(--space-3);
+  }
+  .intelligence-timeline {
+    padding: var(--space-3);
+  }
+  .timeline-header {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+  .timeline-header > span {
+    text-align: right;
+  }
+  .timeline-controls {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+  .track-filters {
+    grid-template-columns: max-content;
+  }
+  .timeline-surface {
+    --timeline-group-label: 44px;
+    --timeline-lane-label: 40px;
+  }
+  .timeline-band-label,
+  .timeline-lane-label {
+    padding-inline: var(--space-1);
+  }
+  .detail-scroll {
+    padding: var(--space-3);
+  }
+  .rally-facts {
+    grid-template-columns: 1fr;
+  }
+  .rally-facts > div {
+    padding-right: 0;
+  }
+  .rally-facts > div + div {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    padding-left: 0;
+    border-top: 1px solid var(--line-structure);
+    border-left: 0;
+  }
+  .hit-list > button {
+    grid-template-columns: 28px 68px minmax(60px, 1fr) minmax(54px, auto);
+    gap: var(--space-1);
+  }
+}
+@media (max-width: 420px) {
+  .match-identity {
+    align-items: center;
+  }
+  .player-name {
+    max-width: none;
+  }
+  .timeline-header {
+    grid-template-columns: 1fr;
+  }
+  .timeline-header > span {
+    text-align: left;
+  }
+  .timeline-controls {
+    grid-column: 1;
+    flex-wrap: wrap;
+  }
+  .score-section {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .detail-title {
+    align-items: flex-start;
+  }
+  .hit-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+  .loading-indicator {
+    animation: none;
+    border-top-color: var(--color-border-strong);
+  }
+}
