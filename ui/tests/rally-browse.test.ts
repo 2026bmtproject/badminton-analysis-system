@@ -161,35 +161,16 @@ test("route identity uses canonical Rally.id and Stroke.eventIndex without neare
   assert.equal(canonicalInteger("-1"), null);
 });
 
-test("Rally Detail keeps one fixed local ReviewTimeline and URL replacement paths", () => {
-  const page = readFileSync("src/pages/RallyDetailPage.vue", "utf8");
-  const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  assert.match(page, /mode="rally-detail"/);
-  assert.match(
-    page,
-    /router\.replace\(detailLocation\(rally\.value!, stroke\)\)/,
-  );
-  assert.match(
-    page,
-    /router\.push\(detailLocation\(target\.rally, target\.stroke\)\)/,
-  );
-  assert.match(page, /workspace\.selectRally\(target\)/);
-  assert.match(page, /workspace\.selectStroke\(stroke\)/);
-  assert.match(timeline, /mode === "rally-detail"/);
-  assert.match(timeline, /v-if="mode === 'review'" class="fit-controls"/);
-  assert.doesNotMatch(page, /selectedCommentaryEvent/);
-});
-
-test("Review exposes one route to Rally Detail and no competing embedded browser", () => {
+test("Rallies opens the shared Review player at a canonical segment", () => {
+  const browser = readFileSync("src/components/inspector/RallyBrowser.vue", "utf8");
   const inspector = readFileSync(
     "src/components/inspector/RallyInspector.vue",
     "utf8",
   );
   const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.doesNotMatch(inspector, /RallyBrowser/);
-  assert.match(inspector, />\s*開啟片段\s*<\/button>/);
-  assert.match(
-    review,
-    /query: stroke \? \{ stroke: String\(stroke\.eventIndex\) \} : \{\}/,
-  );
+  assert.match(browser, /query: \{ segment: String\(rally\.id\) \}/);
+  assert.match(review, /resolveRouteRally\(model\.value, segment\)/);
+  assert.match(review, /workspace\.selectStroke\(stroke\)/);
+  assert.match(review, /workspace\.selectRally\(rally\)/);
+  assert.doesNotMatch(inspector, /開啟片段/);
 });

@@ -13,10 +13,6 @@
   }
 }
 @media (max-width: 900px) {
-  .rally-detail-macro {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-3);
-  }
   .review-main {
     padding: var(--space-4);
   }

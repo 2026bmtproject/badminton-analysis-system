@@ -111,12 +111,10 @@ const props = withDefaults(
     activeStrokeIndex?: number | null;
     scoreContextId?: number | null;
     showHeader?: boolean;
-    mode?: "review" | "rally-detail";
     timelineMode?: TimelineMode | "all";
     compactRail?: boolean;
   }>(),
   {
-    mode: "review",
     timelineMode: "all",
     activeStrokeIndex: null,
     scoreContextId: null,
@@ -230,24 +228,7 @@ const selectedRally = computed(
   () =>
     props.model.rallies.find((rally) => rally.id === props.selectedId) ?? null,
 );
-if (props.mode === "rally-detail") {
-  fit.value = "rally";
-  renderViewport.value = fitViewport(
-    "rally",
-    props.model.duration,
-    selectedRally.value,
-  );
-  lensProgress.value = 1;
-}
 watch([() => props.selectedId, () => props.model.duration], (id) => {
-  if (props.mode === "rally-detail") {
-    cancelLens();
-    fit.value = "rally";
-    renderViewport.value = authoritativeViewport("rally");
-    lensProgress.value = 1;
-    scheduleInspectionRestore();
-    return;
-  }
   if (id[0] === null && fit.value === "rally") {
     setFit("match", false);
     return;
@@ -904,7 +885,7 @@ const timelineStyle = computed(() => ({
         {{ formatTime(renderViewport.durationSec) }}<template v-if="zoomLevel > 1.05"> · {{ zoomLevel.toFixed(1) }}×</template></span
       >
       <div class="timeline-controls">
-        <div v-if="mode === 'review'" class="fit-controls">
+        <div class="fit-controls">
           <button
             v-if="density === 'full'"
             type="button"

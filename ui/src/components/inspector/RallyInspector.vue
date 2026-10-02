@@ -15,15 +15,11 @@ const emit = defineEmits<{
   back: [];
   stroke: [stroke: StrokeModel];
   evidence: [evidence: EvidenceModel];
-  open: [rally: RallyModel, stroke: StrokeModel | null];
   previousStroke: [];
   nextStroke: [];
 }>();
 const active = computed(() =>
   props.model.rallies.find((rally) => rally.id === props.activeId) ?? null,
-);
-const activeStroke = computed(() =>
-  active.value?.hits?.find((stroke) => stroke.eventIndex === props.activeStrokeIndex) ?? null,
 );
 </script>
 
@@ -45,8 +41,5 @@ const activeStroke = computed(() =>
       @previous-stroke="emit('previousStroke')"
       @next-stroke="emit('nextStroke')"
     />
-    <div v-if="active" class="inspector-open-rally">
-      <button type="button" @click="emit('open', active, activeStroke)">開啟片段</button>
-    </div>
   </aside>
 </template>

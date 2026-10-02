@@ -22,7 +22,6 @@ const emit = defineEmits<{
   rally: [rally: RallyModel];
   stroke: [stroke: StrokeModel];
   evidence: [evidence: EvidenceModel];
-  open: [rally: RallyModel, stroke: StrokeModel | null];
   previousStroke: [];
   nextStroke: [];
   back: [];
@@ -41,9 +40,6 @@ const context = computed(() =>
     props.currentTime,
   ),
 );
-function forwardOpen(rally: RallyModel, stroke: StrokeModel | null) {
-  emit("open", rally, stroke);
-}
 function measureDensity() {
   if (root.value) density.value = resolveAnalysisDensity(root.value.clientWidth);
 }
@@ -82,7 +78,6 @@ onBeforeUnmount(() => observer?.disconnect());
       @rally="emit('rally', $event)"
       @stroke="emit('stroke', $event)"
       @evidence="emit('evidence', $event)"
-      @open="forwardOpen"
       @previous-stroke="emit('previousStroke')"
       @next-stroke="emit('nextStroke')"
       @back="emit('back')"

@@ -27,7 +27,7 @@ test("valid Match selection resolves the exact catalog identity", () => {
   assert.equal(resolved.params.matchId, "yt_u7yDYU4b7CU");
 });
 
-test("Rallies and canonical Rally Detail are MatchShell child routes", () => {
+test("Rallies remains a MatchShell child and old detail links redirect into Review", () => {
   const router = createAppRouter(createMemoryHistory());
   assert.equal(
     router.resolve({ name: "match-rallies", params: { matchId: "match:real" } })
@@ -42,6 +42,15 @@ test("Rallies and canonical Rally Detail are MatchShell child routes", () => {
     }).fullPath,
     "/matches/match:real/rallies/42?stroke=671",
   );
+  const matchRoute = routes.find((route) => route.path === "/matches/:matchId");
+  const detailRoute = matchRoute?.children?.find((route) => route.name === "rally-detail");
+  assert.equal(typeof detailRoute?.redirect, "function");
+  const redirect = detailRoute!.redirect as (to: unknown) => unknown;
+  assert.deepEqual(redirect({ params: { matchId: "match:real", segmentId: "42" }, query: { stroke: "671" } }), {
+    name: "match-review",
+    params: { matchId: "match:real" },
+    query: { segment: "42", stroke: "671" },
+  });
 });
 
 test("MatchShell loads one exact MatchModel and fails closed for an invalid id", () => {
@@ -92,7 +101,7 @@ test("browser-style back semantics use real links and no duplicate Match Library
   assert.match(shell, /aria-label="比賽導覽"/);
   assert.match(shell, />\s*Review\s*<\/RouterLink>/);
   assert.match(shell, />\s*Rallies\s*<\/RouterLink>/);
-  assert.match(shell, /route\.name === 'rally-detail'/);
+  assert.match(shell, /route\.name === 'match-rallies'/);
   assert.match(review, /aria-label="工作區版面"/);
   assert.doesNotMatch(routePaths, /analysis|watch|highlights|system/i);
   assert.doesNotMatch(

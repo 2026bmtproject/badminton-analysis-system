@@ -21,27 +21,6 @@
   position: absolute;
   inset: 0;
 }
-.rally-detail.rally-detail--page {
-  position: static;
-  inset: auto;
-  max-height: none;
-}
-.rally-detail.rally-detail--page .detail-scroll {
-  overflow: visible;
-}
-.inspector-open-rally {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-3);
-  z-index: 4;
-}
-.inspector-open-rally button {
-  min-height: var(--control-compact);
-  padding: var(--space-2) var(--space-3);
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-strong);
-}
 .inspector-gap-detail {
   padding: var(--space-4);
   color: var(--color-text-secondary);

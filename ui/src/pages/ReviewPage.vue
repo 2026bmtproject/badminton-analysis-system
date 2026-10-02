@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import ReviewPlayer from "../components/ReviewPlayer.vue";
 import ReviewTimeline from "../components/ReviewTimeline.vue";
 import AnalysisWindow from "../components/workspace/AnalysisWindow.vue";
 import WorkspaceWindow from "../components/workspace/WorkspaceWindow.vue";
 import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
 import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
-import type { EvidenceModel, RallyModel, StrokeModel } from "../domain/models";
+import type { EvidenceModel } from "../domain/models";
 import { formatTime, playerName, scoreText } from "../format";
 import { playerShortcutAction } from "../interaction/playerShortcuts";
-import { findStrokeTarget } from "../rallies/rallyRoute";
+import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
 import { hitStatus } from "../review";
 import { useMatchContext } from "../state/matchContext";
 import {
@@ -27,7 +27,6 @@ import { adaptiveDefaultPanelSizes } from "../presentation/workspaceDensity";
 
 const context = useMatchContext();
 const route = useRoute();
-const router = useRouter();
 const { model, workspace } = context;
 const { layout, reset, redockAll } = useWorkspaceLayout();
 const activeWindow = ref<WorkspacePanelId>("analysis");
@@ -72,6 +71,15 @@ const effectiveTimelineDockHeight = computed(() =>
 );
 
 watch(player, (value) => { context.player.value = value; }, { flush: "sync" });
+watch([() => route.query.segment, () => route.query.stroke, model, player], () => {
+  const segment = route.query.segment;
+  if (segment === undefined || !model.value || !player.value) return;
+  const rally = resolveRouteRally(model.value, segment);
+  if (!rally) return;
+  const stroke = route.query.stroke === undefined ? null : resolveRouteStroke(rally, route.query.stroke);
+  if (stroke) workspace.selectStroke(stroke);
+  else workspace.selectRally(rally);
+}, { immediate: true, flush: "post" });
 watch(model, () => {
   if (!timelineModes.value.some((item) => item.id === layout.timelineMode)) layout.timelineMode = "rally";
 }, { flush: "sync" });
@@ -95,9 +103,6 @@ function keyboard(event: KeyboardEvent) {
   if (!action) return;
   event.preventDefault();
   player.value?.handleShortcut(action);
-}
-function openRally(rally: RallyModel, stroke: StrokeModel | null) {
-  void router.push({ name: "rally-detail", params: { matchId: route.params.matchId, segmentId: rally.id }, query: stroke ? { stroke: String(stroke.eventIndex) } : {} });
 }
 function openEvidence(evidence: EvidenceModel) {
   const target = findStrokeTarget(match.value, evidence.eventIndex);
@@ -191,7 +196,7 @@ onBeforeUnmount(() => {
         </WorkspaceWindow>
 
         <WorkspaceWindow title="分析" panel-id="analysis" :panel="layout.panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @presentation="setPresentation('analysis', $event)" @dock-side="setAnalysisSide" @dock-size="setDockSize('analysis', $event)">
-          <AnalysisWindow :model="match" :selected-id="workspace.selectedRallyIndex.value" :active-id="activeId" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-score="workspace.currentScore.value" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" @view="layout.analysisView = $event" @rally="workspace.selectRally" @stroke="workspace.selectStroke" @evidence="openEvidence" @open="openRally" @previous-stroke="workspace.moveStroke(-1)" @next-stroke="workspace.moveStroke(1)" @back="workspace.clearSelection" />
+          <AnalysisWindow :model="match" :selected-id="workspace.selectedRallyIndex.value" :active-id="activeId" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-score="workspace.currentScore.value" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" @view="layout.analysisView = $event" @rally="workspace.selectRally" @stroke="workspace.selectStroke" @evidence="openEvidence" @previous-stroke="workspace.moveStroke(-1)" @next-stroke="workspace.moveStroke(1)" @back="workspace.clearSelection" />
         </WorkspaceWindow>
       </section>
     </main>

@@ -130,10 +130,9 @@ test("winner requires one explicit score increment and known identity", () => {
     assert.equal(winnerFromTransition(before,after,known),null);
 });
 test("Court Map delegates to existing selected stroke action", () => {
-  const page = readFileSync("src/pages/RallyDetailPage.vue", "utf8");
+  const page = readFileSync("src/components/workspace/AnalysisWindow.vue", "utf8");
   const map = readFileSync("src/components/inspector/RallyCourtMap.vue", "utf8");
-  assert.match(page, /<RallyCourtMap[\s\S]*:selected-stroke-index="workspace\.selectedStrokeIndex\.value"[\s\S]*@stroke="selectStroke"/);
-  assert.match(page, /function selectStroke\(stroke: StrokeModel\)[\s\S]*workspace\.selectStroke\(stroke\)/);
+  assert.match(page, /<RallyCourtMap[\s\S]*:selected-stroke-index="activeStrokeIndex"[\s\S]*@stroke="emit\('stroke', \$event\)"/);
   assert.match(map, /@keydown="selectOnKey\(\$event, hit\)"/);
   assert.doesNotMatch(map, /selectedCourtPoint|currentTime\s*=/);
 });

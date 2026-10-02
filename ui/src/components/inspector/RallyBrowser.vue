@@ -134,8 +134,9 @@ function commentaryLabel(rally: RallyModel) {
         class="rally-record"
         :data-rally-id="rally.id"
         :to="{
-          name: 'rally-detail',
-          params: { matchId: $route.params.matchId, segmentId: rally.id },
+          name: 'match-review',
+          params: { matchId: $route.params.matchId },
+          query: { segment: String(rally.id) },
         }"
       >
         <strong class="rally-record-id">{{

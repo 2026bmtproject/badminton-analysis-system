@@ -89,9 +89,7 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
         <RouterLink
           class="match-route-link"
           :aria-current="
-            route.name === 'match-rallies' || route.name === 'rally-detail'
-              ? 'page'
-              : undefined
+            route.name === 'match-rallies' ? 'page' : undefined
           "
           :to="{
             name: 'match-rallies',
