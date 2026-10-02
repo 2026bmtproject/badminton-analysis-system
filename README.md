@@ -75,6 +75,10 @@ uv run python -m modules.highlight_ranking matches/TTYvsASY
 
 輸入為原始影片的第一個音軌與 `stages/match_segmentation/segments.json`，輸出為
 `stages/audio_highlight/audio_signals.json`（`signals` 陣列，每個 segment 一筆）。
+新產生的 artifact 另有 `windows` 陣列，保存推論時已算出的每個 3 秒窗口之
+`segment_index`、`start_sec`、`end_sec` 與 `cheer_probability`。Review 時間軸以
+`(start_sec + end_sec) / 2` 對應全場絕對時間，繪製窗口機率曲線；不跨無資料區間連線。
+舊 artifact 若沒有 `windows`，時間軸顯示無窗口資料，不會用 segment p95 假造曲線。
 
 - `cheer_confidence`：所有窗口 detector evidence 的 p95，並非校準過的 segment probability。
 - `cheer_intensity`：同場偵測為歡呼的窗口，以 log RMS 的 average rank percentile 計算，再取 segment p95；無歡呼時為 `null`，有效的 `0.0` 會保留。

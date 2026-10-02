@@ -319,17 +319,30 @@
   left: 50%;
   background: currentColor;
 }
-.cheer-block {
-  color: var(--color-cheer);
+.cheer-curve {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
 }
-.cheer-block::after {
-  inset: auto;
-  top: 50%;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
+.cheer-curve path {
+  fill: none;
+  stroke: var(--color-cheer);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.cheer-curve-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--type-micro);
+  pointer-events: none;
 }
 .highlight-block {
   color: var(--color-highlight);

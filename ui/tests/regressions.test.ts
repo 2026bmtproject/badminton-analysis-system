@@ -251,30 +251,18 @@ test("player preserves source aspect ratio and long analytical text can wrap", (
   assert.match(inspector, /\.hit-player\s*\{[^}]*overflow-wrap:\s*anywhere/s);
 });
 
-test("full-match cheer is non-interactive overview encoding", () => {
+test("cheer lane draws source window curve without segment score dots", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const styles = readFileSync("src/styles/timeline.css", "utf8");
   const signalSection = timeline.slice(
     timeline.indexOf('class="timeline-band timeline-band--signals"'),
     timeline.indexOf('class="timeline-playhead"'),
   );
-  assert.match(
-    signalSection,
-    /v-for="rally in rallies\.filter\(\(item\) => item\.audio !== null\)"/,
-  );
-  assert.match(
-    signalSection,
-    /left: position\(\(rally\.start \+ rally\.end\) \/ 2\) \+ '%'/,
-  );
-  assert.doesNotMatch(signalSection, /rally\.duration|width:/);
-  assert.match(signalSection, /<span\s+v-for=/);
-  assert.match(signalSection, /aria-hidden="true"/);
-  assert.doesNotMatch(signalSection, /<button[^>]+signal-block/);
-  assert.doesNotMatch(signalSection, /@click=/);
-  assert.match(
-    styles,
-    /\.signal-block\s*\{[^}]*width:\s*1px[^}]*pointer-events:\s*none/s,
-  );
+  assert.match(signalSection, /<svg v-if="cheerPaths\.length" class="cheer-curve"/);
+  assert.match(signalSection, /v-for="\(path, index\) in cheerPaths"/);
+  assert.match(signalSection, /無窗口歡呼資料/);
+  assert.doesNotMatch(signalSection, /item\.audio|cheer-block/);
+  assert.match(styles, /\.cheer-curve path\s*\{[^}]*vector-effect:\s*non-scaling-stroke/s);
 });
 
 test("full-match highlight is non-interactive overview encoding", () => {
@@ -294,7 +282,7 @@ test("full-match highlight is non-interactive overview encoding", () => {
         /left: position\(\(rally\.start \+ rally\.end\) \/ 2\) \+ '%'/g,
       ) ?? []
     ).length,
-    2,
+    1,
   );
   assert.doesNotMatch(signalSection, /rally\.duration|width:/);
   assert.match(styles, /\.highlight-block::after\s*\{[^}]*width:\s*11px/s);
@@ -302,7 +290,7 @@ test("full-match highlight is non-interactive overview encoding", () => {
   assert.doesNotMatch(styles, /\.signal-block:(?:hover|focus-visible)/);
 });
 
-test("rally fit omits temporal cheer and highlight lanes", () => {
+test("rally fit retains window curve but hides segment highlight marks", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const signalStart = timeline.lastIndexOf(
     "<section",
@@ -317,7 +305,9 @@ test("rally fit omits temporal cheer and highlight lanes", () => {
     timeline,
     /const showOverviewSignals = computed\([\s\S]*fit\.value === "match" \|\| lensActive\.value/,
   );
-  assert.match(timeline, /"--lens-overview-opacity": 1 - lensProgress\.value/);
+  assert.match(timeline, /showCheerCurveLane\.value \? 1 : 1 - lensProgress\.value/);
+  assert.match(timeline, /v-if="showCheerCurveLane"/);
+  assert.match(timeline, /v-if="showOverviewSignals && filters\.highlight/);
   assert.doesNotMatch(signalHeader, /fit === 'rally'/);
 });
 
@@ -514,7 +504,7 @@ test("temporal signature remains shape-led and preserves semantic hierarchy", ()
     timeline,
     /\.stroke-tick\s*\{[^}]*width:\s*1px;[^}]*height:\s*12px;/s,
   );
-  assert.match(timeline, /\.cheer-block::after\s*\{[^}]*border-radius:\s*50%/s);
+  assert.match(timeline, /\.cheer-curve path\s*\{[^}]*stroke:\s*var\(--color-cheer\)/s);
   assert.match(
     timeline,
     /\.highlight-block::after\s*\{[^}]*width:\s*11px;[^}]*height:\s*2px;[^}]*rotate\(-20deg\)/s,
@@ -550,7 +540,7 @@ test("signature interaction uses one guarded shortcut path and lane delegation",
   );
   assert.match(
     timeline,
-    /kind === "cheer" \? item\.audio !== null : item\.highlight !== null/,
+    /if \(kind === "cheer"\) \{\s*emit\("seek", timeSec\)/,
   );
   assert.match(timeline, /else emit\("seek", timeSec\)/);
   assert.doesNotMatch(timeline, /<button\s+class="rally-block"/);

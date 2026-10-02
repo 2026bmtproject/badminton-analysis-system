@@ -49,6 +49,12 @@ const signal = z.object({
   cheer_intensity: probability.nullable(),
   n_cheer_windows: index,
 });
+const cheerWindow = z.object({
+  segment_index: index,
+  start_sec: sec,
+  end_sec: sec,
+  cheer_probability: probability,
+});
 const commentaryText = z
   .string()
   .min(1)
@@ -302,13 +308,25 @@ export function adapt(
   );
   const audio = checked(
     "audio_signals",
-    read("audio_signals", z.object({ signals: z.array(signal) })),
+    read("audio_signals", z.object({
+      signals: z.array(signal),
+      windows: z.array(cheerWindow).optional(),
+    })),
     (v) => {
       uniqueSegments(v.signals);
       v.signals.forEach((s) =>
         requireThat(
           (s.n_cheer_windows === 0) === (s.cheer_intensity === null),
           "歡呼支持數不一致",
+        ),
+      );
+      v.windows?.forEach((window) =>
+        requireThat(
+          window.segment_index < segments.length &&
+            window.end_sec > window.start_sec &&
+            window.end_sec <= manifest.duration + 0.001 &&
+            window.start_sec >= segments[window.segment_index].start_sec - 0.001,
+          "歡呼窗口時間或片段索引不合法",
         ),
       );
     },
@@ -585,6 +603,13 @@ export function adapt(
     capabilities: capabilityFromStates(states, availableRallyCount > 0),
     states,
     rallies,
+    cheerTimeline: audio?.windows?.map((window) => ({
+      segmentIndex: window.segment_index,
+      start: window.start_sec,
+      end: window.end_sec,
+      time: (window.start_sec + window.end_sec) / 2,
+      score: window.cheer_probability,
+    })),
     commentaryAvailability,
     fps,
   };

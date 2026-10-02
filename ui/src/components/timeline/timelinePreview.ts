@@ -1,8 +1,8 @@
-import type { RallyModel } from "../../domain/models";
-import { formatPreciseTime, playerName, scoreText } from "../../format";
+import type { CheerWindowModel, RallyModel } from "../../domain/models";
+import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
 
 export type TimelineHoverMark = {
-  kind: "rally" | "score" | "stroke" | "commentary" | "cheer" | "highlight";
+  kind: "rally" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window" | "highlight";
   id: number | string;
 };
 
@@ -11,8 +11,13 @@ export type TimelineHoverPreview = { title: string; lines: string[] };
 export function timelineHoverPreview(
   mark: TimelineHoverMark | null,
   rallies: RallyModel[],
+  cheerWindows: CheerWindowModel[] = [],
 ): TimelineHoverPreview | null {
   if (!mark) return null;
+  if (mark.kind === "cheer-window") {
+    const window = cheerWindows[Number(mark.id)];
+    return window ? { title: formatTime(window.time), lines: [`Cheer probability: ${window.score.toFixed(2)}`] } : null;
+  }
   if (mark.kind === "rally") {
     const rally = rallies.find((item) => item.id === mark.id);
     if (!rally) return null;

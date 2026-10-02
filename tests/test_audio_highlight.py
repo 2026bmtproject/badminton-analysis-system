@@ -120,6 +120,12 @@ def test_module_real_math_and_serialization(tmp_path, audio_boundary):
     assert [s["segment_index"] for s in payload["signals"]] == [0, 1, 2]
     assert [s["cheer_intensity"] for s in payload["signals"]] == [None, 0.0, 1.0]
     assert [s["n_cheer_windows"] for s in payload["signals"]] == [0, 1, 1]
+    assert [(w["segment_index"], w["start_sec"], w["end_sec"]) for w in payload["windows"]] == [
+        (0, 0.0, 3.0), (1, 3.0, 6.0), (2, 6.0, 9.0),
+    ]
+    assert [s["cheer_confidence"] for s in payload["signals"]] == pytest.approx(
+        [w["cheer_probability"] for w in payload["windows"]]
+    )
     assert "highlights" not in payload
     assert not artifact_path(tmp_path, "highlight_ranking").exists()
     state = read_status(stage_path(tmp_path, module.name))

@@ -90,5 +90,14 @@ def infer_signals(
         "aggregation": {"name": "p95_linear", "q": 0.95, "method": "linear"},
         "audio": {**asdict(planner), "filter": FFMPEG_NORMALIZATION_FILTER},
         "window_count": len(windows),
+        "windows": [
+            {
+                "segment_index": window.segment_index,
+                "start_sec": window.start_sec,
+                "end_sec": window.end_sec,
+                "cheer_probability": float(probabilities[index]),
+            }
+            for index, window in enumerate(windows)
+        ],
     }
     return signals, metadata

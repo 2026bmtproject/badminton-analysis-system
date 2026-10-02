@@ -31,6 +31,7 @@ import {
   timelineItems,
   visibleRallies,
 } from "../temporal/timeline";
+import { cheerCurvePaths } from "../temporal/cheerCurve";
 import type { TimelineFit, TimelineViewport } from "../temporal/timeline";
 import TimelineLane from "./timeline/TimelineLane.vue";
 import type { TimelineMode } from "../state/workspaceLayout";
@@ -162,7 +163,7 @@ const inspectionClientX = ref(0);
 const inspectionClientY = ref(0);
 const hoveredMark = ref<TimelineHoverMark | null>(null);
 const hoverPreview = computed(() =>
-  timelineHoverPreview(hoveredMark.value, props.model.rallies),
+  timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline),
 );
 const hoverTooltipSide = computed(() =>
   typeof window === "undefined"
@@ -367,6 +368,12 @@ const showSemanticStrokes = computed(() => semanticRevealProgress.value > 0);
 const showOverviewSignals = computed(
   () => fit.value === "match" || lensActive.value || fit.value === "custom",
 );
+const showCheerCurveLane = computed(() =>
+  filters.cheer && modeShows("cheer") && capability("cheer"),
+);
+const cheerPaths = computed(() =>
+  cheerCurvePaths(props.model.cheerTimeline ?? [], renderViewport.value),
+);
 const detailOpacity = computed(() => semanticRevealProgress.value);
 const position = (timeSec: number) =>
   timeToPercent(timeSec, renderViewport.value);
@@ -386,7 +393,7 @@ const capability = (track: TrackKey) =>
     commentary: props.model.capabilities.commentary,
   })[track];
 function fitOnlyUnavailable(track: TrackKey) {
-  return fit.value === "rally" && (track === "cheer" || track === "highlight");
+  return fit.value === "rally" && track === "highlight";
 }
 function filterDisabled(track: TrackKey) {
   return !capability(track) || fitOnlyUnavailable(track);
@@ -605,10 +612,19 @@ function resolveHoveredMark(
     );
     return stroke ? { kind, id: stroke.eventIndex } : null;
   }
-  if (kind === "cheer" || kind === "highlight") {
-    const candidates = rallies.value.filter((item) =>
-      kind === "cheer" ? item.audio !== null : item.highlight !== null,
-    );
+  if (kind === "cheer") {
+    const windows = props.model.cheerTimeline ?? [];
+    let nearestIndex = -1;
+    let distance = Number.POSITIVE_INFINITY;
+    windows.forEach((window, index) => {
+      if (timeSec < window.start || timeSec > window.end) return;
+      const next = Math.abs(window.time - timeSec);
+      if (next < distance) { nearestIndex = index; distance = next; }
+    });
+    return nearestIndex < 0 ? null : { kind: "cheer-window" as const, id: nearestIndex };
+  }
+  if (kind === "highlight") {
+    const candidates = rallies.value.filter((item) => item.highlight !== null);
     const rally = nearestTemporalMark(
       candidates,
       timeSec,
@@ -791,10 +807,12 @@ function clickTimeline(event: MouseEvent) {
     else emit("seek", timeSec);
     return;
   }
-  if (kind === "cheer" || kind === "highlight") {
-    const candidates = rallies.value.filter((item) =>
-      kind === "cheer" ? item.audio !== null : item.highlight !== null,
-    );
+  if (kind === "cheer") {
+    emit("seek", timeSec);
+    return;
+  }
+  if (kind === "highlight") {
+    const candidates = rallies.value.filter((item) => item.highlight !== null);
     const markerId =
       target.closest<HTMLElement>(".signal-block")?.dataset.rallyId;
     const rally =
@@ -844,7 +862,7 @@ function scoreLabelSide(rally: RallyModel) {
 const timelineStyle = computed(() => ({
   "--lens-detail-progress": lensProgress.value,
   "--lens-detail-opacity": detailOpacity.value,
-  "--lens-overview-opacity": 1 - lensProgress.value,
+  "--lens-overview-opacity": showCheerCurveLane.value ? 1 : 1 - lensProgress.value,
   "--lens-stroke-height":
     STROKE_LANE_BASE_HEIGHT_PX +
     STROKE_DETAIL_HEIGHT_PX * lensProgress.value +
@@ -854,9 +872,9 @@ const timelineStyle = computed(() => ({
     STROKE_DETAIL_HEIGHT_PX * lensProgress.value +
     "px",
   "--lens-signal-height":
-    SIGNAL_LANE_HEIGHT_PX * (1 - lensProgress.value) + "px",
+    SIGNAL_LANE_HEIGHT_PX * (showCheerCurveLane.value ? 1 : 1 - lensProgress.value) + "px",
   "--lens-signal-margin":
-    SIGNAL_LANE_MARGIN_PX * (1 - lensProgress.value) + "px",
+    SIGNAL_LANE_MARGIN_PX * (showCheerCurveLane.value ? 1 : 1 - lensProgress.value) + "px",
 }));
 </script>
 
@@ -1097,10 +1115,8 @@ const timelineStyle = computed(() => ({
 
       <section
         v-if="
-          showOverviewSignals &&
-          (modeShows('cheer') || modeShows('highlight')) &&
-          ((filters.cheer && capability('cheer')) ||
-            (filters.highlight && capability('highlight')))
+          showCheerCurveLane ||
+          (showOverviewSignals && filters.highlight && modeShows('highlight') && capability('highlight'))
         "
         class="timeline-band timeline-band--signals"
         aria-label="訊號"
@@ -1110,32 +1126,18 @@ const timelineStyle = computed(() => ({
         </header>
         <div class="timeline-band-tracks">
           <TimelineLane
-            v-if="filters.cheer && modeShows('cheer') && capability('cheer')"
+            v-if="showCheerCurveLane"
             kind="cheer"
             label="歡呼"
-            description="片段歡呼屬性軌道"
+            description="歡呼機率時間曲線"
           >
-            <span
-              v-for="rally in rallies.filter((item) => item.audio !== null)"
-              :key="`cheer-${rally.id}`"
-              class="signal-block cheer-block"
-              :class="{
-                selected: selectedId === rally.id,
-                active: activeId === rally.id,
-                hovered:
-                  hoveredMark?.kind === 'cheer' && hoveredMark.id === rally.id,
-              }"
-              :data-rally-id="rally.id"
-              :style="{
-                left: position((rally.start + rally.end) / 2) + '%',
-                '--signal-opacity':
-                  0.22 + (rally.audio?.confidence ?? 0) * 0.78,
-              }"
-              aria-hidden="true"
-            />
+            <svg v-if="cheerPaths.length" class="cheer-curve" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <path v-for="(path, index) in cheerPaths" :key="`${path.segmentIndex}-${index}`" :d="path.d" />
+            </svg>
+            <span v-else class="cheer-curve-empty">無窗口歡呼資料</span>
           </TimelineLane>
           <TimelineLane
-            v-if="filters.highlight && modeShows('highlight') && capability('highlight')"
+            v-if="showOverviewSignals && filters.highlight && modeShows('highlight') && capability('highlight')"
             kind="highlight"
             label="精華"
             description="片段精華屬性軌道"

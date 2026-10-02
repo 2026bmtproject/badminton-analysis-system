@@ -58,6 +58,13 @@ const legacyCheer = z
   }));
 
 const cheer = z.union([canonicalCheer, legacyCheer]);
+const cheerWindow = z.object({
+  segmentIndex: z.number().int().nonnegative(),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+  time: z.number().nonnegative(),
+  score: z.number().min(0).max(1),
+});
 
 const evidence = z.object({
   id: z.string(),
@@ -177,12 +184,27 @@ const matchEnvelope = z
     players: z.object({ a: z.string(), b: z.string() }),
     states: z.record(z.string(), stageState),
     rallies: z.array(rally),
+    cheerTimeline: z.array(cheerWindow).optional(),
     commentaryAvailability: commentaryAvailability.optional(),
     layoutOnly: z.boolean().optional(),
     fps: z.number().positive().optional(),
     source: source.optional(),
   })
   .superRefine((match, context) => {
+    match.cheerTimeline?.forEach((window, index) => {
+      if (
+        !Number.isFinite(window.start) || !Number.isFinite(window.end) ||
+        window.end <= window.start || window.end > match.duration + TIMELINE_EPSILON_SEC ||
+        Math.abs(window.time - (window.start + window.end) / 2) > TIMELINE_EPSILON_SEC ||
+        !match.rallies.some((rally) => rally.id === window.segmentIndex)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["cheerTimeline", index],
+          message: "Cheer window must use its source segment and absolute window center",
+        });
+      }
+    });
     const rallyIds = new Set<number>();
     const eventIndexes = new Set<number>();
     match.rallies.forEach((item, rallyIndex) => {

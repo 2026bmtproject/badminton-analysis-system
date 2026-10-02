@@ -61,6 +61,15 @@ export type CheerModel = {
   windowCount: number;
 };
 
+/** One analyzed audio window, positioned at its absolute match-time center. */
+export type CheerWindowModel = {
+  segmentIndex: number;
+  start: number;
+  end: number;
+  time: number;
+  score: number;
+};
+
 export type EvidenceModel = {
   id: string;
   text: string;
@@ -136,6 +145,7 @@ export type MatchModel = {
   capabilities: MatchCapabilities;
   states: Record<string, StageState>;
   rallies: RallyModel[];
+  cheerTimeline?: CheerWindowModel[];
   commentaryAvailability: CommentaryAvailabilityModel;
   fps?: number;
   source?: MatchSource;
