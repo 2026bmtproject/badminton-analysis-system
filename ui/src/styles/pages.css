@@ -20,6 +20,13 @@
   background: var(--color-chrome);
 }
 
+.matches-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .section-kicker,
 .matches-count,
 .match-shell-identity code,
@@ -54,6 +61,31 @@
 .matches-status {
   color: var(--color-text-secondary);
 }
+
+.match-import-panel {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-soft);
+}
+
+.match-import-heading { display: grid; gap: var(--space-1); }
+.match-import-heading h2 { margin: 0; font-size: var(--type-section); }
+.match-import-heading p,
+.match-import-row small { color: var(--color-text-secondary); }
+.match-import-list { list-style: none; margin: 0; padding: 0; }
+.match-import-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+.match-import-row span { display: grid; min-width: 0; gap: var(--space-1); overflow-wrap: anywhere; }
+.match-import-row button { flex: none; }
 
 .matches-list {
   border-top: 1px solid var(--color-border-strong);

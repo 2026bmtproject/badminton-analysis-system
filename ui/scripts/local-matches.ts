@@ -14,6 +14,7 @@ import { z } from "zod";
 import { adapt, manifestSchema, type Input } from "./adapter";
 import { mediaTool } from "./media-tools";
 import { deriveCourtPositions, invertHomography } from "./court-positions";
+import { parseMatchModel } from "../src/data/matchParser";
 
 export const stageFiles: Record<string, string> = {
   match_segmentation: "segments.json",
@@ -41,6 +42,9 @@ const aliases: Record<string, string> = {
   pose: "pose",
 };
 export const matchIdSchema = z.string().regex(/^[A-Za-z0-9_-]+$/);
+export function matchesRoot(uiRoot: string) {
+  return resolve(process.env.BADMINTON_MATCHES_DIR?.trim() || resolve(uiRoot, "../matches"));
+}
 export type CatalogEntry = { id: string; name: string; url: string };
 export type VideoRegistration = { path: string; size: number; mtimeMs: number };
 
@@ -127,7 +131,7 @@ export async function registerMatch(
 
 export async function importMatch(uiRoot: string, id: string) {
   matchIdSchema.parse(id);
-  const matchRoot = resolve(uiRoot, "../matches", id);
+  const matchRoot = resolve(matchesRoot(uiRoot), id);
   const file = (stage: string) => {
     if (!stageFiles[stage]) throw new Error(`未知上游階段：${stage}`);
     return join(matchRoot, "stages", stage, stageFiles[stage]);
@@ -266,6 +270,8 @@ export async function importMatch(uiRoot: string, id: string) {
     finalStat.mtimeMs !== videoStat.mtimeMs
   )
     throw new Error("匯入期間影片變動");
+  // Do not publish a cache that the browser would reject after import succeeds.
+  parseMatchModel(model);
   await registerMatch(uiRoot, id, manifest.title, model, {
     path: videoPath,
     size: videoStat.size,

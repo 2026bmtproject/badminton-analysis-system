@@ -41,6 +41,8 @@ test("midpoint, single ankle confidence and no-ankle policy", () => {
   assert.deepEqual(both.point, [13,24]); assert.equal(both.source, "ankle_midpoint");
   const one = ankleGroundPoint(pose([[12,23,.8],[14,25,.1]]).frames[0].keypoints)!;
   assert.equal(one.source, "single_ankle"); assert.ok(one.confidence < both.confidence);
+  const overshoot = ankleGroundPoint(pose([[12,23,1.0745],[14,25,1.0354]]).frames[0].keypoints)!;
+  assert.equal(overshoot.confidence, 1);
   assert.equal(ankleGroundPoint(pose([[12,23,.1],[14,25,.1]]).frames[0].keypoints), null);
 });
 test("derive fails closed for hitter, frame, ankles, transform and out-of-court", () => {

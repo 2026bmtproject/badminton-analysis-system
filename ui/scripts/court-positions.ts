@@ -42,7 +42,9 @@ export function ankleGroundPoint(value: unknown) {
     point: [ankles.reduce((sum, ankle) => sum + ankle[0], 0) / ankles.length,
       ankles.reduce((sum, ankle) => sum + ankle[1], 0) / ankles.length] as [number, number],
     source: (ankles.length === 2 ? "ankle_midpoint" : "single_ankle") as "ankle_midpoint" | "single_ankle",
-    confidence: Math.min(...ankles.map((ankle) => ankle[2])) * (ankles.length === 2 ? 1 : 0.65),
+    // Some pose artifacts contain scores slightly above one; the frontend
+    // position confidence is a bounded display value.
+    confidence: Math.min(1, Math.min(...ankles.map((ankle) => ankle[2]))) * (ankles.length === 2 ? 1 : 0.65),
   };
 }
 

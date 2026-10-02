@@ -35,17 +35,19 @@ cd <repository>\ui
 npm.cmd ci
 ```
 
-重新匯入既有真實分析結果並啟動：
+啟動後在 Matches 頁按「匯入比賽」，從 `<repository>/matches/` 選擇已完成分析的資料夾。這會沿用命令列匯入器，驗證 stage 指紋與影片，產生前端快取；不重新執行分析。缺少影片、分段結果或完成狀態的資料夾會列出原因，無法點選。
+
+啟動本機預覽：
 
 ```powershell
 cd <repository>
-. .\windows-env.ps1
 cd ui
-npm.cmd run import:match -- yt_u7yDYU4b7CU
 npm.cmd run dev -- --port 5173 --strictPort
 ```
 
-開啟 `http://127.0.0.1:5173`。啟動本身不分析、不下載模型、不呼叫 API。影片由既有 Vite plugin 經已登錄的同源 `/local-video/<id>` 路由提供，支援 Range；不接受任意本機路徑。
+若使用獨立 worktree，而分析資料仍在另一個 checkout，啟動前設定 `BADMINTON_MATCHES_DIR` 為該 checkout 的 `matches/` 絕對路徑。命令列匯入也使用同一設定：`npm.cmd run import:match -- <資料夾名稱>`。
+
+開啟 `http://127.0.0.1:5173/matches`。啟動本身不分析、不下載模型、不呼叫外部 API。網頁匯入端點只在本機 Vite dev／preview 服務可用；單獨部署靜態 `dist/` 時需要另接本機服務。影片由既有 Vite plugin 經已登錄的同源 `/local-video/<id>` 路由提供，支援 Range；不接受任意本機路徑。
 
 示範資料：
 
