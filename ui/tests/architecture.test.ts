@@ -560,3 +560,14 @@ test("repository and presentation components do not traverse backend artifact fi
     /\b(score_a|score_b|segment_index|stroke_index|source_fact_ids|cheer_confidence|cheer_intensity|n_cheer_windows)\b/,
   );
 });
+
+test("production import delegates artifact semantics and court policy to Python", () => {
+  const importer = readFileSync("scripts/local-matches.ts", "utf8");
+  assert.match(importer, /execFileSync\([\s\S]*modules\.review_export/);
+  assert.doesNotMatch(importer, /deriveCourtPositions|segment_index|cheer_confidence|source_fact_ids/);
+  assert.doesNotMatch(importer, /status\.inputs|fingerprint\(/);
+  assert.equal(
+    readdirSync("scripts").includes("court-positions.ts"),
+    false,
+  );
+});

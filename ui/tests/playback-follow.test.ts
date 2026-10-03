@@ -149,12 +149,12 @@ test("3. half-open intervals assign an exact shared boundary to the new rally", 
   assert.equal(activeRallyAt([firstRally, adjacentRally], 12)?.id, 2);
 });
 
-test("4. real gaps clear rally, stroke and court context while retaining the latest score", () => {
+test("4. real gaps clear rally, stroke, court and segment score observations", () => {
   const context = resolveActiveMatchContext(model, 13);
   assert.equal(context.rally, null);
   assert.equal(context.stroke, null);
-  assert.equal(context.scoreRally?.id, 0);
-  assert.deepEqual(context.score, [1, 0]);
+  assert.equal(context.scoreRally, null);
+  assert.equal(context.score, null);
 });
 
 test("5. all active consumers are wired to the same authoritative context", () => {

@@ -12,8 +12,10 @@ export type CapabilityKey =
 export type MatchCapabilities = Record<CapabilityKey, boolean>;
 
 export type StageState = {
-  status: "available" | "missing" | "error";
+  status: "available" | "missing" | "error" | "stale" | "unknown";
+  usable?: boolean;
   message?: string;
+  fingerprint?: string;
 };
 
 export type ScoreModel = readonly [number, number];
@@ -136,6 +138,7 @@ export type MatchSource = {
 };
 
 export type MatchModel = {
+  schemaVersion?: "review-export-v1";
   players: { a: string; b: string };
   layoutOnly?: boolean;
   title: string;
@@ -161,14 +164,18 @@ export type CatalogEntry = {
 export const capabilityFromStates = (
   states: Record<string, StageState>,
   commentaryAvailable = states.commentary?.status === "available",
-): MatchCapabilities => ({
-  score: states.scores?.status === "available",
-  stroke: states.events?.status === "available",
-  identity: states.identity?.status === "available",
-  cheer: states.audio_signals?.status === "available",
-  highlight: states.highlights?.status === "available",
+): MatchCapabilities => {
+  const usable = (state?: StageState) => state?.usable ??
+    (state?.status === "available" || state?.status === "unknown");
+  return ({
+  score: usable(states.scores),
+  stroke: usable(states.events),
+  identity: usable(states.identity),
+  cheer: usable(states.audio_signals),
+  highlight: usable(states.highlights),
   commentary: commentaryAvailable,
-  court: states.court?.status === "available",
-  pose: states.pose?.status === "available",
-  shuttle: states.shuttle?.status === "available",
-});
+  court: usable(states.court),
+  pose: usable(states.pose),
+  shuttle: usable(states.shuttle),
+  });
+};

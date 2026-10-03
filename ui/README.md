@@ -60,7 +60,7 @@ npm.cmd run dev -- --port 5173 --strictPort
 
 - 真實 catalog：`public/matches/`；影片登錄：`.local/`。兩者為本機生成資料且不進 Git。
 - fixtures：`fixtures/`，由 `scripts/generate-data.ts` 產生互動驗證資料。
-- Score 只呈現 backend segment final score，不以前後片段推導。
+- Score 只呈現 backend 的 segment 記分板觀察，不以前後片段推導，也不延展到片段外。
 - Highlight 是後端 ranking score，不是機率或自動選片。
 - Cheer confidence 是訊號值，不宣稱 calibrated probability；`cheer_intensity: null` 不等於 `0`。
 - Identity 缺映射時維持畫面上方／下方／未知，不猜測姓名。

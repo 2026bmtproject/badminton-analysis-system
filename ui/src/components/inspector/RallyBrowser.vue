@@ -51,14 +51,15 @@ function replaceQuery(
 
 function rallyScore(rally: RallyModel) {
   if (rally.score) return scoreText(rally.score);
-  return props.model.states.scores?.status === "error"
-    ? "比分資料讀取失敗"
-    : "比分未提供";
+  return props.model.states.scores?.status === "error" ? "比分資料讀取失敗"
+    : props.model.states.scores?.status === "stale" ? "比分資料已過期" : "比分未提供";
 }
 
 function commentaryLabel(rally: RallyModel) {
   if (rally.commentary.status === "available") return "賽評可用";
   if (rally.commentary.status === "unsupported") return "賽評不支援";
+  if (props.model.states.commentary?.status === "stale" ||
+    props.model.states.commentary_segments?.status === "stale") return "賽評資料已過期";
   return props.model.states.commentary?.status === "error" ||
     props.model.states.commentary_segments?.status === "error"
     ? "賽評讀取失敗"
@@ -123,6 +124,7 @@ function commentaryLabel(rally: RallyModel) {
           <option v-if="model.capabilities.highlight" value="highlight">
             精華分數
           </option>
+          <option v-if="model.capabilities.cheer" value="cheer">歡呼</option>
         </select>
       </label>
     </div>
@@ -153,9 +155,10 @@ function commentaryLabel(rally: RallyModel) {
         <span>{{
           hitStatus(model.states.events?.status, rally.hits?.length ?? null)
         }}</span>
-        <span v-if="model.capabilities.highlight"
-          >精華 {{ rally.highlight?.toFixed(3) ?? "未提供" }}</span
-        >
+        <span v-if="model.capabilities.highlight || model.capabilities.cheer" class="rally-record-signals">
+          <span v-if="model.capabilities.highlight">精華 {{ rally.highlight?.toFixed(3) ?? "未提供" }}</span>
+          <span v-if="model.capabilities.cheer">歡呼 {{ rally.audio?.confidence.toFixed(2) ?? "未提供" }}</span>
+        </span>
         <span>{{ commentaryLabel(rally) }}</span>
         <AppIcon name="chevron-right" />
       </RouterLink>

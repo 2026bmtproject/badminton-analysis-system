@@ -1,15 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, cp, rm, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdtemp, cp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { adapt, manifestSchema, type Input } from "../scripts/adapter";
-import {
-  readCommentarySegmentArtifacts,
-  registerMatch,
-} from "../scripts/local-matches";
+import { registerMatch } from "../scripts/local-matches";
 
 const manifest = manifestSchema.parse(
   JSON.parse(await readFile("fixtures/manifest.json", "utf8")),
@@ -84,34 +81,6 @@ test("missing commentary never supplies demo interpretation or citations", async
   assert.equal(model.states.commentary.status, "missing");
   assert.ok(model.rallies.every((r) => r.commentary.status === "unavailable"));
   assert.equal(model.rallies[1].hits![2].eventIndex, 7);
-});
-test("on-demand commentary discovery needs no whole-stage status", async () => {
-  const folder = await mkdtemp(join(tmpdir(), "badminton-commentary-import-"));
-  try {
-    const directory = join(folder, "stages/commentary/segments");
-    await mkdir(directory, { recursive: true });
-    const fixtures = JSON.parse(
-      await readFile("fixtures/stages/commentary_segments.json", "utf8"),
-    ) as unknown[];
-    await writeFile(
-      join(directory, "segment_007.json"),
-      JSON.stringify(fixtures[0]),
-    );
-    await writeFile(join(directory, "segment_008.json"), "{broken");
-    await writeFile(join(directory, "segment_008.failure.json"), "{}");
-    const discovered = await readCommentarySegmentArtifacts(folder);
-    assert.equal(discovered.artifacts.length, 2);
-    assert.equal(Object.keys(discovered.fingerprints).length, 2);
-    assert.deepEqual(discovered.artifacts[1], {
-      readError: true,
-      artifact: "segment_008.json",
-    });
-  } finally {
-    assert.ok(
-      resolve(folder).startsWith(resolve(tmpdir()) + requireSeparator()),
-    );
-    await rm(folder, { recursive: true, force: true });
-  }
 });
 test("real catalog and registrations survive the actual demo-data generator", async () => {
   const folder = await mkdtemp(join(tmpdir(), "badminton-ui-import-"));

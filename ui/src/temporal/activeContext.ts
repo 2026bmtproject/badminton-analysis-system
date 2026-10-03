@@ -43,14 +43,8 @@ export function activeStrokeAt(rally: RallyModel | null, timeSec: number) {
 }
 
 export function scoreContextAt(rallies: RallyModel[], timeSec: number) {
-  if (!Number.isFinite(timeSec)) return null;
-  const candidate = rallyAtOrBefore(rallies, timeSec);
-  if (!candidate) return null;
-  const index = rallies.indexOf(candidate);
-  for (let cursor = index; cursor >= 0; cursor -= 1) {
-    if (rallies[cursor]?.score) return rallies[cursor]!;
-  }
-  return null;
+  const active = activeRallyAt(rallies, timeSec);
+  return active?.score ? active : null;
 }
 
 export function resolveActiveMatchContext(
@@ -66,8 +60,8 @@ export function resolveActiveMatchContext(
     rally,
     stroke: activeStrokeAt(rally, timeSec),
     scoreRally,
-    // scores.json is the segment's final score context. In a real gap, retain
-    // only the latest completed score without retaining rally-specific context.
+    // A score is a segment observation with no guaranteed before/after meaning;
+    // do not carry it into a gap where that segment is no longer active.
     score: scoreRally?.score ?? null,
   };
 }

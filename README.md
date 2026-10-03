@@ -91,6 +91,36 @@ uv run python -m modules.audio_highlight matches/MK_vs_CT_2019
 需在 PATH 安裝 FFmpeg。固定使用 mono / 16 kHz / float32 與 hard clipping、3 秒窗口、
 1 秒 hop、3 秒 post-padding（不截在下一個 segment，只保留完整窗口）。某段無完整窗口時會失敗。
 `cache/audio/audio.f32le` 可重用，來源路徑、大小、mtime 或音訊格式版本改變時重建。
+
+### 回看資料匯出（review_export）
+
+回看工作區由 Python 將 stage artifacts 驗證並 join 成版本化的
+`review-export-v1`。此命令只讀取既有結果，不執行 pipeline、模型或外部 API：
+
+```bash
+uv run python -m modules.review_export matches/Kunlavut --output review.json
+```
+
+可用 `--title`、`--player-a`、`--player-b`、`--video-url`、`--duration` 與
+`--scenario` 提供發布環境資料。輸出摘要如下：
+
+```json
+{
+  "schemaVersion": "review-export-v1",
+  "states": {
+    "scores": { "status": "available", "usable": true, "fingerprint": "..." },
+    "pose": { "status": "missing", "usable": false, "message": "artifact is missing" }
+  },
+  "rallies": [],
+  "source": { "matchId": "Kunlavut", "fingerprints": {}, "limitations": [] }
+}
+```
+
+`available` 表示結構與 dependency fingerprints 已驗證；`unknown` 是舊結果未記錄
+輸入指紋但結構可讀；`stale` 表示依賴已變動且不會呈現；`missing` 與 `error`
+分別代表不存在與無法驗證。optional artifact 的問題只停用對應功能。JSON Schema
+由 `uv run python -m modules.review_export.schema` 產生，測試會檢查 checked-in schema
+沒有與 Python contract 漂移。
 改換原始影片後，請重跑相關階段或使用 runner 的 `--force`。
 
 凍結的 NumPy detector 與 metadata 隨 repo 放在 `models/yamnet_mean_lr_v1/`，
@@ -138,10 +168,10 @@ matches/MK_vs_CT_2019/          # = match_path
 | -------------------- | ------------ | ----------------------------------------------------- | --------------------------------------------------------- |
 | **match**            | 一場比賽     | 一整場羽球比賽（一支轉播影片）                        | `matches/{match}/`、`match_path`（該場路徑）、`match.mp4` |
 | **game**             | 一局         | 比賽中的一局                                          | `game_index`                                              |
-| **rally**            | 一回合／一分 | 一次得分回合，邏輯計分單位                            | `RallyScore`、`scores.json` 的 `rallies`、`server`        |
-| **segment**          | 一個影片片段 | rally 對應的影片切片（起訖 frame），與 rally 一對一   | `Segment`、`segments.json`、`segment_index`               |
+| **rally**            | 一回合／一分 | 一次得分回合；分段不保證與它一對一                    | UI 沿用 rally 名稱；artifact 不可據此假設一段只有一回合   |
+| **segment**          | 一個影片片段 | 依鏡頭切出的起訖 frame，可能含零個、一個或多個回合    | `Segment`、`segments.json`、`segment_index`               |
 | **player**           | 球員         | 場上兩位球員，固定以 `a`/`b` 標示，不隨換邊改變       | `player: "a"/"b"`                                         |
-| **score a/b**        | 比分         | 兩邊比分，固定綁 `a`/`b`（跟著 player，不受換邊影響） | `score_a`、`score_b`                                      |
+| **score a/b**        | 比分觀察     | segment 取樣看到的記分板列值；不保證是回合前或回合後 | `score_a`、`score_b`；固定綁 `a`/`b`                      |
 | **stage**            | 階段         | 管線中的一個處理階段                                  | `stages/{stage}/`、`StageSpec`                            |
 | **downscaled video** | 低解析度影片 | 為加速掃描／辨識而降解析度的快取影片                  | `downscaled_video()`、`cache/match_480p.mp4`              |
 

@@ -3,8 +3,10 @@ import { capabilityFromStates, type MatchModel } from "../domain/models";
 import { COURT_ADJACENT_MARGIN_M, distanceOutsideCourtM } from "../domain/courtPosition";
 
 const stageState = z.object({
-  status: z.enum(["available", "missing", "error"]),
+  status: z.enum(["available", "missing", "error", "stale", "unknown"]),
+  usable: z.boolean().optional(),
   message: z.string().optional(),
+  fingerprint: z.string().optional(),
 });
 
 const stroke = z.object({
@@ -45,6 +47,7 @@ const canonicalCheer = z.object({
 // from this module uses the canonical frontend model.
 const legacyCheer = z
   .object({
+    schemaVersion: z.literal("review-export-v1").optional(),
     segment_index: z.number().int().nonnegative(),
     cheer_confidence: z.number(),
     cheer_intensity: z.number().nullable(),

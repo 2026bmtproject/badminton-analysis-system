@@ -1,12 +1,12 @@
 import type { LocationQuery, LocationQueryRaw } from "vue-router";
 import type { MatchModel, RallyModel } from "../domain/models";
-import { rankRallies } from "../review";
+import { rankRallies, type RallySort } from "../review";
 
 export type CommentaryFilter = "all" | "available" | "unavailable";
 export type RallyBrowseState = {
   game: number | null;
   commentary: CommentaryFilter;
-  sort: "time" | "highlight";
+  sort: RallySort;
 };
 
 export function rallyGames(model: MatchModel) {
@@ -25,10 +25,12 @@ export function normalizeRallyBrowseQuery(
     query.commentary === "available" || query.commentary === "unavailable"
       ? query.commentary
       : "all";
-  const sort =
+  const sort: RallySort =
     query.sort === "highlight" && model.capabilities.highlight
       ? "highlight"
-      : "time";
+      : query.sort === "cheer" && model.capabilities.cheer
+        ? "cheer"
+        : "time";
   return {
     state: { game, commentary, sort },
     query: {

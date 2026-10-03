@@ -645,10 +645,9 @@ def _refine_merged_segments(
                 if not bisected[index]:
                     continue
                 # The scalar score is deliberately left alone. What it means is
-                # unsettled — contracts.py calls it the segment's final score, but
-                # the board only moves a few seconds *after* the camera cuts away,
-                # so what the first pass reads is the score going *into* the rally.
-                # Rewriting it from sub_scores would pick a side of that question.
+                # The board may move a few seconds *after* the camera cuts away, so
+                # the first-pass scalar is only a segment scoreboard observation.
+                # Rewriting it from sub_scores would falsely choose before/after.
                 target.sub_scores = sub_scores
                 target.split_secs = split_secs
                 seg_info = info_by_index.get(index)

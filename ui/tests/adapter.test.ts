@@ -66,7 +66,7 @@ test("missing optional stages do not become zero, failure, or invented strokes",
   raw.events = { events: [] };
   assert.deepEqual(adapt(raw, manifest, "empty").rallies[0].hits, []);
 });
-test("score is the current segment final value and never derives a transition", () => {
+test("score is the segment scoreboard observation and never derives a transition", () => {
   const m = full();
   assert.deepEqual(m.rallies[0].score, [18, 17]);
   assert.deepEqual(m.rallies[1].score, [18, 18]);

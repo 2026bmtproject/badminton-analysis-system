@@ -401,12 +401,10 @@ function filterDisabled(track: TrackKey) {
 function filterStatus(track: TrackKey) {
   if (!capability(track)) {
     const stage = trackStageKeys[track];
-    const failed =
-      stage && props.model.states[stage]?.status === "error"
-        ? true
-        : track === "commentary" &&
-          props.model.states.commentary_segments?.status === "error";
-    return failed ? "讀取失敗" : "未提供";
+    const statuses = [stage ? props.model.states[stage]?.status : undefined,
+      track === "commentary" ? props.model.states.commentary_segments?.status : undefined];
+    if (statuses.includes("stale")) return "資料已過期";
+    return statuses.includes("error") ? "讀取失敗" : "未提供";
   }
   return fitOnlyUnavailable(track) ? "僅全場" : null;
 }
@@ -993,7 +991,7 @@ const timelineStyle = computed(() => ({
             v-if="filters.score && modeShows('score') && capability('score')"
             kind="score"
             label="比分"
-            description="當前比分軌道"
+            description="片段比分觀察軌道"
           >
             <span
               v-for="rally in scoreRallies"
@@ -1014,7 +1012,7 @@ const timelineStyle = computed(() => ({
                 class="score-marker__target"
                 data-timeline-kind="score"
                 :data-timeline-id="rally.id"
-                :aria-label="`片段 ${String(rally.id + 1).padStart(3, '0')}，比分 ${rally.score[0]}:${rally.score[1]}`"
+                :aria-label="`片段 ${String(rally.id + 1).padStart(3, '0')}，比分觀察 ${rally.score[0]}:${rally.score[1]}`"
                 @click.stop="selectScoreMarker(rally.id)"
               >
                 <span

@@ -113,7 +113,9 @@ original indices; absent labels remain unknown events. Python computes each
 ordering, rally length, time containment and duration consistency with the
 upstream 0.001-second quantization tolerance. It does not look up source frames.
 
-Scores are segment-level **final score context**, never per-stroke scores.
+Scores are segment-level **scoreboard observations**, never per-stroke scores. The
+broadcast update may occur after a cut, so the scalar is not guaranteed to be the
+score before or after a rally and must not be used to infer a winner.
 The score artifact is required; a missing selected row gives nullable `a`, `b`,
 `server` and `game_index`. Multiple recovered `sub_scores` fail explicitly:
 the domain represents one rally per segment and has no sub-rally identifier.

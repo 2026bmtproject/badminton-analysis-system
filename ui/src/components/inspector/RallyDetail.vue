@@ -99,6 +99,8 @@ const stageStatuses = {
   available: "可用",
   missing: "未提供",
   error: "讀取失敗",
+  stale: "輸入已過期",
+  unknown: "舊資料（指紋未知）",
 } as const;
 
 function focusBack() {
@@ -113,6 +115,8 @@ function status(name: string) {
   const state = props.model.states[name];
   return state?.status === "error"
     ? "讀取失敗"
+    : state?.status === "stale"
+      ? "資料已過期"
     : state?.status === "missing"
       ? "未提供"
       : "此片段未提供";
@@ -167,7 +171,7 @@ function evidenceNavigable(evidence: EvidenceModel) {
 
       <section class="score-section" :class="{ 'score-section--contextual': followPlayback }">
         <div v-if="!followPlayback">
-          <small>當前比分</small
+          <small>片段比分觀察</small
           ><strong
             v-if="rally.score"
             class="score-state detail-score"

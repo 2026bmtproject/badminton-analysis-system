@@ -311,7 +311,7 @@ test("rally fit retains window curve but hides segment highlight marks", () => {
   assert.doesNotMatch(signalHeader, /fit === 'rally'/);
 });
 
-test("score anchors remain tied to segment end and final score semantics", () => {
+test("score anchors remain tied to their source segment observation", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   assert.match(timeline, /:style="\{ left: position\(rally\.end\) \+ '%' \}"/);
   assert.match(timeline, /class="score-marker__target"[\s\S]*:aria-label=/);
@@ -726,7 +726,11 @@ test("timeline filters distinguish missing, error, and Fit-only availability", (
   assert.match(timeline, /score: "scores"/);
   assert.match(timeline, /stroke: "events"/);
   assert.match(timeline, /cheer: "audio_signals"/);
-  assert.match(timeline, /status === "error"[\s\S]*"讀取失敗"/);
+  assert.match(
+    timeline,
+    /statuses\.includes\("stale"\)[\s\S]*"資料已過期"/,
+  );
+  assert.match(timeline, /statuses\.includes\("error"\)[\s\S]*"讀取失敗"/);
   assert.match(timeline, /fitOnlyUnavailable[\s\S]*"僅全場"/);
   assert.match(timeline, /:disabled="filterDisabled\(track\)"/);
   assert.doesNotMatch(timeline, /surfaceWidth\.value - 92/);

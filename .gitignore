@@ -41,6 +41,7 @@ matches/*
 # NOTE: broad ignore. If a small fixture must be committed, force-add it:
 *.csv
 *.json
+!ui/src/data/*.schema.json
 *.mp4
 *.avi
 *.mkv

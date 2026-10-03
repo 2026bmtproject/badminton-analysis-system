@@ -254,6 +254,10 @@
   color: var(--color-text);
   font-weight: var(--weight-medium);
 }
+.rally-record-signals {
+  display: grid;
+  gap: 2px;
+}
 .rally-record > span {
   min-width: 0;
   overflow-wrap: anywhere;

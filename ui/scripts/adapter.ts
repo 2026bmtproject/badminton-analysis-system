@@ -228,11 +228,6 @@ export function adapt(
               s.split_secs.length === s.sub_scores.length - 1,
             "多回合比分資料不完整",
           );
-          const last = s.sub_scores!.at(-1)!;
-          requireThat(
-            last[0] === s.score_a && last[1] === s.score_b,
-            "最終比分不一致",
-          );
           s.split_secs!.forEach((t, i) =>
             requireThat(
               t >= segments[s.segment_index].start_sec &&
@@ -461,7 +456,7 @@ export function adapt(
         ? `局數衝突：scores 第 ${sc.game_index + 1} 局；identity 推導第 ${epoch.game_index + 1} 局`
         : undefined;
     // Do not turn adjacent score observations into a before/after transition.
-    // The backend contract guarantees only this segment's final score.
+    // The backend contract guarantees only this segment's scoreboard observation.
     const segmentScore: [number, number] | null =
       sc?.score_a != null && sc.score_b != null
         ? [sc.score_a, sc.score_b]
