@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
+const require = createRequire(typeof __filename !== "undefined" ? __filename : import.meta.url);
 
 export type MediaTool = "ffmpeg" | "ffprobe";
 

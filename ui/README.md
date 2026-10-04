@@ -27,6 +27,34 @@ Capabilities 由 Python review exporter 的 stage state 與實際逐片段資料
 
 Python 本機任務服務執行 `modules/**` pipeline；匯入器讀取完成的 artifacts 並更新回看快取。Vue 仍只載入版本化 Review export，不載入 pose/shuttle 大型 JSON 至首屏。
 
+## Windows 桌面版
+
+桌面版沿用同一份 Vue Review、匯入器與 Python 任務服務。正式版由 Electron main 在 loopback 啟動本機 host，直接提供 `dist/`、回看快取、已登錄影片 Range、匯入 API 與 pipeline 代理；不需要啟動 Vite。Electron 不包含 Python、CUDA 或模型，也不會自動安裝它們。
+
+從原始碼啟動桌面版：
+
+```powershell
+cd <repository>\ui
+npm.cmd ci
+npm.cmd run desktop:run
+```
+
+產生可直接啟動的 unpacked Windows 版本：
+
+```powershell
+cd <repository>\ui
+npm.cmd run desktop:unpacked
+& '.\desktop-out\BadmintonReview-win32-x64\BadmintonReview.exe'
+```
+
+首次開啟時在「桌面分析環境」依序選擇 matches 資料夾、已準備好 `uv sync` 環境的 Python 專案 checkout，以及 `uv.exe`。Python checkout 可以位於安裝目錄以外，須包含 `pyproject.toml`、`modules/local_tasks/service.py` 和 `.venv\Scripts\python.exe`。也可以在首次啟動前設定 `BADMINTON_MATCHES_DIR`、`BADMINTON_BACKEND_DIR`、`UV_BINARY`。桌面版只使用已準備好的 Python 環境；設定有誤會在 Matches 頁顯示原因，不會執行分析。
+
+桌面設定存於 Electron 的 Windows `userData/settings.json`（通常是 `%APPDATA%\badminton-review-ui\settings.json`）。每個 matches 根目錄使用獨立的 `userData/profiles/<hash>/`，其中 `tasks/` 是任務記錄、`reviews/` 是已發布回看 JSON、`videos.json` 是已登錄影片。切換 matches 目錄會切換這個 profile；分析進行中或 worker 狀態未確認時不可切換。正式版不寫入 Electron 程式目錄或 asar。
+
+桌面版會連接設定相容的現有本機 Python 服務，否則使用 argv 啟動自己的服務。關閉視窗時，分析中會提示「留在背景」並保留 main、host 與 Python worker；可從系統匣重新開啟。任務閒置時才會退出並清理本程式啟動的服務；不終止原本已存在的服務。非正常退出後，存活的 worker 由任務 lock 辨識，狀態顯示恢復中並阻擋重複分析；不自動重跑或取消。
+
+開發時仍可按下方「日常操作」啟動 Vite 與 Python 服務，在瀏覽器快速調整 UI。桌面正式版以 `dist/` 為唯一靜態來源。人工驗收應包含原生資料夾選擇、背景系統匣、影片前／中／後段 seek，以及一場實際分析後的 Review 更新。
+
 ## 日常操作（Windows PowerShell）
 
 首次安裝：
@@ -40,7 +68,7 @@ npm.cmd ci
 
 ```powershell
 cd <repository>
-$env:BADMINTON_MATCHES_DIR='F:\CODE\專題\badminton-analysis-system\matches'
+$env:BADMINTON_MATCHES_DIR='C:\path\to\matches'
 uv run python -m modules.local_tasks.service
 ```
 
@@ -48,11 +76,11 @@ uv run python -m modules.local_tasks.service
 
 ```powershell
 cd <repository>\ui
-$env:BADMINTON_MATCHES_DIR='F:\CODE\專題\badminton-analysis-system\matches'
+$env:BADMINTON_MATCHES_DIR='C:\path\to\matches'
 npm.cmd run dev -- --port 5173 --strictPort
 ```
 
-Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時未確認完成的任務標為 interrupted，不自動重跑。
+Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時若 worker lock 仍被持有，任務會顯示恢復中並阻擋新任務；lock 釋放後若無法確認結果，才標為 interrupted，不自動重跑。
 
 私有任務資料預設在 `<repository>/.local/pipeline-tasks/`，可用 `BADMINTON_TASKS_DIR` 覆寫。`--ui-origin` 預設為 `http://127.0.0.1:5173`；改用其他 Vue 連接埠時需在啟動 Python 服務時設定。Vite 將同源 `/api/pipeline/*` 代理至 loopback 服務。未啟動服務時，已匯入 Review 仍可讀取。
 
@@ -70,17 +98,9 @@ plan 回應包含 `planId`、`stages`（run／skip 與原因）、`affectedOutsi
 
 啟動後在 Matches 頁按「匯入比賽」，從 `<repository>/matches/` 選擇已完成分析的資料夾。這會沿用命令列匯入器，驗證 stage 指紋與影片，產生前端快取；不重新執行分析。缺少影片、分段結果或完成狀態的資料夾會列出原因，無法點選。
 
-啟動本機預覽：
+若使用獨立 worktree，而分析資料仍在另一個 checkout，依上方「日常操作」設定 `BADMINTON_MATCHES_DIR` 為該 checkout 的 `matches/` 絕對路徑。命令列匯入也使用同一設定：`npm.cmd run import:match -- <資料夾名稱>`。
 
-```powershell
-cd <repository>
-cd ui
-npm.cmd run dev -- --port 5173 --strictPort
-```
-
-若使用獨立 worktree，而分析資料仍在另一個 checkout，啟動前設定 `BADMINTON_MATCHES_DIR` 為該 checkout 的 `matches/` 絕對路徑。命令列匯入也使用同一設定：`npm.cmd run import:match -- <資料夾名稱>`。
-
-開啟 `http://127.0.0.1:5173/matches`。啟動本身不分析、不下載模型、不呼叫外部 API。網頁匯入端點只在本機 Vite dev／preview 服務可用；單獨部署靜態 `dist/` 時需要另接本機服務。影片由既有 Vite plugin 經已登錄的同源 `/local-video/<id>` 路由提供，支援 Range；不接受任意本機路徑。
+開啟 `http://127.0.0.1:5173/matches`。啟動本身不分析、不下載模型、不呼叫外部 API。瀏覽器開發模式使用本機 Vite dev／preview 的匯入與影片路由；Electron 正式模式由同源本機 host 共用底層匯入與影片處理。單獨部署靜態 `dist/` 時需要另接本機服務。已登錄的 `/local-video/<id>` 路由支援 Range，不接受任意本機路徑。
 
 示範資料：
 

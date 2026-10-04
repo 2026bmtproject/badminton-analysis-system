@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
-import { importMatch, matchesRoot, matchIdSchema } from "./local-matches";
+import { browserRuntime, importMatch, matchIdSchema, type LocalRuntime } from "./local-matches";
 
 type Candidate = { id: string; available: boolean; reason?: string };
 
@@ -16,9 +16,10 @@ async function exists(path: string) {
   catch { return false; }
 }
 
-export async function listImportableMatches(uiRoot: string): Promise<Candidate[]> {
+export async function listImportableMatches(context: string | LocalRuntime): Promise<Candidate[]> {
+  const config = typeof context === "string" ? browserRuntime(context) : context;
   let entries;
-  try { entries = await readdir(matchesRoot(uiRoot), { withFileTypes: true }); }
+  try { entries = await readdir(config.matchesDir, { withFileTypes: true }); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -26,7 +27,7 @@ export async function listImportableMatches(uiRoot: string): Promise<Candidate[]
   return Promise.all(entries.filter((entry) => entry.isDirectory() && matchIdSchema.safeParse(entry.name).success)
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(async (entry) => {
-      const root = join(matchesRoot(uiRoot), entry.name);
+      const root = join(config.matchesDir, entry.name);
       if (!await exists(join(root, "input", "match.mp4")))
         return { id: entry.name, available: false, reason: "缺少 input/match.mp4" };
       if (!await exists(join(root, "stages", "match_segmentation", "segments.json")))
@@ -45,16 +46,16 @@ export async function listImportableMatches(uiRoot: string): Promise<Candidate[]
     }));
 }
 
-export function matchImportPlugin(uiRoot: string): Plugin {
+export function createMatchImportHandler(context: string | LocalRuntime) {
   let importing = false;
-  async function serve(req: IncomingMessage, res: ServerResponse, next: () => void) {
+  return async function serve(req: IncomingMessage, res: ServerResponse, next: () => void) {
     if ((req.url ?? "").split("?")[0] !== "/api/local-matches") return next();
     const origin = req.headers.origin;
     if (origin && origin !== `http://${req.headers.host}`) {
       json(res, 403, { error: "只允許同源匯入" }); return;
     }
     if (req.method === "GET") {
-      try { json(res, 200, { matches: await listImportableMatches(uiRoot) }); }
+      try { json(res, 200, { matches: await listImportableMatches(context) }); }
       catch { json(res, 500, { error: "無法讀取 matches 目錄" }); }
       return;
     }
@@ -74,17 +75,21 @@ export function matchImportPlugin(uiRoot: string): Plugin {
       if (typeof id !== "string" || !matchIdSchema.safeParse(id).success) {
         json(res, 400, { error: "比賽 ID 無效" }); return;
       }
-      const candidate = (await listImportableMatches(uiRoot)).find((item) => item.id === id);
+      const candidate = (await listImportableMatches(context)).find((item) => item.id === id);
       if (!candidate) { json(res, 404, { error: "matches 目錄中找不到此比賽" }); return; }
       if (!candidate.available) { json(res, 422, { error: candidate.reason }); return; }
-      await importMatch(uiRoot, id);
+      await importMatch(context, id);
       json(res, 200, { id: `match:${id}` });
     } catch (error) {
       json(res, 422, { error: error instanceof Error ? error.message : "匯入失敗" });
     } finally {
       importing = false;
     }
-  }
+  };
+}
+
+export function matchImportPlugin(uiRoot: string): Plugin {
+  const serve = createMatchImportHandler(browserRuntime(uiRoot));
   return { name: "local-match-import", configureServer(server) { server.middlewares.use(serve); },
     configurePreviewServer(server) { server.middlewares.use(serve); } };
 }

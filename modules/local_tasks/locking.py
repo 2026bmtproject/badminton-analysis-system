@@ -14,11 +14,6 @@ class WorkerLock:
     def acquire(self) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.file = self.path.open("a+b")
-        self.file.seek(0)
-        if self.file.read(1) != b"1":
-            self.file.seek(0)
-            self.file.write(b"1")
-            self.file.flush()
         try:
             self.file.seek(0)
             if os.name == "nt":
@@ -27,6 +22,11 @@ class WorkerLock:
             else:
                 import fcntl
                 fcntl.flock(self.file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.file.seek(0)
+            if self.file.read(1) != b"1":
+                self.file.seek(0)
+                self.file.write(b"1")
+                self.file.flush()
             return True
         except OSError:
             self.file.close()

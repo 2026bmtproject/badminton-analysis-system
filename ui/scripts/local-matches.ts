@@ -11,6 +11,21 @@ export const matchIdSchema = z.string().regex(/^[A-Za-z0-9_-]+$/);
 export function matchesRoot(uiRoot: string) {
   return resolve(process.env.BADMINTON_MATCHES_DIR?.trim() || resolve(uiRoot, "../matches"));
 }
+export type LocalRuntime = {
+  uiRoot: string; matchesDir: string; backendDir: string; dataDir: string;
+  reviewDir: string; uvBinary: string;
+};
+export function browserRuntime(uiRoot: string): LocalRuntime {
+  return { uiRoot, matchesDir: matchesRoot(uiRoot), backendDir: resolve(uiRoot, ".."),
+    dataDir: join(uiRoot, ".local"), reviewDir: join(uiRoot, "public", "matches"),
+    uvBinary: process.env.UV_BINARY?.trim() || "uv" };
+}
+export function desktopRuntime(uiRoot: string, matchesDir: string, backendDir: string,
+  dataDir: string, uvBinary: string): LocalRuntime {
+  return { uiRoot: resolve(uiRoot), matchesDir: resolve(matchesDir), backendDir: resolve(backendDir),
+    dataDir: resolve(dataDir), reviewDir: resolve(dataDir, "reviews"), uvBinary };
+}
+function runtime(value: string | LocalRuntime) { return typeof value === "string" ? browserRuntime(value) : value; }
 export type CatalogEntry = { id: string; name: string; url: string };
 export type VideoRegistration = { path: string; size: number; mtimeMs: number };
 
@@ -28,10 +43,10 @@ async function save(path: string, value: unknown) {
 }
 
 export async function registerMatch(
-  uiRoot: string, id: string, name: string, model: unknown, video: VideoRegistration,
+  context: string | LocalRuntime, id: string, name: string, model: unknown, video: VideoRegistration,
 ) {
   matchIdSchema.parse(id);
-  const publicDir = join(uiRoot, "public/matches"), localDir = join(uiRoot, ".local");
+  const { reviewDir: publicDir, dataDir: localDir } = runtime(context);
   await mkdir(publicDir, { recursive: true });
   await mkdir(localDir, { recursive: true });
   const catalog: CatalogEntry[] = (await optionalJson(join(publicDir, "catalog.json"))) ?? [];
@@ -53,10 +68,10 @@ export async function registerMatch(
 }
 
 /** Invoke the Python data boundary with an argv array; no shell command is composed. */
-export async function exportReview(uiRoot: string, id: string): Promise<MatchModel> {
+export async function exportReview(context: string | LocalRuntime, id: string): Promise<MatchModel> {
   matchIdSchema.parse(id);
-  const repositoryRoot = resolve(uiRoot, "..");
-  const matchRoot = resolve(matchesRoot(uiRoot), id);
+  const { backendDir: repositoryRoot, matchesDir, dataDir: localDir, uvBinary } = runtime(context);
+  const matchRoot = resolve(matchesDir, id);
   const videoPath = join(matchRoot, "input/match.mp4");
   const metadata = z.object({
     title: z.string().optional(),
@@ -68,16 +83,15 @@ export async function exportReview(uiRoot: string, id: string): Promise<MatchMod
   const duration = Number(probe.format.duration ??
     probe.streams.find((stream: { codec_type: string }) => stream.codec_type === "video")?.duration);
   if (!Number.isFinite(duration) || duration <= 0) throw new Error("影片片長無效");
-  const localDir = join(uiRoot, ".local");
   await mkdir(localDir, { recursive: true });
   const output = join(localDir, `${id}-review-export-${process.pid}.json`);
-  const args = ["run", "python", "-m", "modules.review_export", matchRoot,
+  const args = ["run", "--no-sync", "python", "-m", "modules.review_export", matchRoot,
     "--output", output, "--duration", String(duration),
     "--video-url", `/local-video/${id}`, "--scenario", `match:${id}`];
   if (metadata.title) args.push("--title", metadata.title);
   if (metadata.players) args.push("--player-a", metadata.players.a, "--player-b", metadata.players.b);
   try {
-    execFileSync(process.env.UV_BINARY?.trim() || "uv", args, {
+    execFileSync(uvBinary, args, {
       cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     });
     return parseMatchModel(await json(output));
@@ -91,18 +105,19 @@ export async function exportReview(uiRoot: string, id: string): Promise<MatchMod
   }
 }
 
-export async function importMatch(uiRoot: string, id: string) {
-  const matchRoot = resolve(matchesRoot(uiRoot), id);
+export async function importMatch(context: string | LocalRuntime, id: string) {
+  const config = runtime(context);
+  const matchRoot = resolve(config.matchesDir, id);
   const videoPath = join(matchRoot, "input/match.mp4");
   const before = await stat(videoPath);
-  const model = await exportReview(uiRoot, id);
+  const model = await exportReview(config, id);
   const after = await stat(videoPath);
   if (before.size !== after.size || before.mtimeMs !== after.mtimeMs)
     throw new Error("匯入期間影片變動");
-  await registerMatch(uiRoot, id, model.title, model, {
+  await registerMatch(config, id, model.title, model, {
     path: videoPath, size: after.size, mtimeMs: after.mtimeMs,
   });
-  await save(join(uiRoot, ".local", `${id}-sources.json`), {
+  await save(join(config.dataDir, `${id}-sources.json`), {
     matchRoot, video: { path: videoPath, size: after.size, mtimeMs: after.mtimeMs },
     fingerprints: model.source?.fingerprints ?? {}, states: model.states,
   });

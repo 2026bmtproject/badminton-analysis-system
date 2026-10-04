@@ -13,6 +13,7 @@ import pytest
 from modules.base import BaseModule, StageResult, StageState, StageStatus, current_inputs, write_status
 from modules.contracts import PIPELINE, artifact_path, stage_path
 from modules.local_tasks.planning import build_plan, resolve_match
+from modules.local_tasks.locking import WorkerLock
 from modules.local_tasks.service import PlanChanged, TaskManager, WorkerBusy, handler_for
 from modules.local_tasks.store import TaskStore
 from modules.local_tasks.worker import _safe_error, execute
@@ -169,6 +170,32 @@ def test_single_worker_plan_revalidation_and_restart(tmp_path):
     process.done.set()
 
 
+def test_restart_preserves_live_worker_and_health_reports_recovery(tmp_path):
+    match = match_fixture(tmp_path)
+    process = DeferredProcess()
+    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: process)
+    request = {"matchId": "Sample", "stages": ["match_segmentation"], "mode": "continue"}
+    task = manager.start({**request, "planId": manager.plan(request)["planId"]})
+    lock = WorkerLock(manager.store.root / "worker.lock")
+    assert lock.acquire()
+    try:
+        restored = TaskManager(match.parent, tmp_path / "tasks")
+        health = restored.health("http://127.0.0.1:5173")
+        assert health["service"] == "badminton-local-tasks"
+        assert health["apiVersion"] == 1
+        assert health["matchesRoot"] == str(match.parent.resolve())
+        assert health["tasksRoot"] == str(manager.store.root)
+        assert health["activeTask"] == {"id": task["id"], "status": "recovering"}
+        assert restored.store.read(task["id"])["status"] == "queued"
+        with pytest.raises(WorkerBusy):
+            restored.start({**request, "planId": restored.plan(request)["planId"]})
+    finally:
+        lock.release()
+    assert restored.health("http://127.0.0.1:5173")["activeTask"] is None
+    assert restored.store.read(task["id"])["status"] == "interrupted"
+    process.done.set()
+
+
 def test_start_rejects_source_changed_since_preview(tmp_path):
     match = match_fixture(tmp_path)
     manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: DeferredProcess())
@@ -288,6 +315,10 @@ def test_http_origin_policy_and_reconnect(tmp_path):
             return result
 
         assert call("GET", "/api/pipeline/matches")[1]["matches"][0]["hasSegments"] is False
+        health = call("GET", "/api/pipeline/health")[1]
+        assert health["service"] == "badminton-local-tasks"
+        assert health["apiVersion"] == 1
+        assert health["activeTask"] is None
         request = {"matchId": "Sample", "stages": ["match_segmentation"], "mode": "continue"}
         assert call("POST", "/api/pipeline/plan", request, "http://evil.example")[0] == 403
         assert call("POST", "/api/pipeline/plan", {**request, "matchId": "../Sample"},

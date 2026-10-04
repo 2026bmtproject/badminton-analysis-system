@@ -62,6 +62,25 @@
   color: var(--color-text-secondary);
 }
 
+.desktop-setup {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-soft);
+}
+.desktop-setup-heading { display: flex; flex-wrap: wrap; align-items: baseline;
+  justify-content: space-between; gap: var(--space-2); }
+.desktop-setup-heading h2 { margin: 0; font-size: var(--type-section); }
+.desktop-setup dl { display: grid; gap: var(--space-2); margin: 0; }
+.desktop-setup dl div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--space-2); }
+.desktop-setup dt { color: var(--color-text-secondary); }
+.desktop-setup dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.desktop-setup-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.desktop-setup-note { color: var(--color-text-secondary); }
+@media (max-width: 700px) { .desktop-setup dl div { grid-template-columns: minmax(0, 1fr); } }
+
 .match-import-panel {
   display: grid;
   gap: var(--space-3);

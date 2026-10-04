@@ -37,13 +37,35 @@ class TaskManager:
         self.spawn = spawn or subprocess.Popen
         self.guard = threading.Lock()
         self.active_id: str | None = None
+        self.instance_id = uuid.uuid4().hex
+        self.refresh_recovery()
+
+    def refresh_recovery(self) -> bool:
+        """Return whether a worker lock is held; reconcile only after it clears."""
+        probe = WorkerLock(self.store.root / "worker.lock")
+        if not probe.acquire():
+            return True
+        probe.release()
         for record in self.store.list():
-            if record["status"] in ("queued", "running"):
+            if record["status"] in ("queued", "running") and record["id"] != self.active_id:
                 record.update(status="interrupted", finishedAt=now(),
-                              error="service restarted; worker completion cannot be confirmed")
+                              error="worker is no longer active; completion cannot be confirmed")
                 if record.get("currentStage"):
                     record["stageStates"][record["currentStage"]]["status"] = "interrupted"
                 self.store.save(record)
+        return False
+
+    def health(self, ui_origin: str) -> dict:
+        locked = self.refresh_recovery()
+        unfinished = next((record for record in self.store.list()
+                           if record["status"] in ("queued", "running")), None)
+        active = ({"id": unfinished["id"],
+                   "status": "recovering" if self.active_id != unfinished["id"] else unfinished["status"]}
+                  if unfinished else {"id": None, "status": "unknown"} if locked else None)
+        return {"service": "badminton-local-tasks", "apiVersion": 1,
+                "instanceId": self.instance_id, "matchesRoot": str(self.matches_root),
+                "tasksRoot": str(self.store.root), "uiOrigin": ui_origin,
+                "activeTask": active}
 
     def plan(self, request: dict) -> dict:
         match = resolve_match(self.matches_root, request.get("matchId"))
@@ -93,10 +115,8 @@ class TaskManager:
         with self.guard:
             if self.active_id is not None:
                 raise WorkerBusy("an analysis task is already active")
-            probe = WorkerLock(self.store.root / "worker.lock")
-            if not probe.acquire():
-                raise WorkerBusy("a worker from another service process is active")
-            probe.release()
+            if self.refresh_recovery():
+                raise WorkerBusy("a worker from another service process is active or recovering")
             plan = self.plan(request)
             if request.get("planId") != plan["planId"]:
                 raise PlanChanged("source or plan changed; preview again before starting")
@@ -170,6 +190,8 @@ def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port:
                 return
             url = urlsplit(self.path)
             try:
+                if url.path == "/api/pipeline/health":
+                    return self.respond(200, manager.health(ui_origin))
                 if url.path == "/api/pipeline/stages":
                     return self.respond(200, {"stages": manager.stages()})
                 if url.path == "/api/pipeline/matches":

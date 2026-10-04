@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import { importLocalMatch, listLocalMatches, loadCatalog, type ImportableMatch } from "../data/matchRepository";
 import { listPipelineMatches, taskStatusLabel, type LocalAnalysisMatch } from "../data/pipelineTasks";
 import PipelinePanel from "../components/PipelinePanel.vue";
+import DesktopSetup from "../components/DesktopSetup.vue";
 import type { CatalogEntry } from "../domain/models";
 
 const entries = ref<CatalogEntry[]>([]);
@@ -17,11 +18,12 @@ const candidates = ref<ImportableMatch[]>([]);
 const importLoading = ref(false);
 const importingId = ref<string | null>(null);
 const importError = ref("");
-const showAnalysis = ref(false);
+const showAnalysis = ref(Boolean(window.badmintonDesktop));
 const localMatches = ref<LocalAnalysisMatch[]>([]);
 const localError = ref("");
 const selectedLocalId = ref<string | null>(null);
 const selectedLocal = computed(() => localMatches.value.find(row => row.id === selectedLocalId.value) ?? null);
+const desktopAvailable = Boolean(window.badmintonDesktop);
 
 async function loadAnalysis() {
   try {
@@ -92,7 +94,13 @@ onMounted(async () => {
   heading.value?.focus();
   await load();
   await loadAnalysis();
+  if (desktopAvailable) window.addEventListener("focus", refreshDesktopResults);
 });
+onUnmounted(() => window.removeEventListener("focus", refreshDesktopResults));
+
+function refreshDesktopResults() {
+  void Promise.all([load(), loadAnalysis()]);
+}
 </script>
 
 <template>
@@ -110,9 +118,10 @@ onMounted(async () => {
     </header>
 
     <main class="matches-main">
+      <DesktopSetup v-if="desktopAvailable" />
       <div class="matches-intro">
         <h2>選擇比賽</h2>
-        <p>開啟已匯入的比賽資料與回看工作區。</p>
+        <p>{{ desktopAvailable ? "選擇本機比賽開始分析；已匯入的比賽可開啟回看。" : "開啟已匯入的比賽資料與回看工作區。" }}</p>
       </div>
 
       <section v-if="showImport" id="match-import-panel" class="match-import-panel" aria-label="從 matches 目錄匯入比賽">
@@ -151,7 +160,7 @@ onMounted(async () => {
         <button type="button" @click="load">重試</button>
       </div>
       <p v-else-if="!entries.length" class="empty-state">
-        尚無可用的比賽資料。
+        {{ desktopAvailable ? "尚無已匯入的回看資料。請從上方的本機比賽列表選擇比賽。" : "尚無可用的比賽資料。" }}
       </p>
       <nav v-else class="matches-list" aria-label="比賽目錄">
         <RouterLink
