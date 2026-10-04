@@ -68,13 +68,23 @@ def recompute_from_corners(corners: np.ndarray) -> Optional[list]:
     Returns a list of 16 ``(x, y)`` tuples, or ``None`` if the homography is
     degenerate.
     """
+    corners = np.asarray(corners, dtype=np.float64)
+    if corners.shape != (4, 2) or not np.isfinite(corners).all():
+        return None
+    outline = np.float32(corners[[0, 1, 3, 2]])
+    if not cv2.isContourConvex(outline) or cv2.contourArea(outline) <= 1.0:
+        return None
     H, _ = cv2.findHomography(CORNER_COURT_PTS, np.float32(corners))
-    if H is None:
+    if H is None or not np.isfinite(H).all():
         return None
     pts = []
     for hi, vi in OUTPUT_IDX:
         p = H @ np.array([V_LINES[vi], H_LINES[hi], 1.0])
+        if not np.isfinite(p).all() or abs(p[2]) < 1e-9:
+            return None
         pts.append((float(p[0] / p[2]), float(p[1] / p[2])))
+    if not np.isfinite(pts).all():
+        return None
     return pts
 
 

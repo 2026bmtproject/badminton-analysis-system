@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import Callable, Optional
 
+import cv2
 import numpy as np
 
 from modules.base import BaseModule, StageResult
@@ -128,6 +130,14 @@ class CourtDetectionModule(BaseModule):
         picked = self._pick_segments(segments)
         picked_idx = [idx for idx, _ in picked]
         composite = self._build_composite(video, [seg for _, seg in picked])
+        ok, encoded = cv2.imencode(".png", composite)
+        if not ok:
+            raise RuntimeError("cannot save court composite preview")
+        preview_bytes = encoded.tobytes()
+        preview_name = f"preview-{hashlib.sha256(preview_bytes).hexdigest()[:16]}.png"
+        preview_path = output_json.parent / preview_name
+        if not preview_path.is_file():
+            preview_path.write_bytes(preview_bytes)
 
         if on_progress:
             on_progress(0.6)
@@ -169,6 +179,10 @@ class CourtDetectionModule(BaseModule):
                 "frames_per_segment": self.config.frames_per_segment,
                 "detection_failed": manual_mode,
                 "confirmed": confirm is not None,
+                "preview_width": int(composite.shape[1]),
+                "preview_height": int(composite.shape[0]),
+                "resize_width": self.config.resize_width,
+                "preview_file": preview_name,
             },
         )
         return StageResult(output_json)

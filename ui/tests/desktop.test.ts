@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { request as httpRequest } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -107,8 +107,36 @@ test("production host serves dist and registered media without Vite or path fall
   });
 });
 
+test("production host forwards court preview and save through the existing pipeline proxy", async () => {
+  await temporary("court-proxy", async root => {
+    const ui = join(root, "ui"), dist = join(ui, "dist"), matches = join(root, "matches");
+    await mkdir(dist, { recursive: true }); await mkdir(matches);
+    await writeFile(join(dist, "index.html"), "<html>desktop</html>");
+    const paths: string[] = [];
+    const service = createServer((req, res) => {
+      paths.push(`${req.method} ${req.url}`);
+      assert.equal(req.headers.origin, "http://127.0.0.1:5173");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>(resolve => service.listen(0, "127.0.0.1", resolve));
+    const address = service.address();
+    if (!address || typeof address === "string") throw new Error("service port unavailable");
+    const context = desktopRuntime(ui, matches, root, join(root, "data"), "uv");
+    const host = await startLocalHost(context, dist, {
+      pipelinePort: () => address.port, serviceOrigin: () => "http://127.0.0.1:5173",
+    });
+    try {
+      assert.equal((await fetch(`${host.origin}/api/pipeline/court?matchId=Sample`)).status, 200);
+      assert.equal((await fetch(`${host.origin}/api/pipeline/court/save`, { method: "POST",
+        headers: { "Content-Type": "application/json", Origin: host.origin }, body: JSON.stringify({ matchId: "Sample" }) })).status, 200);
+      assert.deepEqual(paths, ["GET /api/pipeline/court?matchId=Sample", "POST /api/pipeline/court/save"]);
+    } finally { await host.close(); await new Promise<void>(resolve => service.close(() => resolve())); }
+  });
+});
+
 function health(matches: string, tasks: string, activeTask: ServiceHealth["activeTask"] = null): ServiceHealth {
-  return { service: "badminton-local-tasks", apiVersion: 1, instanceId: "a".repeat(32),
+  return { service: "badminton-local-tasks", apiVersion: 2, instanceId: "a".repeat(32),
     matchesRoot: resolve(matches), tasksRoot: resolve(tasks), uiOrigin: "http://127.0.0.1:5173",
     activeTask };
 }
@@ -116,7 +144,7 @@ function health(matches: string, tasks: string, activeTask: ServiceHealth["activ
 test("service handshake checks identity, version and configured directories", () => {
   const expected = health("C:/比賽 資料", "C:/tasks");
   assert.equal(validateHandshake(expected, expected.matchesRoot, expected.tasksRoot).instanceId, expected.instanceId);
-  assert.throws(() => validateHandshake({ ...expected, apiVersion: 2 }, expected.matchesRoot, expected.tasksRoot));
+  assert.throws(() => validateHandshake({ ...expected, apiVersion: 1 }, expected.matchesRoot, expected.tasksRoot));
   assert.throws(() => validateHandshake({ ...expected, service: "other" }, expected.matchesRoot, expected.tasksRoot));
   assert.throws(() => validateHandshake(expected, "C:/other", expected.tasksRoot));
 });
@@ -133,6 +161,23 @@ test("existing compatible service is connected without taking ownership", async 
     assert.equal((await manager.connect()).owned, false);
     assert.equal(spawned, false);
     assert.equal((await manager.stopOwnedIfIdle()), true);
+  });
+});
+
+test("old service on the same tasks directory reports a version conflict without spawning", async () => {
+  await temporary("old-service", async root => {
+    const matches = join(root, "matches"), tasks = join(root, "tasks");
+    let spawned = false;
+    const deps: ServiceDependencies = {
+      probe: async () => ({ ...health(matches, tasks), apiVersion: 1 }),
+      freePort: async () => 9001,
+      spawn: (() => { spawned = true; throw new Error("unexpected spawn"); }) as ServiceDependencies["spawn"],
+      delay: async () => undefined,
+    };
+    const manager = new LocalTaskService({ matchesDir: matches, backendDir: root, uvBinary: "uv" },
+      tasks, root, "http://127.0.0.1:4567", deps);
+    await assert.rejects(manager.connect(), /API v1.*tasks/);
+    assert.equal(spawned, false);
   });
 });
 

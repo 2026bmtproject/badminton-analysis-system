@@ -193,6 +193,8 @@ def test_run_writes_corners_clockwise_from_top_left(tmp_path, monkeypatch):
     assert data["segments_used"] == [2, 0, 3]   # the three longest, longest-first
     assert data["detection_failed"] is False
     assert data["confirmed"] is False
+    assert (out.parent / data["preview_file"]).is_file()
+    assert (data["preview_width"], data["preview_height"]) == (100, 100)
 
 
 def test_run_uses_the_confirm_callback_result(tmp_path, monkeypatch):

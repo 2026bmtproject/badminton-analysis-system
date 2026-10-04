@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import type { DesktopSettings } from "./settings";
 
 export type ServiceHealth = {
-  service: "badminton-local-tasks"; apiVersion: 1; instanceId: string;
+  service: "badminton-local-tasks"; apiVersion: 2; instanceId: string;
   matchesRoot: string; tasksRoot: string; uiOrigin: string;
   activeTask: null | { id: string | null; status: string };
 };
@@ -19,7 +19,7 @@ export type ServiceDependencies = {
 export function validateHandshake(value: unknown, matchesDir: string, tasksDir: string): ServiceHealth {
   if (!value || typeof value !== "object") throw new Error("服務未提供健康資訊");
   const row = value as Record<string, unknown>;
-  if (row.service !== "badminton-local-tasks" || row.apiVersion !== 1 ||
+  if (row.service !== "badminton-local-tasks" || row.apiVersion !== 2 ||
       typeof row.instanceId !== "string" || !/^[a-f0-9]{32}$/.test(row.instanceId) ||
       typeof row.uiOrigin !== "string") throw new Error("本機服務名稱或 API 版本不相容");
   const same = (a: unknown, b: string) => typeof a === "string" &&
@@ -91,6 +91,7 @@ export class LocalTaskService {
   async connect(): Promise<ServiceStatus> {
     if (!this.settings.matchesDir || !this.settings.backendDir)
       throw new Error("請先設定 matches 資料夾與 Python checkout");
+    let incompatibleVersion: number | null = null;
     const candidates = [...new Set([this.port, await this.endpointPort(), 8765].filter(
       (port): port is number => typeof port === "number"))];
     for (const candidate of candidates) {
@@ -103,13 +104,24 @@ export class LocalTaskService {
         this.port = candidate;
         this.healthValue = health;
         this.errorValue = null;
+        this.warningValue = null;
         if (this.ownedInstance !== health.instanceId) this.ownedInstance = null;
         await this.remember(candidate, health);
         return this.status;
       } catch (error) {
         this.warningValue = error instanceof Error ? error.message : String(error);
+        if (typeof raw === "object" && raw !== null) {
+          const row = raw as Record<string, unknown>;
+          const same = (value: unknown, target: string) => typeof value === "string" &&
+            resolve(value).toLowerCase() === resolve(target).toLowerCase();
+          if (row.service === "badminton-local-tasks" && typeof row.apiVersion === "number" &&
+              row.apiVersion !== 2 && same(row.matchesRoot, this.settings.matchesDir) &&
+              same(row.tasksRoot, this.tasksDir)) incompatibleVersion = row.apiVersion;
+        }
       }
     }
+    if (incompatibleVersion !== null)
+      throw new Error(`舊版 Python 分析服務（API v${incompatibleVersion}）仍占用此 tasks 目錄。請先完成分析並退出舊版程式；若已退出，請停止殘留服務後重開桌面程式。`);
     const port = (await this.deps.probe(8765).catch(() => ({}))) === null
       ? 8765 : await this.deps.freePort();
     const args = ["run", "--no-sync", "python", "-m", "modules.local_tasks.service",
@@ -131,7 +143,7 @@ export class LocalTaskService {
       if (raw) {
         const health = validateHandshake(raw, this.settings.matchesDir, this.tasksDir);
         this.port = port; this.healthValue = health; this.ownedInstance = health.instanceId;
-        this.errorValue = null;
+        this.errorValue = null; this.warningValue = null;
         await this.remember(port, health);
         return this.status;
       }

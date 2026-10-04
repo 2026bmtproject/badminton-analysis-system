@@ -154,6 +154,15 @@
 .pipeline-task li { margin-bottom: var(--space-2); }
 .pipeline-logs { display: grid; gap: var(--space-2); }
 .pipeline-logs pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--color-bg); padding: var(--space-3); }
+.court-calibration { border-top: 1px solid var(--color-border); padding-top: var(--space-3); }
+.court-calibration-body { display: grid; gap: var(--space-3); min-width: 0; margin-top: var(--space-3); }
+.court-calibration-body p { margin: 0; }
+.court-calibration-image { display: block; width: 100%; height: auto; background: var(--color-bg); touch-action: none; }
+.court-calibration-line { stroke: var(--color-accent); stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.court-calibration-handle { cursor: grab; }
+.court-calibration-handle circle { fill: var(--color-warning); stroke: var(--color-bg); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.court-calibration-handle text { fill: var(--color-text); stroke: var(--color-bg); stroke-width: 3; paint-order: stroke; font-size: 24px; font-weight: 700; pointer-events: none; }
+.court-calibration-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 700px) {
   .match-analysis-layout nav button { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
   .match-analysis-layout nav span { white-space: normal; }

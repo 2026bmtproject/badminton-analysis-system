@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
+import CourtCalibrationPanel from "./CourtCalibrationPanel.vue";
 import { importLocalMatch, loadCatalog, loadMatch } from "../data/matchRepository";
 import {
   getPipelineLogs, getPipelineTask, listPipelineStages, previewPipeline, startPipeline,
@@ -169,6 +170,9 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
       <p v-if="task.status === 'failed' || task.status === 'interrupted'">可重新查看計畫並建立新任務重試。</p>
     </section>
     <p v-if="publishError" class="error" role="alert">回看更新失敗：{{ publishError }}。原有回看資料仍可使用。</p>
+    <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')"
+      :running="running" @updated="emit('updated')"
+      @detect="selected = ['court_detection']; mode = 'continue'; plan = null" />
     <RouterLink v-if="hasReview" :to="{ name: 'match-review', params: { matchId: `match:${match.id}` } }">查看已有結果 →</RouterLink>
     <button v-else-if="match.hasSegments" type="button" :disabled="publishing" @click="publish">匯入已有分析結果</button>
   </section>

@@ -182,7 +182,7 @@ def test_restart_preserves_live_worker_and_health_reports_recovery(tmp_path):
         restored = TaskManager(match.parent, tmp_path / "tasks")
         health = restored.health("http://127.0.0.1:5173")
         assert health["service"] == "badminton-local-tasks"
-        assert health["apiVersion"] == 1
+        assert health["apiVersion"] == 2
         assert health["matchesRoot"] == str(match.parent.resolve())
         assert health["tasksRoot"] == str(manager.store.root)
         assert health["activeTask"] == {"id": task["id"], "status": "recovering"}
@@ -317,7 +317,7 @@ def test_http_origin_policy_and_reconnect(tmp_path):
         assert call("GET", "/api/pipeline/matches")[1]["matches"][0]["hasSegments"] is False
         health = call("GET", "/api/pipeline/health")[1]
         assert health["service"] == "badminton-local-tasks"
-        assert health["apiVersion"] == 1
+        assert health["apiVersion"] == 2
         assert health["activeTask"] is None
         request = {"matchId": "Sample", "stages": ["match_segmentation"], "mode": "continue"}
         assert call("POST", "/api/pipeline/plan", request, "http://evil.example")[0] == 403

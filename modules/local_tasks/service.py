@@ -15,10 +15,11 @@ from urllib.parse import parse_qs, urlsplit
 
 from modules.base import StageStatus, read_status
 from modules.contracts import PIPELINE, artifact_path, stage_path
+from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
 from modules.local_tasks.locking import WorkerLock
 from modules.local_tasks.planning import build_plan, resolve_match
 from modules.local_tasks.store import TaskStore, now
-from modules.runner import available_modules, default_modules
+from modules.runner import available_modules, default_modules, stale_inputs
 
 
 class PlanChanged(ValueError):
@@ -62,7 +63,7 @@ class TaskManager:
         active = ({"id": unfinished["id"],
                    "status": "recovering" if self.active_id != unfinished["id"] else unfinished["status"]}
                   if unfinished else {"id": None, "status": "unknown"} if locked else None)
-        return {"service": "badminton-local-tasks", "apiVersion": 1,
+        return {"service": "badminton-local-tasks", "apiVersion": 2,
                 "instanceId": self.instance_id, "matchesRoot": str(self.matches_root),
                 "tasksRoot": str(self.store.root), "uiOrigin": ui_origin,
                 "activeTask": active}
@@ -70,6 +71,43 @@ class TaskManager:
     def plan(self, request: dict) -> dict:
         match = resolve_match(self.matches_root, request.get("matchId"))
         return build_plan(match, request.get("stages"), request.get("mode"))
+
+    def court(self, match_id: str) -> dict:
+        match = resolve_match(self.matches_root, match_id)
+        result = load_court_review(match)
+        result["saveBlocked"] = self._court_busy(match_id)
+        return result
+
+    def _court_busy(self, match_id: str) -> bool:
+        if self.refresh_recovery():
+            return True
+        return any(record["matchId"] == match_id and record["status"] in ("queued", "running")
+                   for record in self.store.list())
+
+    def court_preview(self, request: dict) -> dict:
+        match = resolve_match(self.matches_root, request.get("matchId"))
+        return preview_corners(match, request.get("revision"), request.get("corners"))
+
+    def court_save(self, request: dict) -> dict:
+        with self.guard:
+            match = resolve_match(self.matches_root, request.get("matchId"))
+            if self._court_busy(match.name):
+                raise WorkerBusy("此比賽正在分析或 worker 狀態待確認，暫時無法保存場地")
+            result = save_corners(match, request.get("revision"), request.get("corners"))
+            result["staleStages"] = []
+            result["unknownStages"] = []
+            for name, module in available_modules().items():
+                if name == "court_detection":
+                    continue
+                status = read_status(stage_path(match, name))
+                if status is None or status.status != StageStatus.COMPLETED:
+                    continue
+                stale = stale_inputs(match, module)
+                if stale is None:
+                    result["unknownStages"].append(name)
+                elif stale:
+                    result["staleStages"].append(name)
+            return result
 
     def stages(self) -> list[dict]:
         modules = available_modules()
@@ -196,6 +234,8 @@ def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port:
                     return self.respond(200, {"stages": manager.stages()})
                 if url.path == "/api/pipeline/matches":
                     return self.respond(200, {"matches": manager.matches()})
+                if url.path == "/api/pipeline/court":
+                    return self.respond(200, manager.court(parse_qs(url.query).get("matchId", [None])[0]))
                 if url.path == "/api/pipeline/tasks":
                     return self.respond(200, {"tasks": manager.store.list()})
                 parts = url.path.strip("/").split("/")
@@ -208,8 +248,10 @@ def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port:
                         return self.respond(200, manager.store.logs(parts[3],
                             int(query.get("offset", ["0"])[0]), int(query.get("limit", ["100"])[0])))
                 self.respond(404, {"error": "not found"})
-            except FileNotFoundError:
-                self.respond(404, {"error": "task not found"})
+            except FileNotFoundError as error:
+                self.respond(404, {"error": str(error)})
+            except CourtConflict as error:
+                self.respond(409, {"error": str(error)})
             except (ValueError, OSError, KeyError) as error:
                 self.respond(400, {"error": str(error)})
 
@@ -229,10 +271,16 @@ def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port:
                     return self.respond(200, manager.plan(request))
                 if self.path == "/api/pipeline/tasks":
                     return self.respond(201, manager.start(request))
+                if self.path == "/api/pipeline/court/preview":
+                    return self.respond(200, manager.court_preview(request))
+                if self.path == "/api/pipeline/court/save":
+                    return self.respond(200, manager.court_save(request))
                 self.respond(404, {"error": "not found"})
             except PlanChanged as error:
                 self.respond(409, {"error": str(error)})
             except WorkerBusy as error:
+                self.respond(409, {"error": str(error)})
+            except CourtConflict as error:
                 self.respond(409, {"error": str(error)})
             except (ValueError, OSError, KeyError, json.JSONDecodeError) as error:
                 self.respond(400, {"error": str(error)})
