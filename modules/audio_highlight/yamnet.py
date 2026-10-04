@@ -172,8 +172,41 @@ def configure_hub_cache() -> Path:
     )
 
 
+def _has_saved_model(path: Path) -> bool:
+    return (path / "saved_model.pb").is_file() or (path / "saved_model.pbtxt").is_file()
+
+
+def _resolve_remote_model(hub: Any, handle: str, cache: Path) -> Path:
+    """Avoid TF Hub's reuse of a nonempty but incomplete extracted model."""
+    def resolve_checked() -> Path:
+        path = Path(hub.resolve(handle))
+        if not _has_saved_model(path):
+            raise YamNetError(f"YAMNet download is incomplete: {path} has no saved_model.pb")
+        return path
+
+    try:
+        return resolve_checked()
+    except YamNetError as first_error:
+        # TF Hub considers any nonempty cache entry complete. Keep the bad entry
+        # untouched and download into a separate, reusable cache instead.
+        for attempt in range(2):
+            recovery = cache / "verified" if attempt == 0 else Path(
+                tempfile.mkdtemp(prefix="verified-", dir=cache)
+            )
+            os.environ["TFHUB_CACHE_DIR"] = str(recovery)
+            try:
+                return resolve_checked()
+            except YamNetError:
+                continue
+        raise YamNetError(
+            "YAMNet download still has no saved_model.pb after recovery. "
+            "Check the model download connection or set TFHUB_CACHE_DIR to a "
+            "writable ASCII-only directory."
+        ) from first_error
+
+
 def _load_hub_model(model_handle: str | Path) -> tuple[YamNetModel, Any]:
-    configure_hub_cache()
+    cache = configure_hub_cache()
     try:
         import tensorflow as tf
         import tensorflow_hub as hub
@@ -182,12 +215,16 @@ def _load_hub_model(model_handle: str | Path) -> tuple[YamNetModel, Any]:
             "TensorFlow and tensorflow-hub are required for YAMNet inference"
         ) from exc
     try:
-        model = hub.load(str(model_handle))
+        handle = str(model_handle)
+        model_path = (
+            _resolve_remote_model(hub, handle, cache)
+            if handle.startswith(("https://", "http://")) else model_handle
+        )
+        model = hub.load(str(model_path))
     except Exception as exc:
         raise YamNetError(
-            "failed to load YAMNet from TensorFlow Hub; the TFHub cache may be "
-            "incomplete or corrupt. Retry with TFHUB_CACHE_DIR set to a new empty "
-            f"directory. Original error: {exc}"
+            "failed to load YAMNet from TensorFlow Hub. "
+            f"Original error: {exc}"
         ) from exc
     return model, tf
 

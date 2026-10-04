@@ -126,7 +126,9 @@ uv run python -m modules.review_export matches/Kunlavut --output review.json
 凍結的 NumPy detector 與 metadata 隨 repo 放在 `models/yamnet_mean_lr_v1/`，
 執行時驗證 SHA-256；不需 sklearn。YAMNet 首次從 TFHub 下載，之後重用快取。
 預設快取位於系統暫存目錄（必要時使用家目錄的 `.cache`），須為 ASCII 路徑；
-可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。若下載不完整，改設新的空目錄再執行。
+可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。載入前會檢查 SavedModel；
+若 TFHub 留下非空但不完整的模型目錄，會在獨立的 `verified` 快取重新下載，
+成功後供後續任務重用，不需每次手動更換快取目錄。
 
 ### 每場分析的目錄結構（match 路徑）
 
