@@ -1,0 +1,35 @@
+{
+  "highlights": [
+    {
+      "segment_index": 0,
+      "score": 0.05
+    },
+    {
+      "segment_index": 1,
+      "score": 0.875
+    },
+    {
+      "segment_index": 2,
+      "score": 0.55
+    },
+    {
+      "segment_index": 3,
+      "score": 0.075
+    }
+  ],
+  "policy": {
+    "name": "audio_additive_v1",
+    "confidence_weight": 0.5,
+    "intensity_weight": 0.5,
+    "null_intensity": "zero_contribution",
+    "score_range": [
+      0.0,
+      1.0
+    ],
+    "ranking_order": [
+      "score_desc",
+      "cheer_confidence_desc",
+      "segment_index_asc"
+    ]
+  }
+}

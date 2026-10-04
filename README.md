@@ -75,6 +75,10 @@ uv run python -m modules.highlight_ranking matches/TTYvsASY
 
 輸入為原始影片的第一個音軌與 `stages/match_segmentation/segments.json`，輸出為
 `stages/audio_highlight/audio_signals.json`（`signals` 陣列，每個 segment 一筆）。
+新產生的 artifact 另有 `windows` 陣列，保存推論時已算出的每個 3 秒窗口之
+`segment_index`、`start_sec`、`end_sec` 與 `cheer_probability`。Review 時間軸以
+`(start_sec + end_sec) / 2` 對應全場絕對時間，繪製窗口機率曲線；不跨無資料區間連線。
+舊 artifact 若沒有 `windows`，時間軸顯示無窗口資料，不會用 segment p95 假造曲線。
 
 - `cheer_confidence`：所有窗口 detector evidence 的 p95，並非校準過的 segment probability。
 - `cheer_intensity`：同場偵測為歡呼的窗口，以 log RMS 的 average rank percentile 計算，再取 segment p95；無歡呼時為 `null`，有效的 `0.0` 會保留。
@@ -87,12 +91,44 @@ uv run python -m modules.audio_highlight matches/MK_vs_CT_2019
 需在 PATH 安裝 FFmpeg。固定使用 mono / 16 kHz / float32 與 hard clipping、3 秒窗口、
 1 秒 hop、3 秒 post-padding（不截在下一個 segment，只保留完整窗口）。某段無完整窗口時會失敗。
 `cache/audio/audio.f32le` 可重用，來源路徑、大小、mtime 或音訊格式版本改變時重建。
+
+### 回看資料匯出（review_export）
+
+回看工作區由 Python 將 stage artifacts 驗證並 join 成版本化的
+`review-export-v1`。此命令只讀取既有結果，不執行 pipeline、模型或外部 API：
+
+```bash
+uv run python -m modules.review_export matches/Kunlavut --output review.json
+```
+
+可用 `--title`、`--player-a`、`--player-b`、`--video-url`、`--duration` 與
+`--scenario` 提供發布環境資料。輸出摘要如下：
+
+```json
+{
+  "schemaVersion": "review-export-v1",
+  "states": {
+    "scores": { "status": "available", "usable": true, "fingerprint": "..." },
+    "pose": { "status": "missing", "usable": false, "message": "artifact is missing" }
+  },
+  "rallies": [],
+  "source": { "matchId": "Kunlavut", "fingerprints": {}, "limitations": [] }
+}
+```
+
+`available` 表示結構與 dependency fingerprints 已驗證；`unknown` 是舊結果未記錄
+輸入指紋但結構可讀；`stale` 表示依賴已變動且不會呈現；`missing` 與 `error`
+分別代表不存在與無法驗證。optional artifact 的問題只停用對應功能。JSON Schema
+由 `uv run python -m modules.review_export.schema` 產生，測試會檢查 checked-in schema
+沒有與 Python contract 漂移。
 改換原始影片後，請重跑相關階段或使用 runner 的 `--force`。
 
 凍結的 NumPy detector 與 metadata 隨 repo 放在 `models/yamnet_mean_lr_v1/`，
 執行時驗證 SHA-256；不需 sklearn。YAMNet 首次從 TFHub 下載，之後重用快取。
 預設快取位於系統暫存目錄（必要時使用家目錄的 `.cache`），須為 ASCII 路徑；
-可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。若下載不完整，改設新的空目錄再執行。
+可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。載入前會檢查 SavedModel；
+若 TFHub 留下非空但不完整的模型目錄，會在獨立的 `verified` 快取重新下載，
+成功後供後續任務重用，不需每次手動更換快取目錄。
 
 ### 每場分析的目錄結構（match 路徑）
 
@@ -134,10 +170,10 @@ matches/MK_vs_CT_2019/          # = match_path
 | -------------------- | ------------ | ----------------------------------------------------- | --------------------------------------------------------- |
 | **match**            | 一場比賽     | 一整場羽球比賽（一支轉播影片）                        | `matches/{match}/`、`match_path`（該場路徑）、`match.mp4` |
 | **game**             | 一局         | 比賽中的一局                                          | `game_index`                                              |
-| **rally**            | 一回合／一分 | 一次得分回合，邏輯計分單位                            | `RallyScore`、`scores.json` 的 `rallies`、`server`        |
-| **segment**          | 一個影片片段 | rally 對應的影片切片（起訖 frame），與 rally 一對一   | `Segment`、`segments.json`、`segment_index`               |
+| **rally**            | 一回合／一分 | 一次得分回合；分段不保證與它一對一                    | UI 沿用 rally 名稱；artifact 不可據此假設一段只有一回合   |
+| **segment**          | 一個影片片段 | 依鏡頭切出的起訖 frame，可能含零個、一個或多個回合    | `Segment`、`segments.json`、`segment_index`               |
 | **player**           | 球員         | 場上兩位球員，固定以 `a`/`b` 標示，不隨換邊改變       | `player: "a"/"b"`                                         |
-| **score a/b**        | 比分         | 兩邊比分，固定綁 `a`/`b`（跟著 player，不受換邊影響） | `score_a`、`score_b`                                      |
+| **score a/b**        | 比分觀察     | segment 取樣看到的記分板列值；不保證是回合前或回合後 | `score_a`、`score_b`；固定綁 `a`/`b`                      |
 | **stage**            | 階段         | 管線中的一個處理階段                                  | `stages/{stage}/`、`StageSpec`                            |
 | **downscaled video** | 低解析度影片 | 為加速掃描／辨識而降解析度的快取影片                  | `downscaled_video()`、`cache/match_480p.mp4`              |
 

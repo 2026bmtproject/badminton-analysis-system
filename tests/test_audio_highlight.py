@@ -2,6 +2,7 @@
 from dataclasses import replace
 import hashlib
 import json
+import os
 import sys
 from types import SimpleNamespace
 
@@ -120,6 +121,12 @@ def test_module_real_math_and_serialization(tmp_path, audio_boundary):
     assert [s["segment_index"] for s in payload["signals"]] == [0, 1, 2]
     assert [s["cheer_intensity"] for s in payload["signals"]] == [None, 0.0, 1.0]
     assert [s["n_cheer_windows"] for s in payload["signals"]] == [0, 1, 1]
+    assert [(w["segment_index"], w["start_sec"], w["end_sec"]) for w in payload["windows"]] == [
+        (0, 0.0, 3.0), (1, 3.0, 6.0), (2, 6.0, 9.0),
+    ]
+    assert [s["cheer_confidence"] for s in payload["signals"]] == pytest.approx(
+        [w["cheer_probability"] for w in payload["windows"]]
+    )
     assert "highlights" not in payload
     assert not artifact_path(tmp_path, "highlight_ranking").exists()
     state = read_status(stage_path(tmp_path, module.name))
@@ -146,11 +153,42 @@ def test_hub_cache_configuration(tmp_path, monkeypatch):
         yamnet.configure_hub_cache()
 
 
-def test_hub_corrupt_cache_error_is_actionable(monkeypatch):
-    monkeypatch.setattr(yamnet, "configure_hub_cache", lambda: None)
-    def fail(handle):
-        raise OSError("missing saved_model.pb")
+def test_hub_corrupt_cache_recovers_without_reusing_bad_model(tmp_path, monkeypatch):
+    cache = tmp_path / "hub"
+    bad = cache / "old"
+    bad.mkdir(parents=True)
+    (bad / "assets").mkdir()
+    good = cache / "verified" / "model"
+    good.mkdir(parents=True)
+    (good / "saved_model.pb").write_bytes(b"model")
+    monkeypatch.setattr(yamnet, "configure_hub_cache", lambda: cache)
+    monkeypatch.setenv("TFHUB_CACHE_DIR", str(cache))
+    loaded = []
+
+    def resolve(handle):
+        assert handle == yamnet.YAMNET_MODEL_HANDLE
+        return good if os.environ["TFHUB_CACHE_DIR"] == str(cache / "verified") else bad
+
+    def load(path):
+        loaded.append(path)
+        return object()
+
     monkeypatch.setitem(sys.modules, "tensorflow", SimpleNamespace())
-    monkeypatch.setitem(sys.modules, "tensorflow_hub", SimpleNamespace(load=fail))
+    monkeypatch.setitem(sys.modules, "tensorflow_hub", SimpleNamespace(resolve=resolve, load=load))
+    yamnet._load_hub_model(yamnet.YAMNET_MODEL_HANDLE)
+    assert loaded == [str(good)]
+
+
+def test_hub_recovery_reports_second_incomplete_download(tmp_path, monkeypatch):
+    cache = tmp_path / "hub"
+    cache.mkdir()
+    monkeypatch.setattr(yamnet, "configure_hub_cache", lambda: cache)
+    monkeypatch.setenv("TFHUB_CACHE_DIR", str(cache))
+    bad = cache / "model"
+    bad.mkdir()
+    monkeypatch.setitem(sys.modules, "tensorflow", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "tensorflow_hub", SimpleNamespace(
+        resolve=lambda handle: bad, load=lambda path: pytest.fail("must not load incomplete model")
+    ))
     with pytest.raises(yamnet.YamNetError, match="TFHUB_CACHE_DIR"):
         yamnet._load_hub_model(yamnet.YAMNET_MODEL_HANDLE)

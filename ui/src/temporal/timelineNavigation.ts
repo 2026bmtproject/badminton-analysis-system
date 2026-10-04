@@ -1,0 +1,68 @@
+import type { TimelineViewport } from "./timeline";
+
+/** 500 ms remains well above one video frame and avoids meaningless sub-frame zoom. */
+export const MIN_TIMELINE_VIEWPORT_SECONDS = 0.5;
+
+export function constrainTimelineViewport(
+  startSec: number,
+  durationSec: number,
+  totalDurationSec: number,
+  minimumDurationSec = MIN_TIMELINE_VIEWPORT_SECONDS,
+): TimelineViewport {
+  const total = Math.max(0.001, Number.isFinite(totalDurationSec) ? totalDurationSec : 0.001);
+  const minimum = Math.min(total, Math.max(0.001, minimumDurationSec));
+  const duration = Math.min(
+    total,
+    Math.max(minimum, Number.isFinite(durationSec) ? durationSec : total),
+  );
+  const maximumStart = Math.max(0, total - duration);
+  const start = Math.min(
+    maximumStart,
+    Math.max(0, Number.isFinite(startSec) ? startSec : 0),
+  );
+  return { startSec: start, endSec: start + duration, durationSec: duration };
+}
+
+export function zoomTimelineViewport(
+  current: TimelineViewport,
+  scale: number,
+  anchorTimeSec: number,
+  totalDurationSec: number,
+) {
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const anchorFraction = Math.min(
+    1,
+    Math.max(0, (anchorTimeSec - current.startSec) / Math.max(0.001, current.durationSec)),
+  );
+  const nextDuration = constrainTimelineViewport(
+    0,
+    current.durationSec * safeScale,
+    totalDurationSec,
+  ).durationSec;
+  const nextStart = anchorTimeSec - nextDuration * anchorFraction;
+  return constrainTimelineViewport(nextStart, nextDuration, totalDurationSec);
+}
+
+export function panTimelineViewport(
+  current: TimelineViewport,
+  deltaSec: number,
+  totalDurationSec: number,
+) {
+  return constrainTimelineViewport(
+    current.startSec + (Number.isFinite(deltaSec) ? deltaSec : 0),
+    current.durationSec,
+    totalDurationSec,
+  );
+}
+
+export function centerTimelineViewport(
+  current: TimelineViewport,
+  timeSec: number,
+  totalDurationSec: number,
+) {
+  return constrainTimelineViewport(
+    timeSec - current.durationSec / 2,
+    current.durationSec,
+    totalDurationSec,
+  );
+}

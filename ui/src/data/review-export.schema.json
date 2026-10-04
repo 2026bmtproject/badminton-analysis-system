@@ -1,0 +1,951 @@
+{
+  "$defs": {
+    "ReviewAudio": {
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "intensity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intensity"
+        },
+        "segmentIndex": {
+          "minimum": 0,
+          "title": "Segmentindex",
+          "type": "integer"
+        },
+        "windowCount": {
+          "minimum": 0,
+          "title": "Windowcount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "segmentIndex",
+        "confidence",
+        "windowCount"
+      ],
+      "title": "ReviewAudio",
+      "type": "object"
+    },
+    "ReviewCheerWindow": {
+      "properties": {
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "number"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "segmentIndex": {
+          "minimum": 0,
+          "title": "Segmentindex",
+          "type": "integer"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "number"
+        },
+        "time": {
+          "minimum": 0,
+          "title": "Time",
+          "type": "number"
+        }
+      },
+      "required": [
+        "segmentIndex",
+        "start",
+        "end",
+        "time",
+        "score"
+      ],
+      "title": "ReviewCheerWindow",
+      "type": "object"
+    },
+    "ReviewCommentary": {
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/ReviewCommentaryEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "full-match",
+                "on-demand"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewCommentarySummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unsupportedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unsupportedreason"
+        }
+      },
+      "required": [
+        "status",
+        "source",
+        "summary",
+        "events"
+      ],
+      "title": "ReviewCommentary",
+      "type": "object"
+    },
+    "ReviewCommentaryAvailability": {
+      "properties": {
+        "availableRallyCount": {
+          "minimum": 0,
+          "title": "Availablerallycount",
+          "type": "integer"
+        },
+        "coverage": {
+          "enum": [
+            "none",
+            "partial",
+            "complete"
+          ],
+          "title": "Coverage",
+          "type": "string"
+        },
+        "totalRallyCount": {
+          "minimum": 0,
+          "title": "Totalrallycount",
+          "type": "integer"
+        },
+        "unsupportedRallyCount": {
+          "minimum": 0,
+          "title": "Unsupportedrallycount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "coverage",
+        "availableRallyCount",
+        "unsupportedRallyCount",
+        "totalRallyCount"
+      ],
+      "title": "ReviewCommentaryAvailability",
+      "type": "object"
+    },
+    "ReviewCommentaryEvent": {
+      "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/ReviewEvidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "frame": {
+          "minimum": 0,
+          "title": "Frame",
+          "type": "integer"
+        },
+        "player": {
+          "enum": [
+            "a",
+            "b"
+          ],
+          "title": "Player",
+          "type": "string"
+        },
+        "segmentIndex": {
+          "minimum": 0,
+          "title": "Segmentindex",
+          "type": "integer"
+        },
+        "sourceFactIds": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sourcefactids",
+          "type": "array"
+        },
+        "strokeIndex": {
+          "minimum": 0,
+          "title": "Strokeindex",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "timeSec": {
+          "minimum": 0,
+          "title": "Timesec",
+          "type": "number"
+        }
+      },
+      "required": [
+        "segmentIndex",
+        "text",
+        "sourceFactIds",
+        "evidence",
+        "strokeIndex",
+        "frame",
+        "timeSec",
+        "player"
+      ],
+      "title": "ReviewCommentaryEvent",
+      "type": "object"
+    },
+    "ReviewCommentarySummary": {
+      "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/ReviewEvidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "segmentIndex": {
+          "minimum": 0,
+          "title": "Segmentindex",
+          "type": "integer"
+        },
+        "sourceFactIds": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sourcefactids",
+          "type": "array"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "segmentIndex",
+        "text",
+        "sourceFactIds",
+        "evidence"
+      ],
+      "title": "ReviewCommentarySummary",
+      "type": "object"
+    },
+    "ReviewCourtPosition": {
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "coordinateSpace": {
+          "const": "court_normalized_v1",
+          "title": "Coordinatespace",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "ankle_midpoint",
+            "nearby_frame_ankle_midpoint",
+            "single_ankle",
+            "bbox_bottom_center"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "sourceFrame": {
+          "minimum": 0,
+          "title": "Sourceframe",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "coordinateSpace",
+        "source",
+        "sourceFrame"
+      ],
+      "title": "ReviewCourtPosition",
+      "type": "object"
+    },
+    "ReviewEvidence": {
+      "properties": {
+        "eventIndex": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Eventindex"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Time"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "eventIndex",
+        "time"
+      ],
+      "title": "ReviewEvidence",
+      "type": "object"
+    },
+    "ReviewRally": {
+      "properties": {
+        "audio": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewAudio"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commentary": {
+          "$ref": "#/$defs/ReviewCommentary"
+        },
+        "duration": {
+          "minimum": 0,
+          "title": "Duration",
+          "type": "number"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "number"
+        },
+        "game": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Game"
+        },
+        "gameConflict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gameconflict"
+        },
+        "gameSource": {
+          "anyOf": [
+            {
+              "enum": [
+                "scores",
+                "identity"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gamesource"
+        },
+        "highlight": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Highlight"
+        },
+        "hits": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ReviewStroke"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Hits"
+        },
+        "id": {
+          "minimum": 0,
+          "title": "Id",
+          "type": "integer"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "enum": [
+                  "a",
+                  "b"
+                ],
+                "type": "string"
+              },
+              "propertyNames": {
+                "enum": [
+                  "top",
+                  "bottom"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity"
+        },
+        "multi": {
+          "title": "Multi",
+          "type": "boolean"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "scoreIssue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scoreissue"
+        },
+        "splits": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Splits",
+          "type": "array"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "number"
+        },
+        "subScores": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Subscores",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "start",
+        "end",
+        "duration",
+        "score",
+        "multi",
+        "subScores",
+        "splits",
+        "hits",
+        "audio",
+        "commentary"
+      ],
+      "title": "ReviewRally",
+      "type": "object"
+    },
+    "ReviewSource": {
+      "properties": {
+        "backendBaseCommit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backendbasecommit"
+        },
+        "fingerprints": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Fingerprints",
+          "type": "object"
+        },
+        "importedAt": {
+          "title": "Importedat",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "matchId": {
+          "title": "Matchid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "matchId",
+        "importedAt",
+        "fingerprints",
+        "limitations"
+      ],
+      "title": "ReviewSource",
+      "type": "object"
+    },
+    "ReviewStageState": {
+      "properties": {
+        "fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fingerprint"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "missing",
+            "error",
+            "stale",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "usable": {
+          "title": "Usable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status",
+        "usable"
+      ],
+      "title": "ReviewStageState",
+      "type": "object"
+    },
+    "ReviewStroke": {
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Confidence"
+        },
+        "courtPosition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewCourtPosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "eventIndex": {
+          "minimum": 0,
+          "title": "Eventindex",
+          "type": "integer"
+        },
+        "frame": {
+          "minimum": 0,
+          "title": "Frame",
+          "type": "integer"
+        },
+        "hitter": {
+          "anyOf": [
+            {
+              "enum": [
+                "a",
+                "b"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hitter"
+        },
+        "hitterSide": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hitterside"
+        },
+        "ordinal": {
+          "exclusiveMinimum": 0,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "player": {
+          "title": "Player",
+          "type": "string"
+        },
+        "positionQuality": {
+          "anyOf": [
+            {
+              "enum": [
+                "measured",
+                "estimated",
+                "unresolved"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Positionquality"
+        },
+        "positionSource": {
+          "anyOf": [
+            {
+              "enum": [
+                "ankle_midpoint",
+                "nearby_frame_ankle_midpoint",
+                "single_ankle",
+                "bbox_bottom_center"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Positionsource"
+        },
+        "positionUnavailableReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "HITTER_UNRESOLVED",
+                "POSE_UNAVAILABLE",
+                "ANKLES_UNAVAILABLE",
+                "COURT_TRANSFORM_UNAVAILABLE",
+                "OUT_OF_COURT"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Positionunavailablereason"
+        },
+        "strokeIndex": {
+          "minimum": 0,
+          "title": "Strokeindex",
+          "type": "integer"
+        },
+        "time": {
+          "minimum": 0,
+          "title": "Time",
+          "type": "number"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Type"
+        }
+      },
+      "required": [
+        "eventIndex",
+        "strokeIndex",
+        "frame",
+        "time",
+        "ordinal",
+        "player",
+        "type",
+        "confidence"
+      ],
+      "title": "ReviewStroke",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Stable envelope consumed by Vue; presentation state is absent.",
+  "properties": {
+    "capabilities": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "cheerTimeline": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/ReviewCheerWindow"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cheertimeline"
+    },
+    "commentaryAvailability": {
+      "$ref": "#/$defs/ReviewCommentaryAvailability"
+    },
+    "duration": {
+      "exclusiveMinimum": 0,
+      "title": "Duration",
+      "type": "number"
+    },
+    "fps": {
+      "exclusiveMinimum": 0,
+      "title": "Fps",
+      "type": "number"
+    },
+    "players": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "propertyNames": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      },
+      "title": "Players",
+      "type": "object"
+    },
+    "rallies": {
+      "items": {
+        "$ref": "#/$defs/ReviewRally"
+      },
+      "title": "Rallies",
+      "type": "array"
+    },
+    "scenario": {
+      "title": "Scenario",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "review-export-v1",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/ReviewSource"
+    },
+    "states": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ReviewStageState"
+      },
+      "title": "States",
+      "type": "object"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "video": {
+      "title": "Video",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "title",
+    "video",
+    "duration",
+    "scenario",
+    "players",
+    "capabilities",
+    "states",
+    "rallies",
+    "commentaryAvailability",
+    "fps",
+    "source"
+  ],
+  "title": "ReviewExport",
+  "type": "object"
+}

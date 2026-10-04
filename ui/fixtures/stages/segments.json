@@ -1,0 +1,33 @@
+{
+  "fps": 25,
+  "segments": [
+    {
+      "start_frame": 50,
+      "end_frame": 225,
+      "start_sec": 2,
+      "end_sec": 9,
+      "duration_sec": 7
+    },
+    {
+      "start_frame": 275,
+      "end_frame": 475,
+      "start_sec": 11,
+      "end_sec": 19,
+      "duration_sec": 8
+    },
+    {
+      "start_frame": 550,
+      "end_frame": 825,
+      "start_sec": 22,
+      "end_sec": 33,
+      "duration_sec": 11
+    },
+    {
+      "start_frame": 875,
+      "end_frame": 1050,
+      "start_sec": 35,
+      "end_sec": 42,
+      "duration_sec": 7
+    }
+  ]
+}

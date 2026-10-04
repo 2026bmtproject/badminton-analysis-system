@@ -11,6 +11,7 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.local/
 .ipynb_checkpoints/
 
 # ---- Virtual environments ----
@@ -41,6 +42,7 @@ matches/*
 # NOTE: broad ignore. If a small fixture must be committed, force-add it:
 *.csv
 *.json
+!ui/src/data/*.schema.json
 *.mp4
 *.avi
 *.mkv
