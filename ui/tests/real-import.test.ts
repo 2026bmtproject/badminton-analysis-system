@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, cp, rm } from "node:fs/promises";
+import { readFile, mkdtemp, cp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -95,9 +95,10 @@ test("real catalog and registrations survive the actual demo-data generator", as
       { rallies: [] },
       { path: "registered.mp4", size: 1, mtimeMs: 0 },
     );
+    const catalog = JSON.parse(await readFile(join(folder, "public/matches/catalog.json"), "utf8"));
     const files = [
       "public/matches/catalog.json",
-      "public/matches/local_test.json",
+      `public${catalog[0].url}`,
       ".local/videos.json",
     ];
     const before = await Promise.all(
@@ -125,6 +126,27 @@ test("real catalog and registrations survive the actual demo-data generator", as
     assert.ok(
       resolve(folder).startsWith(resolve(tmpdir()) + requireSeparator()),
     );
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+test("failed catalog publication keeps the previous Review and video registration", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "badminton-ui-publish-"));
+  try {
+    await registerMatch(folder, "local_test", "Old", { version: 1 },
+      { path: "old.mp4", size: 1, mtimeMs: 1 });
+    const catalogPath = join(folder, "public/matches/catalog.json");
+    const registryPath = join(folder, ".local/videos.json");
+    const oldCatalog = await readFile(catalogPath, "utf8");
+    const oldRegistry = await readFile(registryPath, "utf8");
+    const oldUrl = JSON.parse(oldCatalog)[0].url;
+    await mkdir(`${catalogPath}.tmp`);
+    await assert.rejects(registerMatch(folder, "local_test", "New", { version: 2 },
+      { path: "new.mp4", size: 2, mtimeMs: 2 }));
+    assert.equal(await readFile(catalogPath, "utf8"), oldCatalog);
+    assert.equal(await readFile(registryPath, "utf8"), oldRegistry);
+    assert.deepEqual(JSON.parse(await readFile(join(folder, `public${oldUrl}`), "utf8")), { version: 1 });
+  } finally {
+    assert.ok(resolve(folder).startsWith(resolve(tmpdir()) + requireSeparator()));
     await rm(folder, { recursive: true, force: true });
   }
 });

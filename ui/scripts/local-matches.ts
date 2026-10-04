@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile, rename, stat, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { parseMatchModel } from "../src/data/matchParser";
 import type { MatchModel } from "../src/domain/models";
@@ -36,12 +37,19 @@ export async function registerMatch(
   const catalog: CatalogEntry[] = (await optionalJson(join(publicDir, "catalog.json"))) ?? [];
   const registry: Record<string, VideoRegistration> =
     (await optionalJson(join(localDir, "videos.json"))) ?? {};
-  const entry = { id: `match:${id}`, name, url: `/matches/${id}.json` };
-  await save(join(publicDir, `${id}.json`), model);
+  const hash = createHash("sha256").update(JSON.stringify(model)).digest("hex").slice(0, 16);
+  const entry = { id: `match:${id}`, name, url: `/matches/${id}-${hash}.json` };
+  // Publish immutable data first; the catalog update is the commit point.
+  await save(join(publicDir, `${id}-${hash}.json`), model);
   await save(join(localDir, "videos.json"), { ...registry, [id]: video });
-  await save(join(publicDir, "catalog.json"), [
-    ...catalog.filter((candidate) => candidate.id !== entry.id), entry,
-  ]);
+  try {
+    await save(join(publicDir, "catalog.json"), [
+      ...catalog.filter((candidate) => candidate.id !== entry.id), entry,
+    ]);
+  } catch (error) {
+    await save(join(localDir, "videos.json"), registry);
+    throw error;
+  }
 }
 
 /** Invoke the Python data boundary with an argv array; no shell command is composed. */

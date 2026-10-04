@@ -24,7 +24,7 @@ async function fetchJson(url: string, fresh = false): Promise<unknown> {
 export async function loadCatalog(): Promise<CatalogEntry[]> {
   const [fixtures, matches] = await Promise.all([
     fetchJson("/generated/catalog.json").catch(() => []),
-    fetchJson("/matches/catalog.json").catch(() => []),
+    fetchJson("/matches/catalog.json", true).catch(() => []),
   ]);
   const fixtureRows = z.array(catalogRow.omit({ url: true })).parse(fixtures);
   const matchRows = z.array(catalogRow).parse(matches);

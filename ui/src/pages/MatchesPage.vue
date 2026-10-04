@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import { importLocalMatch, listLocalMatches, loadCatalog, type ImportableMatch } from "../data/matchRepository";
+import { listPipelineMatches, taskStatusLabel, type LocalAnalysisMatch } from "../data/pipelineTasks";
+import PipelinePanel from "../components/PipelinePanel.vue";
 import type { CatalogEntry } from "../domain/models";
 
 const entries = ref<CatalogEntry[]>([]);
@@ -15,6 +17,33 @@ const candidates = ref<ImportableMatch[]>([]);
 const importLoading = ref(false);
 const importingId = ref<string | null>(null);
 const importError = ref("");
+const showAnalysis = ref(false);
+const localMatches = ref<LocalAnalysisMatch[]>([]);
+const localError = ref("");
+const selectedLocalId = ref<string | null>(null);
+const selectedLocal = computed(() => localMatches.value.find(row => row.id === selectedLocalId.value) ?? null);
+
+async function loadAnalysis() {
+  try {
+    localMatches.value = await listPipelineMatches();
+    localError.value = "";
+    if (selectedLocalId.value && !localMatches.value.some(row => row.id === selectedLocalId.value)) {
+      selectedLocalId.value = null;
+    }
+  } catch {
+    localError.value = "無法連接本機分析服務。請先啟動 Python 服務。";
+  }
+}
+
+async function toggleAnalysis() {
+  showAnalysis.value = !showAnalysis.value;
+  if (!showAnalysis.value) selectedLocalId.value = null;
+  if (showAnalysis.value) await loadAnalysis();
+}
+
+async function analysisUpdated() {
+  await Promise.all([loadAnalysis(), load()]);
+}
 
 async function load() {
   loading.value = true;
@@ -62,6 +91,7 @@ onMounted(async () => {
   await nextTick();
   heading.value?.focus();
   await load();
+  await loadAnalysis();
 });
 </script>
 
@@ -74,6 +104,7 @@ onMounted(async () => {
       </div>
       <div class="matches-header-actions">
         <span class="matches-count" aria-live="polite">{{ loading ? "讀取中" : `${entries.length} 場` }}</span>
+        <button type="button" :aria-expanded="showAnalysis" aria-controls="match-analysis-panel" @click="toggleAnalysis">分析比賽</button>
         <button type="button" :aria-expanded="showImport" aria-controls="match-import-panel" @click="toggleImport">匯入比賽</button>
       </div>
     </header>
@@ -95,6 +126,23 @@ onMounted(async () => {
             <button type="button" :disabled="!candidate.available || importingId !== null" @click="importCandidate(candidate.id)">{{ importingId === candidate.id ? "匯入中…" : "匯入" }}</button>
           </li>
         </ul>
+      </section>
+
+      <section v-if="showAnalysis" id="match-analysis-panel" class="match-analysis-panel" aria-label="本機比賽分析">
+        <h2>本機比賽分析</h2>
+        <p v-if="localError" class="error" role="alert">{{ localError }} <button type="button" @click="loadAnalysis">重試</button></p>
+        <p v-else-if="!localMatches.length" class="empty-state">matches/ 內沒有附影片的比賽。</p>
+        <div v-else class="match-analysis-layout">
+          <nav v-if="!selectedLocal" aria-label="本機比賽"><button v-for="row in localMatches" :key="row.id" type="button"
+            @click="selectedLocalId = row.id">
+            <strong>{{ row.id }}</strong><span>{{ row.latestTask ? taskStatusLabel(row.latestTask.status) : ({ completed: "已完成", partial: "部分完成", unanalysed: "尚未分析" }[row.analysisStatus]) }}</span>
+          </button></nav>
+          <div v-else class="match-analysis-details">
+            <button type="button" class="match-analysis-back" @click="selectedLocalId = null">← 更換比賽</button>
+            <PipelinePanel :match="selectedLocal"
+              :has-review="entries.some(entry => entry.id === `match:${selectedLocalId}`)" @updated="analysisUpdated" />
+          </div>
+        </div>
       </section>
 
       <p v-if="loading" class="matches-status" role="status">載入比賽目錄…</p>

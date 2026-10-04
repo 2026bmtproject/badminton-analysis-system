@@ -5,8 +5,9 @@
 ## 架構
 
 ```text
-backend stage JSON / local catalog
-  → scripts/adapter.ts（後端 schema 驗證、跨 artifact join）
+backend stage JSON / status.json
+  → modules.review_export（Python 驗證、跨 artifact join、球場位置）
+  → scripts/local-matches.ts（Python 子程序與原子發布）
   → cached/runtime JSON
   → src/data/matchParser.ts（runtime 驗證、明確支援的舊 cache 相容）
   → src/domain/models.ts（唯一前端 domain 與 capabilities）
@@ -20,11 +21,11 @@ backend stage JSON / local catalog
 
 Timeline 的 Full Match／Fit Rally Temporal Lens 共用同一 viewport 與 time ↔ percent 映射。Full Match 保留全場尺度；Fit Rally 顯示局部精確 Stroke 證據。Rally lane 會選取 owning Rally 並 seek 點擊的 exact time；Score、Cheer、Highlight 使用 owning Rally start；Stroke 與賽評證據使用 exact Stroke time。播放器全場 locator 與 Timeline local locator 以相同 Rally index grammar 註冊全場／局部位置。
 
-Capabilities 由 adapter 的 stage state 與實際逐片段資料集中產生。optional artifact 缺失或錯誤只關閉對應軌道／內容，不阻止 segments 可用的比賽載入。`null` 保留為缺資料，`0` 保留為合法觀察值。
+Capabilities 由 Python review exporter 的 stage state 與實際逐片段資料集中產生。optional artifact 缺失或錯誤只關閉對應軌道／內容，不阻止 segments 可用的比賽載入。`null` 保留為缺資料，`0` 保留為合法觀察值。
 
-賽評支援 `stages/commentary/commentary.json` 的 `commentary-rallies-v1` 全場 artifact，以及沒有全場 `status.json` 的 `stages/commentary/segments/segment_*.json` `commentary-segment-v1` 隨選 artifact。全場資料是基底；同片段的有效隨選結果以整個 Rally 為單位覆寫。前端分開保留全場 stage state 與逐片段可用率，不會因一筆隨選結果宣稱全場完成。事件以 full-match `stroke_index` 精確 join `Stroke.eventIndex` 並保留 backend `time_sec`；摘要沒有時間，不進 Timeline。`source_fact_ids` 原樣保留，只有精確的 `rally:<segment>:stroke:<eventIndex>` 可導向既有 Stroke，其他依據安全顯示為未解析 provenance。前端只讀既有 artifact，不合成或觸發賽評。
+賽評支援 `stages/commentary/commentary.json` 的 `commentary-rallies-v1` 全場 artifact，以及沒有全場 `status.json` 的 `stages/commentary/segments/segment_*.json` `commentary-segment-v1` 隨選 artifact。全場資料是基底；同片段的有效隨選結果以整個 Rally 為單位覆寫。前端分開保留全場 stage state 與逐片段可用率，不會因一筆隨選結果宣稱全場完成。事件以 full-match `stroke_index` 精確 join `Stroke.eventIndex` 並保留 backend `time_sec`；摘要沒有時間，不進 Timeline。`source_fact_ids` 原樣保留，只有精確的 `rally:<segment>:stroke:<eventIndex>` 可導向既有 Stroke，其他依據安全顯示為未解析 provenance。Review 只呈現已發布結果；Matches 的任務介面要明確選取 commentary 才會執行賽評。
 
-後端 `modules/**`、`matches/**` 與 root pipeline 對此前端是唯讀資料來源。匯入器不修改 stages，也不載入 pose/shuttle 大型 JSON 至首屏。
+Python 本機任務服務執行 `modules/**` pipeline；匯入器讀取完成的 artifacts 並更新回看快取。Vue 仍只載入版本化 Review export，不載入 pose/shuttle 大型 JSON 至首屏。
 
 ## 日常操作（Windows PowerShell）
 
@@ -34,6 +35,38 @@ Capabilities 由 adapter 的 stage state 與實際逐片段資料集中產生。
 cd <repository>\ui
 npm.cmd ci
 ```
+
+在第一個 PowerShell 視窗啟動分析任務服務（預設只綁定 `127.0.0.1:8765`）：
+
+```powershell
+cd <repository>
+$env:BADMINTON_MATCHES_DIR='F:\CODE\專題\badminton-analysis-system\matches'
+uv run python -m modules.local_tasks.service
+```
+
+第二個視窗以相同 `BADMINTON_MATCHES_DIR` 啟動 Vue：
+
+```powershell
+cd <repository>\ui
+$env:BADMINTON_MATCHES_DIR='F:\CODE\專題\badminton-analysis-system\matches'
+npm.cmd run dev -- --port 5173 --strictPort
+```
+
+Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時未確認完成的任務標為 interrupted，不自動重跑。
+
+私有任務資料預設在 `<repository>/.local/pipeline-tasks/`，可用 `BADMINTON_TASKS_DIR` 覆寫。`--ui-origin` 預設為 `http://127.0.0.1:5173`；改用其他 Vue 連接埠時需在啟動 Python 服務時設定。Vite 將同源 `/api/pipeline/*` 代理至 loopback 服務。未啟動服務時，已匯入 Review 仍可讀取。
+
+API 範例：
+
+```text
+POST /api/pipeline/plan
+{"matchId":"Kunlavut","stages":["audio_highlight"],"mode":"continue"}
+
+POST /api/pipeline/tasks
+{"matchId":"Kunlavut","stages":["audio_highlight"],"mode":"continue","planId":"<planId>"}
+```
+
+plan 回應包含 `planId`、`stages`（run／skip 與原因）、`affectedOutsideScope`、`includesGemini`。來源變動時 start 回傳 409，需重新預覽。`GET /api/pipeline/tasks/<id>` 取得狀態，`GET /api/pipeline/tasks/<id>/logs?offset=0&limit=100` 分頁讀 log。
 
 啟動後在 Matches 頁按「匯入比賽」，從 `<repository>/matches/` 選擇已完成分析的資料夾。這會沿用命令列匯入器，驗證 stage 指紋與影片，產生前端快取；不重新執行分析。缺少影片、分段結果或完成狀態的資料夾會列出原因，無法點選。
 
@@ -68,7 +101,7 @@ npm.cmd run dev -- --port 5173 --strictPort
 
 ## 目錄
 
-- `scripts/`：artifact adapter、真實匯入、受限影片路由與可重現的合成示範資料。
+- `scripts/`：真實匯入、受限影片路由，以及 fixture 專用 adapter 與合成示範資料。
 - `src/domain/`：canonical frontend model 與 capabilities。
 - `src/data/`：catalog／MatchModel repository boundary。
 - `src/state/`：review workspace temporal/selection state。
