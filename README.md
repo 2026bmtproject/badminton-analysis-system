@@ -22,14 +22,14 @@ modules/
 ├── player_identity/      # 球員身分對應（記分板列 <-> 場地半場）
 ├── audio_highlight/      # 音訊歡呼訊號 / audio measurements
 ├── highlight_ranking/    # 精彩片段排序 / downstream ranking policy
-├── commentary/           # 賽評契約與 domain schemas（尚未接入 runtime）
+├── commentary/           # 賽評契約、生成與 production runtime
 ├── common/               # 共用工具
 │   └── bst/              # BST 球種模型（event_detection 與 stroke_classification 共用）
 ├── base.py               # BaseModule 介面 + 階段狀態 (status.json)
 ├── contracts.py          # 階段間資料契約 + 依賴圖 (single source of truth)
 └── runner.py             # 管線 runner：拓樸排序、跳過已完成、失敗即停
 
-ui/        # 分析介面
+ui/        # 共用 Vue 回看介面、Vite 開發服務與 Electron 桌面入口
 matches/   # 每場分析的資料（不進 repo）
 ```
 
@@ -124,7 +124,8 @@ uv run python -m modules.review_export matches/Kunlavut --output review.json
 改換原始影片後，請重跑相關階段或使用 runner 的 `--force`。
 
 凍結的 NumPy detector 與 metadata 隨 repo 放在 `models/yamnet_mean_lr_v1/`，
-執行時驗證 SHA-256；不需 sklearn。YAMNet 首次從 TFHub 下載，之後重用快取。
+執行時驗證 SHA-256；不需 sklearn。這個 16 KB 的分類器是執行所需的固定資產，
+來源與雜湊見該目錄的 README。YAMNet 首次從 TFHub 下載，之後重用快取。
 預設快取位於系統暫存目錄（必要時使用家目錄的 `.cache`），須為 ASCII 路徑；
 可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。載入前會檢查 SavedModel；
 若 TFHub 留下非空但不完整的模型目錄，會在獨立的 `verified` 快取重新下載，
@@ -178,6 +179,9 @@ matches/MK_vs_CT_2019/          # = match_path
 | **downscaled video** | 低解析度影片 | 為加速掃描／辨識而降解析度的快取影片                  | `downscaled_video()`、`cache/match_480p.mp4`              |
 
 ## 開始使用
+
+Vue 開發模式、Electron Windows unpacked 版、外部 Python checkout 與使用者資料位置，
+統一見 [UI 操作與架構文件](ui/README.md)。
 
 ```bash
 uv sync

@@ -4,8 +4,3 @@ public/generated/
 public/matches/
 .local/
 .tools/
-# The backend ignores JSON globally; frontend sources must remain visible.
-!package.json
-!package-lock.json
-!tsconfig.json
-!fixtures/**/*.json
