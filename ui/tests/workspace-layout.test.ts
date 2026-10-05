@@ -3,6 +3,7 @@ import test from "node:test";
 import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel, useWorkspaceLayout } from "../src/state/workspaceLayout";
 import { availableTimelineModes } from "../src/components/timeline/timelineModeRegistry";
 import type { MatchCapabilities } from "../src/domain/models";
+import { FULLSCREEN_SNAP_DISTANCE_PX, fullscreenHomePanel, fullscreenSnapCandidate } from "../src/state/workspaceGeometry";
 
 test("invalid persisted workspace state falls back without breaking Review", () => {
   assert.deepEqual(parseWorkspaceLayout("not-json"), defaultWorkspaceLayout());
@@ -23,8 +24,47 @@ test("persisted panels are constrained to reachable, readable bounds", () => {
 test("default workspace exposes exactly two persistent panels and truthful modes", () => {
   const layout = defaultWorkspaceLayout();
   assert.deepEqual(Object.keys(layout.panels).sort(), ["analysis", "timeline"]);
+  assert.deepEqual(Object.keys(layout.fullscreenPanels).sort(), ["analysis", "timeline"]);
+  assert.equal(layout.fullscreenPanels.timeline.presentation, "detached");
   assert.equal(layout.timelineMode, "rally");
   assert.equal(layout.analysisView, "analysis");
+});
+
+test("normal and fullscreen floating settings persist independently", () => {
+  const source = defaultWorkspaceLayout();
+  source.panels.analysis.alpha = 0.81;
+  source.fullscreenPanels.analysis.alpha = 0.88;
+  source.fullscreenPanels.analysis.x = 0.32;
+  source.fullscreenPanels.timeline.y = 0.45;
+  const restored = parseWorkspaceLayout(JSON.stringify(source));
+  assert.equal(restored.panels.analysis.alpha, 0.81);
+  assert.equal(restored.fullscreenPanels.analysis.alpha, 0.88);
+  assert.equal(restored.fullscreenPanels.analysis.x, 0.32);
+  assert.equal(restored.fullscreenPanels.timeline.y, 0.45);
+  const v2 = { ...source, version: 2, fullscreenPanels: undefined };
+  assert.deepEqual(parseWorkspaceLayout(JSON.stringify(v2)).fullscreenPanels, defaultWorkspaceLayout().fullscreenPanels);
+});
+
+test("fullscreen home restores position without changing size, opacity, or normal layout", () => {
+  const layout = defaultWorkspaceLayout();
+  const normal = { ...layout.panels.analysis };
+  const current = { ...layout.fullscreenPanels.analysis, x: 0.31, y: 0.42, width: 0.28, height: 0.48, alpha: 0.81 };
+  const home = fullscreenHomePanel("analysis", current, { width: 1920, height: 1080 });
+  assert.equal(home.x, 1 - current.width); // Wider windows remain entirely on screen.
+  assert.equal(home.y, layout.fullscreenPanels.analysis.y);
+  assert.equal(home.width, current.width);
+  assert.equal(home.height, current.height);
+  assert.equal(home.alpha, current.alpha);
+  assert.deepEqual(layout.panels.analysis, normal);
+});
+
+test("fullscreen drag snaps only near its own home position", () => {
+  const bounds = { width: 1920, height: 1080 };
+  const panel = defaultWorkspaceLayout().fullscreenPanels.timeline;
+  const near = { ...panel, x: panel.x + 40 / bounds.width, y: panel.y - 35 / bounds.height };
+  const far = { ...panel, x: panel.x + (FULLSCREEN_SNAP_DISTANCE_PX + 20) / bounds.width };
+  assert.deepEqual(fullscreenSnapCandidate("timeline", near, bounds), panel);
+  assert.equal(fullscreenSnapCandidate("timeline", far, bounds), null);
 });
 
 test("layout reset restores every persisted presentation field", () => {

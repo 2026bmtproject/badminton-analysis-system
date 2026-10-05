@@ -17,13 +17,14 @@ export type PanelLayout = {
 };
 
 export type WorkspaceLayout = {
-  version: 2;
+  version: 3;
   timelineMode: TimelineMode;
   analysisView: AnalysisView;
   analysisSide: AnalysisDockSide;
   analysisDockWidth: number;
   timelineDockHeight: number;
   panels: Record<WorkspacePanelId, PanelLayout>;
+  fullscreenPanels: Record<WorkspacePanelId, PanelLayout>;
 };
 
 export const WORKSPACE_STORAGE_KEY = "badminton-review-workspace-v1";
@@ -73,7 +74,7 @@ export function sanitizePanel(value: unknown, fallback: PanelLayout): PanelLayou
 
 export function defaultWorkspaceLayout(): WorkspaceLayout {
   return JSON.parse(JSON.stringify({
-    version: 2,
+    version: 3,
     timelineMode: "rally",
     analysisView: "analysis",
     analysisSide: "right",
@@ -83,6 +84,10 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
       timeline: { ...detachedDefaults.timeline, presentation: "docked" },
       analysis: { ...detachedDefaults.analysis, presentation: "docked" },
     },
+    fullscreenPanels: {
+      timeline: { x: 0.025, y: 0.66, width: 0.69, height: 0.25, collapsed: false, alpha: 0.94, presentation: "detached" },
+      analysis: { ...detachedDefaults.analysis, presentation: "detached" },
+    },
   })) as WorkspaceLayout;
 }
 
@@ -91,14 +96,14 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
   if (!raw) return fallback;
   try {
     const value = JSON.parse(raw) as Omit<Partial<WorkspaceLayout>, "version"> & { version?: number };
-    if (value.version !== 1 && value.version !== 2) return fallback;
+    if (value.version !== 1 && value.version !== 2 && value.version !== 3) return fallback;
     const migratedFromFloatingV1 = value.version === 1;
     const panelFallback = (id: WorkspacePanelId): PanelLayout => ({
       ...fallback.panels[id],
       presentation: migratedFromFloatingV1 ? "detached" : "docked",
     });
     return {
-      version: 2,
+      version: 3,
       timelineMode: modes.includes(value.timelineMode as TimelineMode) ? value.timelineMode! : "rally",
       analysisView: views.includes(value.analysisView as AnalysisView) ? value.analysisView! : "analysis",
       analysisSide: value.analysisSide === "left" ? "left" : "right",
@@ -107,6 +112,10 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       panels: {
         timeline: sanitizePanel(value.panels?.timeline, panelFallback("timeline")),
         analysis: sanitizePanel(value.panels?.analysis, panelFallback("analysis")),
+      },
+      fullscreenPanels: {
+        timeline: sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline),
+        analysis: sanitizePanel(value.fullscreenPanels?.analysis, fallback.fullscreenPanels.analysis),
       },
     };
   } catch {

@@ -43,6 +43,9 @@ async function request<T>(path: string, body?: object): Promise<T> {
 export async function listPipelineMatches() {
   return (await request<{ matches: LocalAnalysisMatch[] }>("matches")).matches;
 }
+export async function listPipelineTasks() {
+  return (await request<{ tasks: PipelineTask[] }>("tasks")).tasks;
+}
 export async function listPipelineStages() {
   return (await request<{ stages: PipelineStage[] }>("stages")).stages;
 }

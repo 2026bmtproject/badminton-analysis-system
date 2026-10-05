@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { AnalysisDockSide, PanelLayout, WorkspacePanelId } from "../../state/workspaceLayout";
 import {
   constrainPanel,
+  fullscreenSnapCandidate,
   movePanel,
   resizePanel,
   type WorkspaceBounds,
@@ -16,15 +17,19 @@ const props = withDefaults(defineProps<{
   panelId: WorkspacePanelId;
   active: boolean;
   passive?: boolean;
+  fullscreen?: boolean;
   dockSide?: AnalysisDockSide;
   dockSize?: number;
-}>(), { passive: false, dockSide: "right", dockSize: 0 });
+}>(), { passive: false, fullscreen: false, dockSide: "right", dockSize: 0 });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
   presentation: [value: "docked" | "detached"];
   dockSide: [value: AnalysisDockSide];
   dockSize: [value: number];
+  interaction: [value: boolean];
+  snapDrag: [value: { dragging: boolean; near: boolean }];
+  restore: [];
 }>();
 const root = ref<HTMLElement | null>(null);
 const menu = ref<InstanceType<typeof WorkspacePopover> | null>(null);
@@ -59,7 +64,8 @@ const style = computed(() => props.panel.presentation === "detached" ? ({
   height: visiblePanel.value.collapsed ? "auto" : `${visiblePanel.value.height * 100}%`,
   "--workspace-panel-alpha": visiblePanel.value.alpha,
   zIndex: props.active ? 32 : 31,
-}) : ({ "--workspace-panel-alpha": 1 }));
+}) : ({ "--workspace-panel-alpha": visiblePanel.value.alpha }));
+watch([operation, menuOpen], () => emit("interaction", Boolean(operation.value || menuOpen.value)));
 
 function containerSize() {
   const parent = root.value?.parentElement;
@@ -168,6 +174,7 @@ function startDrag(event: PointerEvent) {
     bounds: containerSize(),
   };
   operation.value = "drag";
+  if (props.fullscreen) emit("snapDrag", { dragging: true, near: false });
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 }
 function drag(event: PointerEvent) {
@@ -178,6 +185,10 @@ function drag(event: PointerEvent) {
     event.clientY - gesture.startY,
     gesture.bounds,
   );
+  if (props.fullscreen && draft.value) emit("snapDrag", {
+    dragging: true,
+    near: fullscreenSnapCandidate(props.panelId, draft.value, gesture.bounds) !== null,
+  });
 }
 function startResize(event: PointerEvent) {
   if (event.button !== 0 || props.panel.collapsed || !floatingEnabled()) return;
@@ -204,7 +215,10 @@ function resize(event: PointerEvent) {
 }
 function endGesture(event: PointerEvent) {
   if (!gesture || event.pointerId !== gesture.pointerId) return;
-  const finalPanel = draft.value;
+  const finalPanel = draft.value && operation.value === "drag" && props.fullscreen
+    ? fullscreenSnapCandidate(props.panelId, draft.value, gesture.bounds) ?? draft.value
+    : draft.value;
+  if (operation.value === "drag" && props.fullscreen) emit("snapDrag", { dragging: false, near: false });
   gesture = null;
   operation.value = null;
   draft.value = null;
@@ -213,6 +227,9 @@ function endGesture(event: PointerEvent) {
 }
 function constrain() {
   if (!root.value || !floatingEnabled() || operation.value) return;
+  // Fullscreen transitions can briefly report a zero-sized parent. Do not
+  // persist a position clamped against that transient measurement.
+  if (!root.value.parentElement || root.value.parentElement.clientWidth < 220 || root.value.parentElement.clientHeight < 96) return;
   const next = constrainPanel(props.panel, containerSize());
   if (JSON.stringify(next) !== JSON.stringify(props.panel)) emit("change", next);
 }
@@ -239,6 +256,8 @@ onMounted(() => {
 });
 watch(() => props.passive, scheduleChromeIdle);
 onBeforeUnmount(() => {
+  emit("interaction", false);
+  emit("snapDrag", { dragging: false, near: false });
   clearChromeTimer();
   observer?.disconnect();
   window.removeEventListener("resize", handleResize);
@@ -258,7 +277,8 @@ onBeforeUnmount(() => {
       <div class="workspace-window__actions">
         <WorkspacePopover ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
           <template #trigger><AppIcon name="sliders" :size="17" /></template>
-          <label v-if="panel.presentation === 'detached'">背景透明度<input aria-label="背景透明度" type="range" min="0.01" max="0.22" step="0.01" :value="Number((1 - panel.alpha).toFixed(2))" @input="update({ alpha: 1 - Number(($event.target as HTMLInputElement).value) })" /></label>
+          <label>背景透明度<input aria-label="背景透明度" type="range" min="0.01" max="0.22" step="0.01" :value="Number((1 - panel.alpha).toFixed(2))" @input="update({ alpha: 1 - Number(($event.target as HTMLInputElement).value) })" /></label>
+          <button v-if="fullscreen && panel.presentation === 'detached'" type="button" role="menuitem" @click="closeMenu(); emit('restore')">回復全螢幕預設位置</button>
           <button v-if="panel.presentation === 'docked'" type="button" role="menuitem" @click="changePresentation('detached')">脫離工作區</button>
           <template v-else>
             <button v-if="panelId === 'timeline'" type="button" role="menuitem" @click="changePresentation('docked')">停靠底部</button>

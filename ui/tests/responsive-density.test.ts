@@ -64,7 +64,8 @@ test("product chrome omits raw match identity and permanent technical footer", (
 test("shared teleported popover has independent width and viewport collision placement", () => {
   const component = source("src/components/workspace/WorkspacePopover.vue");
   const styles = source("src/styles/floating-workspace.css");
-  assert.match(component, /<Teleport to="body">/);
+  assert.match(component, /<Teleport :to="teleportTarget">/);
+  assert.match(component, /document\.fullscreenElement instanceof HTMLElement/);
   assert.match(styles, /\.workspace-popover[^}]*position:\s*fixed/s);
   assert.match(styles, /white-space:\s*nowrap/);
   const placed = placeWorkspacePopover(

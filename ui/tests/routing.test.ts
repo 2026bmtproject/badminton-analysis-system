@@ -11,10 +11,10 @@ test("root redirects to the repository-backed Matches route", () => {
   assert.equal(router.resolve({ name: "matches" }).fullPath, "/matches");
 
   const matches = readFileSync("src/pages/MatchesPage.vue", "utf8");
-  assert.match(matches, /await loadCatalog\(\)/);
-  assert.match(matches, /v-for="entry in entries"/);
-  assert.match(matches, /params: \{ matchId: entry\.id \}/);
-  assert.match(matches, /class="match-row"/);
+  assert.match(matches, /mergeLibrary\(catalog\.value, local\.value, candidates\.value\)/);
+  assert.match(matches, /v-for="row in visible"/);
+  assert.match(matches, /params: \{ matchId: row\.id \}/);
+  assert.match(matches, /class="console-panel library-card"/);
 });
 
 test("valid Match selection resolves the exact catalog identity", () => {
@@ -75,7 +75,8 @@ test("one MatchShell workspace owns the routed Review", () => {
   );
   assert.match(shell, /createMatchContext\(\)/);
   assert.match(shell, /provideMatchContext\(context\)/);
-  assert.match(shell, /<RouterView v-else-if="context\.model\.value" \/>/);
+  assert.match(shell, /<KeepAlive include="ReviewPage">/);
+  assert.match(review, /defineOptions\(\{ name: "ReviewPage" \}\)/);
   assert.match(review, /const context = useMatchContext\(\)/);
   assert.doesNotMatch(review, /useReviewWorkspace/);
   assert.match(app, /<RouterView \/>/);
@@ -99,11 +100,12 @@ test("browser-style back semantics use real links and no duplicate Match Library
     /<RouterLink class="match-back-link" :to="\{ name: 'matches' \}">/,
   );
   assert.match(shell, /aria-label="比賽導覽"/);
-  assert.match(shell, />\s*Review\s*<\/RouterLink>/);
-  assert.match(shell, />\s*Rallies\s*<\/RouterLink>/);
+  assert.match(shell, />\s*回看\s*<\/RouterLink>/);
+  assert.match(shell, />\s*片段列表\s*<\/RouterLink>/);
   assert.match(shell, /route\.name === 'match-rallies'/);
   assert.match(review, /aria-label="工作區版面"/);
-  assert.doesNotMatch(routePaths, /analysis|watch|highlights|system/i);
+  assert.match(routePaths, /analysis|tasks|settings/i);
+  assert.doesNotMatch(routePaths, /watch|highlights|system/i);
   assert.doesNotMatch(
     `${shell}\n${review}`,
     /libraryOpen|MatchLibrary|切換比賽/,

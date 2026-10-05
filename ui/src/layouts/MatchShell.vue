@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch, KeepAlive } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { loadCatalog, loadMatch } from "../data/matchRepository";
 import type { CatalogEntry } from "../domain/models";
@@ -69,9 +69,9 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
   <div class="app-shell match-shell">
     <header class="match-shell-header">
       <RouterLink class="match-back-link" :to="{ name: 'matches' }">
-        ← Matches
+        ← 比賽庫
       </RouterLink>
-      <div class="match-shell-identity">
+      <div class="match-shell-identity" :class="{ 'match-shell-identity--review': route.name === 'match-review' }">
         <h1 ref="heading" tabindex="-1">
           {{ displayTitle }}
         </h1>
@@ -84,7 +84,7 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
             params: { matchId: routeMatchId() ?? '' },
           }"
         >
-          Review
+          回看
         </RouterLink>
         <RouterLink
           class="match-route-link"
@@ -96,7 +96,7 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
             params: { matchId: routeMatchId() ?? '' },
           }"
         >
-          Rallies
+          片段列表
         </RouterLink>
       </nav>
     </header>
@@ -112,9 +112,11 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
         <button type="button" @click="loadRequestedMatch">重試</button>
       </div>
       <RouterLink class="match-back-link" :to="{ name: 'matches' }">
-        返回 Matches
+        返回比賽庫
       </RouterLink>
     </main>
-    <RouterView v-else-if="context.model.value" />
+    <RouterView v-else-if="context.model.value" v-slot="{ Component }">
+      <KeepAlive include="ReviewPage"><component :is="Component" /></KeepAlive>
+    </RouterView>
   </div>
 </template>

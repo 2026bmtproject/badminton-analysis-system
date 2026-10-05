@@ -3,9 +3,9 @@ import { computed, ref, watch } from "vue";
 import { importLocalMatch } from "../data/matchRepository";
 import { clientToCourt, loadCourt, previewCourt, saveCourt, type CourtPoint, type CourtReview } from "../data/courtCalibration";
 
-const props = defineProps<{ matchId: string; available: boolean; running: boolean }>();
+const props = defineProps<{ matchId: string; available: boolean; running: boolean; initialOpen?: boolean }>();
 const emit = defineEmits<{ updated: []; detect: [] }>();
-const open = ref(false);
+const open = ref(Boolean(props.initialOpen));
 const court = ref<CourtReview | null>(null);
 const corners = ref<CourtPoint[]>([]);
 const points = ref<CourtPoint[]>([]);
@@ -49,6 +49,8 @@ watch(() => props.matchId, () => {
   open.value = false; court.value = null; error.value = ""; staleStages.value = []; unknownStages.value = [];
 });
 watch(() => props.available, value => { if (value && open.value) void reload(); });
+watch(() => props.initialOpen, value => { if (value && !open.value) toggle(); });
+if (props.initialOpen && props.available) void reload();
 
 function queuePreview(immediate = false) {
   if (!court.value) return;

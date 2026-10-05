@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import CourtCalibrationPanel from "./CourtCalibrationPanel.vue";
+import { stageLabel } from "../data/stageLabels";
 import { importLocalMatch, loadCatalog, loadMatch } from "../data/matchRepository";
 import {
   getPipelineLogs, getPipelineTask, listPipelineStages, previewPipeline, startPipeline,
@@ -9,7 +10,7 @@ import {
   type LocalAnalysisMatch, type PipelinePlan, type PipelineStage, type PipelineTask,
 } from "../data/pipelineTasks";
 
-const props = defineProps<{ match: LocalAnalysisMatch; hasReview: boolean }>();
+const props = defineProps<{ match: LocalAnalysisMatch; hasReview: boolean; openCourt?: boolean }>();
 const emit = defineEmits<{ updated: [] }>();
 const stages = ref<PipelineStage[]>([]);
 const selected = ref<string[]>([]);
@@ -130,12 +131,12 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 
 <template>
   <section class="pipeline-panel" :aria-label="`${match.id} 分析設定`">
-    <header><h3>{{ match.id }}</h3><span>{{ match.hasSegments ? "已有分段資料" : "尚未分析分段" }}</span></header>
+    <header><h3>分析 {{ match.id }}</h3><span>{{ match.hasSegments ? "已有分段資料" : "尚未分析分段" }}</span></header>
     <fieldset :disabled="running || busy">
       <legend>選擇分析項目</legend>
       <label v-for="stage in stages" :key="stage.name" class="pipeline-stage-choice">
         <input v-model="selected" type="checkbox" :value="stage.name" />
-        <span>{{ stage.description }} <small>{{ stage.name }}{{ stage.usesGemini ? " · Gemini" : "" }}</small></span>
+        <span>{{ stageLabel(stage.name) }} <small v-if="stage.usesGemini">使用 Gemini API</small></span>
       </label>
     </fieldset>
     <fieldset :disabled="running || busy" class="pipeline-mode">
@@ -149,28 +150,28 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
       <h4>執行計畫</h4>
       <p v-if="plan.includesGemini">此計畫會呼叫 Gemini API。</p>
       <ol><li v-for="row in plan.stages" :key="row.name">
-        <strong>{{ row.name }}</strong> · {{ row.action === "run" ? "執行" : "沿用" }} · {{ row.reason }}
+        <strong>{{ stageLabel(row.name) }}</strong> · {{ row.action === "run" ? "執行" : "沿用" }} · {{ row.reason }}
         <span v-if="row.unknown">（舊結果的輸入狀態未知）</span>
       </li></ol>
-      <p v-if="plan.affectedOutsideScope.length">本次範圍外受影響下游：{{ plan.affectedOutsideScope.join("、") }}</p>
+      <p v-if="plan.affectedOutsideScope.length">本次範圍外受影響下游：{{ plan.affectedOutsideScope.map(stageLabel).join("、") }}</p>
       <button type="button" :disabled="busy || running || !plan.stages.some(row => row.action === 'run')" @click="begin">開始分析</button>
     </section>
     <section v-if="task" class="pipeline-task">
       <h4 role="status">任務：{{ taskStatusLabel(task.status) }}</h4>
-      <p>經過時間：{{ elapsed }}<span v-if="task.currentStage"> · 目前階段：{{ task.currentStage }}</span></p>
+      <p>經過時間：{{ elapsed }}<span v-if="task.currentStage"> · 目前階段：{{ stageLabel(task.currentStage) }}</span></p>
       <p v-if="running">關閉頁面後分析會繼續。重新開啟即可查看進度。</p>
       <ul><li v-for="(stage, name) in task.stageStates" :key="name">
-        {{ name }}：{{ taskStatusLabel(stage.status) }}<span v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</span>
+        {{ stageLabel(String(name)) }}：{{ taskStatusLabel(stage.status) }}<span v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</span>
       </li></ul>
       <p v-if="task.error" class="error" role="alert">{{ task.error }}<span v-if="task.exitCode !== null">（exit {{ task.exitCode }}）</span></p>
-      <button type="button" :aria-expanded="showLogs" @click="showLogs = !showLogs; if (showLogs) moreLogs()">{{ showLogs ? "收合 log" : "查看 log" }}</button>
+      <button type="button" :aria-expanded="showLogs" @click="showLogs = !showLogs; if (showLogs) moreLogs()">{{ showLogs ? "收合詳細記錄" : "查看詳細記錄" }}</button>
       <div v-if="showLogs" class="pipeline-logs"><pre>{{ lines.join('\n') }}</pre><button type="button" @click="moreLogs">載入更多</button></div>
       <p v-if="task.status === 'succeeded'">分析已完成。{{ publishDone ? "回看資料已更新。" : "回看資料可重新整理。" }}</p>
       <button v-if="task.status === 'succeeded'" type="button" :disabled="publishing" @click="publish">{{ publishing ? "更新中…" : "重新整理回看資料" }}</button>
       <p v-if="task.status === 'failed' || task.status === 'interrupted'">可重新查看計畫並建立新任務重試。</p>
     </section>
     <p v-if="publishError" class="error" role="alert">回看更新失敗：{{ publishError }}。原有回看資料仍可使用。</p>
-    <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')"
+    <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')" :initial-open="openCourt"
       :running="running" @updated="emit('updated')"
       @detect="selected = ['court_detection']; mode = 'continue'; plan = null" />
     <RouterLink v-if="hasReview" :to="{ name: 'match-review', params: { matchId: `match:${match.id}` } }">查看已有結果 →</RouterLink>

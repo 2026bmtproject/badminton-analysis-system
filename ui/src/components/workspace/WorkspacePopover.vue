@@ -10,6 +10,7 @@ const emit = defineEmits<{ open: [value: boolean] }>();
 const trigger = ref<HTMLButtonElement | null>(null);
 const menu = ref<HTMLElement | null>(null);
 const open = ref(false);
+const teleportTarget = ref<HTMLElement | string>("body");
 const position = ref({ left: 8, top: 8 });
 let observer: ResizeObserver | undefined;
 
@@ -49,12 +50,18 @@ function keyboard(event: KeyboardEvent) {
 function menuClick(event: MouseEvent) {
   if ((event.target as Element).closest("button,[role='menuitem']")) close();
 }
+function syncTeleportTarget() {
+  teleportTarget.value = document.fullscreenElement instanceof HTMLElement ? document.fullscreenElement : "body";
+  if (open.value) void nextTick(place);
+}
 onMounted(() => {
+  syncTeleportTarget();
   observer = new ResizeObserver(place);
   window.addEventListener("pointerdown", outside);
   window.addEventListener("keydown", keyboard);
   window.addEventListener("resize", place);
   window.addEventListener("scroll", place, true);
+  document.addEventListener("fullscreenchange", syncTeleportTarget);
 });
 onBeforeUnmount(() => {
   observer?.disconnect();
@@ -62,6 +69,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", keyboard);
   window.removeEventListener("resize", place);
   window.removeEventListener("scroll", place, true);
+  document.removeEventListener("fullscreenchange", syncTeleportTarget);
 });
 defineExpose({ close });
 </script>
@@ -71,7 +79,7 @@ defineExpose({ close });
     <button ref="trigger" type="button" class="workspace-popover__trigger" :aria-label="label" :title="label" aria-haspopup="menu" :aria-expanded="open" @click.stop="toggle">
       <slot name="trigger" />
     </button>
-    <Teleport to="body">
+    <Teleport :to="teleportTarget">
       <div v-if="open" ref="menu" class="workspace-popover" role="menu" :aria-label="label" :style="{ left: position.left + 'px', top: position.top + 'px', minWidth: minWidth + 'px' }" @click="menuClick">
         <slot />
       </div>

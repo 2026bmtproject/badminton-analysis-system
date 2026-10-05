@@ -65,6 +65,8 @@ test("production host serves dist and registered media without Vite or path fall
       const request = (path: string, options?: RequestInit) => fetch(host.origin + path, options);
       assert.match(await (await request("/matches")).text(), /Production desktop shell/);
       assert.match(await (await request("/matches/match:Sample/review")).text(), /Production desktop shell/);
+      for (const route of ["/tasks", "/settings", "/analysis/Sample"])
+        assert.match(await (await request(route)).text(), /Production desktop shell/);
       assert.equal((await request("/assets/app.js")).status, 200);
       const catalog = await (await request("/matches/catalog.json")).json() as Array<{ url: string }>;
       assert.equal((await request(catalog[0].url)).status, 200);

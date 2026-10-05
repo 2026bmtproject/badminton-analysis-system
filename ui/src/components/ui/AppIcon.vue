@@ -10,7 +10,15 @@ defineProps<{
     | "volume-muted"
     | "fullscreen"
     | "fullscreen-exit"
-    | "sliders";
+    | "sliders"
+    | "library"
+    | "tasks"
+    | "settings"
+    | "search"
+    | "video"
+    | "more"
+    | "refresh"
+    | "court";
   size?: number;
 }>();
 </script>
@@ -57,6 +65,14 @@ defineProps<{
     <template v-else-if="name === 'fullscreen-exit'">
       <path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5" />
     </template>
+    <template v-else-if="name === 'library'"><path d="M4 5h16v14H4zM4 10h16M9 5v14" /></template>
+    <template v-else-if="name === 'tasks'"><path d="M8 5h12M8 12h12M8 19h12M3 5h1M3 12h1M3 19h1" /></template>
+    <template v-else-if="name === 'settings'"><circle cx="12" cy="12" r="3" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></template>
+    <template v-else-if="name === 'search'"><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></template>
+    <template v-else-if="name === 'video'"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m10 9 5 3-5 3z" /></template>
+    <template v-else-if="name === 'more'"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></template>
+    <template v-else-if="name === 'refresh'"><path d="M20 7v5h-5M4 17v-5h5M5 9a8 8 0 0 1 14-2l1 5M4 12l1 5a8 8 0 0 0 14-2"/></template>
+    <template v-else-if="name === 'court'"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18M7 8h10M7 16h10"/></template>
     <template v-else>
       <path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h8M16 17h4" />
       <circle cx="16" cy="7" r="2" />

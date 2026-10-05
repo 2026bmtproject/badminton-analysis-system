@@ -153,6 +153,8 @@ const lensProgress = ref(0);
 const lensActive = ref(false);
 const manualNavigation = ref(false);
 const surface = ref<HTMLElement | null>(null);
+let scrubGesture: { pointerId: number; startX: number; track: HTMLElement; moved: boolean } | null = null;
+let suppressScrubClick = false;
 const root = ref<HTMLElement | null>(null);
 const trackWidth = ref(640);
 const inspectionTime = ref<number | null>(null);
@@ -746,6 +748,7 @@ function inspectPointer(event: PointerEvent) {
   });
 }
 function clickTimeline(event: MouseEvent) {
+  if (suppressScrubClick) { suppressScrubClick = false; return; }
   if (lensActive.value) return;
   if (props.compactRail) {
     emit("expand");
@@ -829,6 +832,31 @@ function clickTimeline(event: MouseEvent) {
     return;
   }
   emit("seek", timeSec);
+}
+function scrubTime(clientX: number, track: HTMLElement) {
+  const bounds = track.getBoundingClientRect();
+  emit("seek", timeFromClientX(clientX, bounds.left, bounds.width, renderViewport.value));
+}
+function beginScrub(event: PointerEvent) {
+  if (event.button !== 0 || props.compactRail || lensActive.value || !(event.target instanceof Element)) return;
+  if (event.target.closest("button,input,select,summary,a")) return;
+  const track = event.target.closest<HTMLElement>(".timeline-lane-track");
+  if (!track || !surface.value) return;
+  suppressScrubClick = false;
+  scrubGesture = { pointerId: event.pointerId, startX: event.clientX, track, moved: false };
+  surface.value.setPointerCapture(event.pointerId);
+  scrubTime(event.clientX, track);
+}
+function moveScrub(event: PointerEvent) {
+  if (!scrubGesture || event.pointerId !== scrubGesture.pointerId) return;
+  if (Math.abs(event.clientX - scrubGesture.startX) > 3) scrubGesture.moved = true;
+  scrubTime(event.clientX, scrubGesture.track);
+}
+function endScrub(event: PointerEvent) {
+  if (!scrubGesture || event.pointerId !== scrubGesture.pointerId) return;
+  suppressScrubClick = scrubGesture.moved;
+  scrubGesture = null;
+  if (surface.value?.hasPointerCapture(event.pointerId)) surface.value.releasePointerCapture(event.pointerId);
 }
 function selectScoreMarker(rallyId: number) {
   const rally = exactScoreRally(scoreRallies.value, rallyId);
@@ -942,7 +970,10 @@ const timelineStyle = computed(() => ({
       ref="surface"
       class="timeline-surface"
       :style="{ '--playhead-fraction': playheadFraction }"
-      @pointermove="inspectPointer"
+      @pointerdown="beginScrub"
+      @pointermove="inspectPointer($event); moveScrub($event)"
+      @pointerup="endScrub"
+      @pointercancel="endScrub"
       @pointerleave="clearInspection()"
       @click="clickTimeline"
       @dblclick="quickFit"

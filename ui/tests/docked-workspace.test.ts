@@ -15,7 +15,7 @@ const styles = source("src/styles/floating-workspace.css");
 
 test("1. fresh workspace docks Analysis right and Timeline bottom", () => {
   const layout = defaultWorkspaceLayout();
-  assert.equal(layout.version, 2);
+  assert.equal(layout.version, 3);
   assert.equal(layout.analysisSide, "right");
   assert.equal(layout.panels.analysis.presentation, "docked");
   assert.equal(layout.panels.timeline.presentation, "docked");
@@ -47,7 +47,7 @@ test("4. collapsed Analysis releases its dock width and preserves stored size", 
 
 test("5. collapsed Timeline remains a compact real-data Match Rail", () => {
   assert.match(styles, /review-workspace-stage--timeline-collapsed[^}]*64px/);
-  assert.match(review, /:compact-rail="layout\.panels\.timeline\.presentation === 'docked' && layout\.panels\.timeline\.collapsed"/);
+  assert.match(review, /:compact-rail="panels\.timeline\.presentation === 'docked' && panels\.timeline\.collapsed"/);
   assert.match(source("src/components/ReviewTimeline.vue"), /props\.compactRail\s*\? track === "rally"/);
 });
 
@@ -70,9 +70,9 @@ test("8. Timeline detach leaves temporal viewport owned by ReviewTimeline", () =
   assert.doesNotMatch(review.slice(review.indexOf("function setPresentation"), review.indexOf("function setAnalysisSide")), /timelineMode|currentTime|viewport|zoom/);
 });
 
-test("9. transparency is only offered for detached panels", () => {
-  assert.match(windowComponent, /v-if="panel\.presentation === 'detached'">背景透明度/);
-  assert.match(styles, /workspace-window--docked[\s\S]*background: var\(--color-surface\)/);
+test("9. transparency follows the selected panel layout", () => {
+  assert.match(windowComponent, /<label>背景透明度<input/);
+  assert.match(windowComponent, /"--workspace-panel-alpha": visiblePanel\.value\.alpha/);
 });
 
 test("10. Analysis side preference is finite and persisted in schema", () => {
@@ -97,7 +97,7 @@ test("12. old floating v1 migrates safely while invalid state falls back", () =>
   delete (old as Partial<typeof old>).timelineDockHeight;
   for (const panel of Object.values(old.panels)) delete (panel as Partial<typeof panel>).presentation;
   const migrated = parseWorkspaceLayout(JSON.stringify(old));
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, 3);
   assert.equal(migrated.panels.analysis.presentation, "detached");
   assert.equal(migrated.panels.timeline.presentation, "detached");
   assert.deepEqual(parseWorkspaceLayout("broken"), defaultWorkspaceLayout());

@@ -1,187 +1,95 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { RouterLink } from "vue-router";
-import { useRouter } from "vue-router";
-import { importLocalMatch, listLocalMatches, loadCatalog, type ImportableMatch } from "../data/matchRepository";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { RouterLink, useRouter } from "vue-router";
+import AppIcon from "../components/ui/AppIcon.vue";
+import { mergeLibrary, type LibraryMatch } from "../data/library";
+import { importLocalMatch, listLocalMatches, loadCatalog, loadMatch, type ImportableMatch } from "../data/matchRepository";
 import { listPipelineMatches, taskStatusLabel, type LocalAnalysisMatch } from "../data/pipelineTasks";
-import PipelinePanel from "../components/PipelinePanel.vue";
-import DesktopSetup from "../components/DesktopSetup.vue";
+import { stageLabel } from "../data/stageLabels";
 import type { CatalogEntry } from "../domain/models";
 
-const entries = ref<CatalogEntry[]>([]);
-const loading = ref(true);
-const loadError = ref("");
-const heading = ref<HTMLHeadingElement | null>(null);
 const router = useRouter();
-const showImport = ref(false);
+const catalog = ref<CatalogEntry[]>([]);
+const local = ref<LocalAnalysisMatch[]>([]);
 const candidates = ref<ImportableMatch[]>([]);
-const importLoading = ref(false);
-const importingId = ref<string | null>(null);
-const importError = ref("");
-const showAnalysis = ref(Boolean(window.badmintonDesktop));
-const localMatches = ref<LocalAnalysisMatch[]>([]);
-const localError = ref("");
-const selectedLocalId = ref<string | null>(null);
-const selectedLocal = computed(() => localMatches.value.find(row => row.id === selectedLocalId.value) ?? null);
-const desktopAvailable = Boolean(window.badmintonDesktop);
-
-async function loadAnalysis() {
-  try {
-    localMatches.value = await listPipelineMatches();
-    localError.value = "";
-    if (selectedLocalId.value && !localMatches.value.some(row => row.id === selectedLocalId.value)) {
-      selectedLocalId.value = null;
-    }
-  } catch {
-    localError.value = "無法連接本機分析服務。請先啟動 Python 服務。";
+const loading = ref(true);
+const serviceError = ref("");
+const catalogError = ref("");
+const candidateError = ref("");
+const actionError = ref("");
+const reviewIssues = ref<Record<string, string[]>>({});
+const publishing = ref<string | null>(null);
+const query = ref("");
+const filter = ref("all");
+const scanning = ref(false);
+let timer: ReturnType<typeof setInterval> | undefined;
+const rows = computed(() => mergeLibrary(catalog.value, local.value, candidates.value));
+const visible = computed(() => rows.value.filter(row => {
+  if (query.value && !`${row.name} ${row.id}`.toLocaleLowerCase().includes(query.value.toLocaleLowerCase())) return false;
+  if (filter.value === "review") return Boolean(row.review);
+  if (filter.value === "active") return ["running", "queued"].includes(row.local?.latestTask?.status ?? "");
+  if (filter.value === "attention") return ["failed", "interrupted"].includes(row.local?.latestTask?.status ?? "") || Boolean(row.candidate && !row.candidate.available);
+  return true;
+}));
+function rawId(row: LibraryMatch) { return row.id.slice("match:".length); }
+function analysisLabel(row: LibraryMatch) {
+  if (row.kind === "fixture") return "示範資料";
+  if (row.local?.latestTask) return taskStatusLabel(row.local.latestTask.status);
+  if (!row.local) return serviceError.value ? "分析服務離線" : "未取得分析狀態";
+  return ({ completed: "分析完成", partial: "部分完成", unanalysed: "尚未分析" } as const)[row.local.analysisStatus];
+}
+function stageProgress(row: LibraryMatch) {
+  const task = row.local?.latestTask;
+  if (!task || !["queued", "running"].includes(task.status)) return "";
+  const stage = task.currentStage ? task.stageStates[task.currentStage] : null;
+  return `${task.currentStage ? stageLabel(task.currentStage) : "等待執行"}${stage?.progress == null ? "" : ` · ${Math.round(stage.progress * 100)}%`}`;
+}
+async function refresh() {
+  const [c, l, m] = await Promise.allSettled([loadCatalog(), listPipelineMatches(), listLocalMatches()]);
+  if (c.status === "fulfilled") {
+    catalog.value = c.value; catalogError.value = "";
+    const reviewEntries = c.value.filter(row => row.kind === "match");
+    void Promise.all(reviewEntries.map(async entry => {
+      try {
+        const model = await loadMatch(entry);
+        reviewIssues.value[entry.id] = Object.entries(model.states)
+          .filter(([, state]) => ["error", "stale", "unknown"].includes(state.status))
+          .map(([name, state]) => `${stageLabel(name)}：${({ error: "資料錯誤", stale: "輸入過期", unknown: "來源狀態未知" } as Record<string, string>)[state.status]}${state.message ? `（${state.message}）` : ""}`);
+      } catch { reviewIssues.value[entry.id] = ["回看資料無法讀取，請重新整理回看資料"]; }
+    }));
   }
+  else catalogError.value = "回看目錄讀取失敗。";
+  if (l.status === "fulfilled") { local.value = l.value; serviceError.value = ""; }
+  else serviceError.value = "分析服務未連線；現有回看仍可開啟。";
+  if (m.status === "fulfilled") { candidates.value = m.value; candidateError.value = ""; }
+  else candidateError.value = "無法掃描 matches 資料夾。";
+  loading.value = false;
 }
-
-async function toggleAnalysis() {
-  showAnalysis.value = !showAnalysis.value;
-  if (!showAnalysis.value) selectedLocalId.value = null;
-  if (showAnalysis.value) await loadAnalysis();
+async function scan() { scanning.value = true; await refresh(); scanning.value = false; }
+async function publish(row: LibraryMatch) {
+  const id = rawId(row);
+  actionError.value = ""; publishing.value = id;
+  try { const reviewId = await importLocalMatch(id); await refresh(); await router.push({ name: "match-review", params: { matchId: reviewId } }); }
+  catch (cause) { actionError.value = cause instanceof Error ? cause.message : "回看更新失敗"; }
+  finally { publishing.value = null; }
 }
-
-async function analysisUpdated() {
-  await Promise.all([loadAnalysis(), load()]);
-}
-
-async function load() {
-  loading.value = true;
-  loadError.value = "";
-  try {
-    entries.value = await loadCatalog();
-  } catch {
-    entries.value = [];
-    loadError.value = "比賽目錄讀取失敗。請確認已匯入的前端資料後再試一次。";
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function toggleImport() {
-  showImport.value = !showImport.value;
-  if (!showImport.value) return;
-  importLoading.value = true;
-  importError.value = "";
-  try {
-    candidates.value = await listLocalMatches();
-  } catch {
-    candidates.value = [];
-    importError.value = "無法讀取 matches/。請在本機預覽服務中使用匯入功能。";
-  } finally {
-    importLoading.value = false;
-  }
-}
-
-async function importCandidate(id: string) {
-  importingId.value = id;
-  importError.value = "";
-  try {
-    const matchId = await importLocalMatch(id);
-    await load();
-    await router.push({ name: "match-review", params: { matchId } });
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : "匯入失敗";
-  } finally {
-    importingId.value = null;
-  }
-}
-
-onMounted(async () => {
-  await nextTick();
-  heading.value?.focus();
-  await load();
-  await loadAnalysis();
-  if (desktopAvailable) window.addEventListener("focus", refreshDesktopResults);
-});
-onUnmounted(() => window.removeEventListener("focus", refreshDesktopResults));
-
-function refreshDesktopResults() {
-  void Promise.all([load(), loadAnalysis()]);
-}
+onMounted(() => { void refresh(); timer = setInterval(() => { void refresh(); }, 10000); window.addEventListener("focus", refresh); });
+onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener("focus", refresh); });
 </script>
 
 <template>
-  <div class="matches-page">
-    <header class="matches-header">
-      <div>
-        <span class="section-kicker">Courtline</span>
-        <h1 ref="heading" tabindex="-1">Matches</h1>
-      </div>
-      <div class="matches-header-actions">
-        <span class="matches-count" aria-live="polite">{{ loading ? "讀取中" : `${entries.length} 場` }}</span>
-        <button type="button" :aria-expanded="showAnalysis" aria-controls="match-analysis-panel" @click="toggleAnalysis">分析比賽</button>
-        <button type="button" :aria-expanded="showImport" aria-controls="match-import-panel" @click="toggleImport">匯入比賽</button>
-      </div>
-    </header>
-
-    <main class="matches-main">
-      <DesktopSetup v-if="desktopAvailable" />
-      <div class="matches-intro">
-        <h2>選擇比賽</h2>
-        <p>{{ desktopAvailable ? "選擇本機比賽開始分析；已匯入的比賽可開啟回看。" : "開啟已匯入的比賽資料與回看工作區。" }}</p>
-      </div>
-
-      <section v-if="showImport" id="match-import-panel" class="match-import-panel" aria-label="從 matches 目錄匯入比賽">
-        <div class="match-import-heading"><h2>從 matches/ 匯入</h2><p>選擇已完成分析的比賽；匯入只建立前端資料，不會重新分析影片。</p></div>
-        <p v-if="importLoading" role="status">正在掃描比賽資料夾…</p>
-        <p v-if="importError" class="error" role="alert">{{ importError }}</p>
-        <p v-if="!importLoading && !importError && !candidates.length" class="empty-state">matches/ 內沒有比賽資料夾。</p>
-        <ul v-if="!importLoading && candidates.length" class="match-import-list">
-          <li v-for="candidate in candidates" :key="candidate.id" class="match-import-row">
-            <span><strong>{{ candidate.id }}</strong><small>{{ candidate.available ? "可匯入" : candidate.reason }}</small></span>
-            <button type="button" :disabled="!candidate.available || importingId !== null" @click="importCandidate(candidate.id)">{{ importingId === candidate.id ? "匯入中…" : "匯入" }}</button>
-          </li>
-        </ul>
-      </section>
-
-      <section v-if="showAnalysis" id="match-analysis-panel" class="match-analysis-panel" aria-label="本機比賽分析">
-        <h2>本機比賽分析</h2>
-        <p v-if="localError" class="error" role="alert">{{ localError }} <button type="button" @click="loadAnalysis">重試</button></p>
-        <p v-else-if="!localMatches.length" class="empty-state">matches/ 內沒有附影片的比賽。</p>
-        <div v-else class="match-analysis-layout">
-          <nav v-if="!selectedLocal" aria-label="本機比賽"><button v-for="row in localMatches" :key="row.id" type="button"
-            @click="selectedLocalId = row.id">
-            <strong>{{ row.id }}</strong><span>{{ row.latestTask ? taskStatusLabel(row.latestTask.status) : ({ completed: "已完成", partial: "部分完成", unanalysed: "尚未分析" }[row.analysisStatus]) }}</span>
-          </button></nav>
-          <div v-else class="match-analysis-details">
-            <button type="button" class="match-analysis-back" @click="selectedLocalId = null">← 更換比賽</button>
-            <PipelinePanel :match="selectedLocal"
-              :has-review="entries.some(entry => entry.id === `match:${selectedLocalId}`)" @updated="analysisUpdated" />
-          </div>
-        </div>
-      </section>
-
-      <p v-if="loading" class="matches-status" role="status">載入比賽目錄…</p>
-      <div v-else-if="loadError" class="error" role="alert">
-        {{ loadError }}
-        <button type="button" @click="load">重試</button>
-      </div>
-      <p v-else-if="!entries.length" class="empty-state">
-        {{ desktopAvailable ? "尚無已匯入的回看資料。請從上方的本機比賽列表選擇比賽。" : "尚無可用的比賽資料。" }}
-      </p>
-      <nav v-else class="matches-list" aria-label="比賽目錄">
-        <RouterLink
-          v-for="entry in entries"
-          :key="entry.id"
-          class="match-row"
-          :to="{
-            name: 'match-review',
-            params: { matchId: entry.id },
-          }"
-        >
-          <span class="match-row-main">
-            <strong>{{ entry.name }}</strong>
-            <code>{{ entry.id }}</code>
-          </span>
-          <span class="match-row-kind">
-            {{ entry.kind === "match" ? "已匯入比賽" : "示範資料" }}
-          </span>
-          <span class="match-row-action" aria-hidden="true">開啟 →</span>
-        </RouterLink>
-      </nav>
-    </main>
-  </div>
+  <main class="section-page library-page">
+    <header class="section-page-header"><div><span class="section-kicker">工作空間</span><h1>比賽庫 <span class="heading-count">{{ rows.length }}</span></h1><p>本機比賽與可用回看集中在這裡。</p></div><button type="button" class="button-primary" :disabled="scanning" @click="scan"><AppIcon name="refresh" />{{ scanning ? '掃描中…' : '掃描 matches 資料夾' }}</button></header>
+    <div class="library-toolbar"><label class="library-search"><AppIcon name="search" /><span class="sr-only">搜尋比賽</span><input v-model="query" type="search" placeholder="搜尋比賽名稱或 ID" /></label><label class="library-filter"><span>狀態</span><select v-model="filter"><option value="all">全部</option><option value="review">可回看</option><option value="active">分析中</option><option value="attention">需要處理</option></select></label><span class="library-result-count" aria-live="polite">顯示 {{ visible.length }} 場</span></div>
+    <p v-if="serviceError" class="inline-notice" role="status">{{ serviceError }} <RouterLink :to="{ name: 'settings', query: { advanced: '1' } }">前往設定</RouterLink></p>
+    <p v-if="catalogError || candidateError" class="inline-notice" role="status">{{ catalogError }} {{ candidateError }}</p>
+    <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
+    <p v-if="loading" role="status">正在讀取比賽…</p>
+    <p v-else-if="!visible.length" class="console-panel empty-state">{{ rows.length ? '找不到符合條件的比賽。' : '尚無比賽。請在設定中選擇 matches 資料夾，或將現有影片資料放入該目錄後掃描。' }}</p>
+    <div v-else class="library-list"><article v-for="row in visible" :key="row.id" class="console-panel library-card">
+      <div class="library-thumbnail" role="img" aria-label="沒有可用的比賽縮圖"><AppIcon name="video" :size="27" /></div>
+      <div class="library-card-content"><div class="library-card-title"><h2>{{ row.name }}</h2><span v-if="row.kind === 'fixture'" class="status-chip">示範</span></div><div class="library-card-meta"><span class="status-chip" :data-status="row.local?.latestTask?.status ?? row.local?.analysisStatus">{{ analysisLabel(row) }}</span><span class="status-chip" :data-status="row.review ? 'succeeded' : 'missing'">{{ row.review ? '可回看' : '尚無回看' }}</span><span v-if="row.candidate && !row.candidate.available" class="secondary">{{ row.candidate.reason }}</span></div><p v-if="stageProgress(row)" class="library-stage" role="status">{{ stageProgress(row) }}</p><p v-for="issue in reviewIssues[row.id] ?? []" :key="issue" class="library-issue">{{ issue }}</p></div>
+      <div class="library-card-actions"><RouterLink v-if="row.review" class="button-primary" :to="{ name: 'match-review', params: { matchId: row.id } }">開啟回看</RouterLink><RouterLink v-if="row.local && ['running', 'queued'].includes(row.local.latestTask?.status ?? '')" class="button-secondary" :to="{ name: 'tasks' }">查看進度</RouterLink><RouterLink v-else-if="row.local" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">{{ row.local.analysisStatus === 'unanalysed' ? '開始分析' : '繼續分析' }}</RouterLink><details v-if="row.kind === 'match'" class="library-more"><summary title="更多操作" :aria-label="`${row.name} 更多操作`"><AppIcon name="more" /></summary><div class="library-more-menu"><RouterLink v-if="row.local" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">分析設定</RouterLink><RouterLink v-if="row.local" :to="{ name: 'match-analysis', params: { matchId: row.local.id }, query: { court: '1' } }">場地校正</RouterLink><button v-if="row.candidate?.available" type="button" :disabled="publishing !== null" @click="publish(row)">{{ publishing === rawId(row) ? '更新中…' : '匯出／重新整理回看資料' }}</button></div></details></div>
+    </article></div>
+  </main>
 </template>

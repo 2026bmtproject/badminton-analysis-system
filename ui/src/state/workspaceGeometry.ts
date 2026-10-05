@@ -1,4 +1,4 @@
-import type { PanelLayout } from "./workspaceLayout";
+import { defaultWorkspaceLayout, type PanelLayout, type WorkspacePanelId } from "./workspaceLayout";
 
 export type WorkspaceBounds = { width: number; height: number };
 
@@ -7,6 +7,7 @@ export const PANEL_MIN_HEIGHT_PX = 96;
 export const PANEL_MAX_WIDTH_RATIO = 0.96;
 export const PANEL_MAX_HEIGHT_RATIO = 0.92;
 export const PANEL_HEADER_HEIGHT_PX = 42;
+export const FULLSCREEN_SNAP_DISTANCE_PX = 72;
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
@@ -52,6 +53,28 @@ export function movePanel(
     },
     bounds,
   );
+}
+
+export function fullscreenHomePanel(
+  id: WorkspacePanelId,
+  panel: PanelLayout,
+  bounds: WorkspaceBounds,
+): PanelLayout {
+  const home = defaultWorkspaceLayout().fullscreenPanels[id];
+  return constrainPanel({ ...panel, x: home.x, y: home.y }, bounds);
+}
+
+export function fullscreenSnapCandidate(
+  id: WorkspacePanelId,
+  panel: PanelLayout,
+  bounds: WorkspaceBounds,
+): PanelLayout | null {
+  const home = fullscreenHomePanel(id, panel, bounds);
+  const distance = Math.hypot(
+    (panel.x - home.x) * bounds.width,
+    (panel.y - home.y) * bounds.height,
+  );
+  return distance <= FULLSCREEN_SNAP_DISTANCE_PX ? home : null;
 }
 
 export function resizePanel(

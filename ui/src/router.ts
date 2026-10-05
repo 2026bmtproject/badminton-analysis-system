@@ -15,6 +15,9 @@ export const routes: RouteRecordRaw[] = [
     name: "matches",
     component: () => import("./pages/MatchesPage.vue"),
   },
+  { path: "/tasks", name: "tasks", component: () => import("./pages/TasksPage.vue") },
+  { path: "/settings", name: "settings", component: () => import("./pages/SettingsPage.vue") },
+  { path: "/analysis/:matchId", name: "match-analysis", component: () => import("./pages/AnalysisPage.vue") },
   {
     path: "/matches/:matchId",
     component: () => import("./layouts/MatchShell.vue"),

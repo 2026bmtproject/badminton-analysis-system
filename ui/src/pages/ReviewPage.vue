@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import ReviewPlayer from "../components/ReviewPlayer.vue";
 import ReviewTimeline from "../components/ReviewTimeline.vue";
@@ -24,7 +24,9 @@ import {
   type WorkspacePanelId,
 } from "../state/workspaceLayout";
 import { adaptiveDefaultPanelSizes } from "../presentation/workspaceDensity";
+import { fullscreenHomePanel } from "../state/workspaceGeometry";
 
+defineOptions({ name: "ReviewPage" });
 const context = useMatchContext();
 const route = useRoute();
 const { model, workspace } = context;
@@ -32,6 +34,14 @@ const { layout, reset, redockAll } = useWorkspaceLayout();
 const activeWindow = ref<WorkspacePanelId>("analysis");
 const playing = ref(false);
 const player = ref<InstanceType<typeof ReviewPlayer> | null>(null);
+const stage = ref<HTMLElement | null>(null);
+const fullscreen = ref(false);
+const fullscreenUiHidden = ref(false);
+const panelInteracting = ref<Record<WorkspacePanelId, boolean>>({ timeline: false, analysis: false });
+const snapDragging = ref<WorkspacePanelId | null>(null);
+const snapNear = ref(false);
+const pointerPressed = ref(false);
+let idleTimer: number | undefined;
 const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
 const viewportHeight = ref(typeof window === "undefined" ? 900 : window.innerHeight);
 const match = computed(() => {
@@ -41,6 +51,7 @@ const match = computed(() => {
 const activeId = computed(() => workspace.activeRally.value?.id ?? null);
 const currentLabel = computed(() => activeId.value === null ? "比賽空檔" : `片段 ${String(activeId.value + 1).padStart(3, "0")}`);
 const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "選手 A"), b: playerName(match.value.players.b, "選手 B") }));
+const matchTitle = computed(() => !match.value.title || /^(?:match:)?yt[_:-]/i.test(match.value.title) ? "比賽回看" : match.value.title);
 const headerScore = computed(() => workspace.currentScore.value ? scoreText(workspace.currentScore.value) : null);
 const commentaryAvailabilityLabel = computed(() => {
   const availability = match.value.commentaryAvailability;
@@ -69,6 +80,9 @@ const effectiveTimelineDockHeight = computed(() =>
     ? adaptiveSizes.value.timelineHeight
     : layout.timelineDockHeight,
 );
+const panels = computed(() => fullscreen.value ? layout.fullscreenPanels : layout.panels);
+const analysisDetached = computed(() => panels.value.analysis.presentation === "detached");
+const analysisCollapsed = computed(() => panels.value.analysis.presentation === "docked" && panels.value.analysis.collapsed);
 
 watch(player, (value) => { context.player.value = value; }, { flush: "sync" });
 watch([() => route.query.segment, () => route.query.stroke, model, player], () => {
@@ -92,6 +106,7 @@ function shortcutBlocked(event: KeyboardEvent) {
     (event.target instanceof Element && Boolean(event.target.closest("input,select,textarea,button,a,summary,[contenteditable]")));
 }
 function keyboard(event: KeyboardEvent) {
+  revealUi();
   if (event.code === "Escape") {
     if (event.isComposing || isTextEditingTarget(event)) return;
     if (workspace.selectedRallyIndex.value !== null) { event.preventDefault(); workspace.clearSelection(); }
@@ -108,9 +123,28 @@ function openEvidence(evidence: EvidenceModel) {
   const target = findStrokeTarget(match.value, evidence.eventIndex);
   if (target) workspace.selectStroke(target.stroke);
 }
-function updatePanel(id: WorkspacePanelId, panel: PanelLayout) { layout.panels[id] = panel; }
+function updatePanel(id: WorkspacePanelId, panel: PanelLayout) { panels.value[id] = panel; }
+function fullscreenBounds() {
+  return { width: stage.value?.clientWidth ?? window.innerWidth, height: stage.value?.clientHeight ?? window.innerHeight };
+}
+function restoreFullscreenPanel(id: WorkspacePanelId) {
+  layout.fullscreenPanels[id] = fullscreenHomePanel(id, layout.fullscreenPanels[id], fullscreenBounds());
+}
+function restoreFullscreenPositions() {
+  restoreFullscreenPanel("timeline");
+  restoreFullscreenPanel("analysis");
+}
+function updateSnapDrag(id: WorkspacePanelId, state: { dragging: boolean; near: boolean }) {
+  snapDragging.value = state.dragging ? id : null;
+  snapNear.value = state.near;
+}
+const snapGuideStyle = computed(() => {
+  if (!snapDragging.value) return {};
+  const panel = fullscreenHomePanel(snapDragging.value, layout.fullscreenPanels[snapDragging.value], fullscreenBounds());
+  return { left: `${panel.x * 100}%`, top: `${panel.y * 100}%`, width: `${panel.width * 100}%`, height: `${panel.height * 100}%` };
+});
 function setPresentation(id: WorkspacePanelId, presentation: "docked" | "detached") {
-  layout.panels[id].presentation = presentation;
+  panels.value[id].presentation = presentation;
   activeWindow.value = id;
 }
 function setAnalysisSide(side: AnalysisDockSide) {
@@ -121,7 +155,48 @@ function setDockSize(id: WorkspacePanelId, value: number) {
   else layout.timelineDockHeight = constrainTimelineDockHeight(value);
 }
 function expandTimeline() {
-  layout.panels.timeline.collapsed = false;
+  panels.value.timeline.collapsed = false;
+}
+function clearIdleTimer() {
+  if (idleTimer !== undefined) window.clearTimeout(idleTimer);
+  idleTimer = undefined;
+}
+function interactionActive() {
+  return pointerPressed.value || panelInteracting.value.analysis || panelInteracting.value.timeline ||
+    Boolean(stage.value?.querySelector("select:focus, input:focus, [aria-expanded='true']:focus"));
+}
+function scheduleIdle() {
+  clearIdleTimer();
+  if (!fullscreen.value || interactionActive()) return;
+  idleTimer = window.setTimeout(() => {
+    if (!interactionActive()) fullscreenUiHidden.value = true;
+  }, 3000);
+}
+function revealUi() {
+  if (!fullscreen.value) return;
+  fullscreenUiHidden.value = false;
+  scheduleIdle();
+}
+function panelInteraction(id: WorkspacePanelId, active: boolean) {
+  panelInteracting.value[id] = active;
+  if (active) { fullscreenUiHidden.value = false; clearIdleTimer(); }
+  else scheduleIdle();
+}
+function pointerDown() { pointerPressed.value = true; revealUi(); }
+function pointerUp() { pointerPressed.value = false; scheduleIdle(); }
+function syncFullscreen() {
+  fullscreen.value = document.fullscreenElement === stage.value;
+  snapDragging.value = null;
+  fullscreenUiHidden.value = false;
+  pointerPressed.value = false;
+  scheduleIdle();
+}
+async function toggleFullscreen() {
+  if (!stage.value) return;
+  try {
+    if (document.fullscreenElement === stage.value) await document.exitFullscreen();
+    else await stage.value.requestFullscreen();
+  } catch { /* A user gesture is required by some browsers. */ }
 }
 function cycleTimelineMode(direction: -1 | 1) {
   const index = timelineModes.value.findIndex((item) => item.id === layout.timelineMode);
@@ -137,28 +212,42 @@ function updateViewport() {
   viewportHeight.value = window.innerHeight;
 }
 onMounted(() => {
-  window.addEventListener("keydown", keyboard);
   window.addEventListener("resize", updateViewport);
+  document.addEventListener("fullscreenchange", syncFullscreen);
+  window.addEventListener("pointerup", pointerUp);
+  window.addEventListener("pointercancel", pointerUp);
   updateViewport();
+});
+onActivated(() => window.addEventListener("keydown", keyboard));
+onDeactivated(() => {
+  window.removeEventListener("keydown", keyboard);
+  player.value?.pause();
+  clearIdleTimer();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", keyboard);
   window.removeEventListener("resize", updateViewport);
+  document.removeEventListener("fullscreenchange", syncFullscreen);
+  window.removeEventListener("pointerup", pointerUp);
+  window.removeEventListener("pointercancel", pointerUp);
+  clearIdleTimer();
   if (context.player.value === player.value) context.player.value = null;
 });
 </script>
 
 <template>
   <div class="review-page">
-    <header class="topbar review-matchbar">
-      <div class="header-navigation" aria-hidden="true" />
-      <div class="match-identity">
-        <span class="player-name">{{ displayPlayers.a }}</span>
-        <div class="match-score-context">
-          <strong v-if="headerScore" class="score-state match-score-state" :aria-label="headerScore"><span>{{ workspace.currentScore.value?.[0] }}</span><span class="score-state-divider" aria-hidden="true" /><span>{{ workspace.currentScore.value?.[1] }}</span></strong>
-          <small>{{ currentLabel }}</small>
+    <header class="topbar review-matchbar" :class="{ 'review-matchbar--analysis-left': layout.analysisSide === 'left', 'review-matchbar--video-wide': analysisDetached || analysisCollapsed }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px` }">
+      <div class="review-video-heading">
+        <h2 class="review-match-title">{{ matchTitle }}</h2>
+        <div class="match-identity">
+          <span class="player-name">{{ displayPlayers.a }}</span>
+          <div class="match-score-context">
+            <strong v-if="headerScore" class="score-state match-score-state" :aria-label="headerScore"><span>{{ workspace.currentScore.value?.[0] }}</span><span class="score-state-divider" aria-hidden="true" /><span>{{ workspace.currentScore.value?.[1] }}</span></strong>
+            <small>{{ currentLabel }}</small>
+          </div>
+          <span class="player-name">{{ displayPlayers.b }}</span>
         </div>
-        <span class="player-name">{{ displayPlayers.b }}</span>
       </div>
       <div class="header-actions">
         <WorkspacePopover label="快捷鍵" :min-width="320">
@@ -172,6 +261,7 @@ onBeforeUnmount(() => {
               <option value="right">右側</option><option value="left">左側</option>
             </select></label>
             <button type="button" @click="redockAll">全部重新停靠</button>
+            <button v-if="fullscreen" type="button" @click="restoreFullscreenPositions">回復全螢幕視窗位置</button>
             <button type="button" @click="reset">還原預設版面</button>
             <details class="workspace-source-details">
               <summary>比賽資訊</summary>
@@ -183,19 +273,21 @@ onBeforeUnmount(() => {
       </div>
     </header>
     <main class="review-main review-main--workspace">
-      <section class="review-workspace-stage" :class="[`review-workspace-stage--analysis-${layout.analysisSide}`, { 'review-workspace-stage--analysis-detached': layout.panels.analysis.presentation === 'detached', 'review-workspace-stage--timeline-detached': layout.panels.timeline.presentation === 'detached', 'review-workspace-stage--analysis-collapsed': layout.panels.analysis.presentation === 'docked' && layout.panels.analysis.collapsed, 'review-workspace-stage--timeline-collapsed': layout.panels.timeline.presentation === 'docked' && layout.panels.timeline.collapsed }]" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區">
-        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :context="playerContext" :active-rally="workspace.activeRally.value" :active-stroke="workspace.activeStroke.value" :timeline-expanded="!layout.panels.timeline.collapsed" @time="workspace.updateTime" @playing="playing = $event" />
+      <section ref="stage" class="review-workspace-stage" :class="[`review-workspace-stage--analysis-${layout.analysisSide}`, { 'review-workspace-stage--analysis-detached': panels.analysis.presentation === 'detached', 'review-workspace-stage--timeline-detached': panels.timeline.presentation === 'detached', 'review-workspace-stage--analysis-collapsed': panels.analysis.presentation === 'docked' && panels.analysis.collapsed, 'review-workspace-stage--timeline-collapsed': panels.timeline.presentation === 'docked' && panels.timeline.collapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }]" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
+        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :context="playerContext" :active-stroke="workspace.activeStroke.value" :fullscreen="fullscreen" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
-        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="layout.panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @presentation="setPresentation('timeline', $event)" @dock-size="setDockSize('timeline', $event)">
+        <div v-if="fullscreen && snapDragging" class="fullscreen-snap-guide" :class="{ 'fullscreen-snap-guide--near': snapNear }" :style="snapGuideStyle" aria-hidden="true"><span>{{ snapNear ? "放開吸附預設位置" : "拖近此處可吸附" }}</span></div>
+
+        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @presentation="setPresentation('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @snap-drag="updateSnapDrag('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
             <label class="timeline-mode-selector" @wheel="modeWheel"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
           </template>
-          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="layout.panels.timeline.presentation === 'docked' && layout.panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :active-id="activeId" :show-header="false" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @inspect="player?.setInspectionTime($event)" @expand="expandTimeline" />
+          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="panels.timeline.presentation === 'docked' && panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :active-id="activeId" :show-header="false" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @expand="expandTimeline" />
         </WorkspaceWindow>
 
-        <WorkspaceWindow title="分析" panel-id="analysis" :panel="layout.panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @presentation="setPresentation('analysis', $event)" @dock-side="setAnalysisSide" @dock-size="setDockSize('analysis', $event)">
+        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @presentation="setPresentation('analysis', $event)" @dock-side="setAnalysisSide" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @snap-drag="updateSnapDrag('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">
           <AnalysisWindow :model="match" :selected-id="workspace.selectedRallyIndex.value" :active-id="activeId" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-score="workspace.currentScore.value" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" @view="layout.analysisView = $event" @rally="workspace.selectRally" @stroke="workspace.selectStroke" @evidence="openEvidence" @previous-stroke="workspace.moveStroke(-1)" @next-stroke="workspace.moveStroke(1)" @back="workspace.clearSelection" />
         </WorkspaceWindow>
       </section>

@@ -192,12 +192,13 @@ test("hit labels distinguish stage failure, absence and actual zero", async () =
   assert.equal(hitStatus("available", 0), "未偵測到擊球");
 });
 
-test("player progress control keeps explicit base, fill, and thumb layers", () => {
+test("analysis timeline is the only seek surface", () => {
   const player = readFileSync("src/components/ReviewPlayer.vue", "utf8");
-  assert.match(player, /class="progress-track-base"/);
-  assert.match(player, /class="progress-track-fill"/);
-  assert.match(player, /class="progress-thumb"/);
-  assert.match(player, /aria-label="影片進度"/);
+  const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
+  assert.doesNotMatch(player, /progress-control|aria-label="影片進度"/);
+  assert.match(timeline, /@pointerdown="beginScrub"/);
+  assert.match(timeline, /@pointermove="inspectPointer\(\$event\); moveScrub\(\$event\)"/);
+  assert.match(timeline, /@click="clickTimeline"/);
 });
 
 test("Review uses two shared workspace windows with responsive composition", () => {
@@ -386,8 +387,8 @@ test("instrument typography bundles only the compact measurement face", () => {
   assert.equal((tokens.match(/font-display: swap;/g) ?? []).length, 2);
   assert.match(tokens, /--font-interface: "Segoe UI"/);
   assert.match(tokens, /--font-measurement: "IBM Plex Mono"/);
-  assert.match(tokens, /--radius-sm: 2px;/);
-  assert.match(tokens, /--radius-lg: 4px;/);
+  assert.match(tokens, /--radius-sm: 8px;/);
+  assert.match(tokens, /--radius-lg: 18px;/);
 });
 
 test("primary scores use the instrument divider while timeline semantics stay unchanged", () => {
@@ -525,9 +526,9 @@ test("signature interaction uses one guarded shortcut path and lane delegation",
   assert.doesNotMatch(composable, /addEventListener\("keydown"/);
   assert.match(player, /@click="toggle"/);
   assert.match(player, /<\/div>\s*<div class="controls">/);
-  assert.match(player, /progress-rally-window/);
-  assert.match(player, /progress-stroke-tick/);
-  assert.match(timeline, /@pointermove="inspectPointer"/);
+  assert.doesNotMatch(player, /progress-rally-window|progress-stroke-tick/);
+  assert.match(timeline, /@pointerdown="beginScrub"/);
+  assert.match(timeline, /moveScrub\(\$event\)/);
   assert.match(timeline, /@click="clickTimeline"/);
   assert.match(timeline, /emit\(\s*"rallyAt",[\s\S]*timeSec/);
   assert.match(
@@ -551,33 +552,10 @@ test("temporal coherence adds registration without changing temporal ownership",
   const app = readFileSync("src/pages/ReviewPage.vue", "utf8");
   const player = readFileSync("src/components/ReviewPlayer.vue", "utf8");
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  const workspace = readFileSync("src/styles/workspace.css", "utf8");
   const timelineStyles = readFileSync("src/styles/timeline.css", "utf8");
-
-  assert.match(player, /class="progress-rally-window"/);
-  assert.match(
-    player,
-    /width:\s*Math\.max\(0, rallyEndPercent - rallyStartPercent\)/,
-  );
-  assert.match(
-    player,
-    /\(rallyStartPercent\.value \+ rallyEndPercent\.value\) \/ 2/,
-  );
-  assert.match(player, /class="progress-rally-locator"/);
-  assert.match(player, /padStart\(3, "0"\)/);
-  assert.match(
-    player,
-    /v-if="activeRally"\s+class="progress-rally-locator"/s,
-  );
-  assert.match(player, /class="progress-stroke-tick"/);
-  assert.match(
-    workspace,
-    /\.progress-rally-locator\s*\{[^}]*width:\s*1px;[^}]*height:\s*100%;/s,
-  );
-  assert.match(
-    workspace,
-    /\.progress-rally-locator::before\s*\{[^}]*width:\s*1px;[^}]*height:\s*14px;[^}]*background:/s,
-  );
+  assert.doesNotMatch(player, /progress-rally-locator|progress-stroke-tick/);
+  assert.match(app, /@time="workspace\.updateTime"/);
+  assert.match(timeline, /:style="\{ left: item\.left \+ '%', width: item\.width \+ '%' \}"/);
 
   assert.match(timeline, /hoveredMark = ref/);
   assert.match(timeline, /resolveHoveredMark/);
@@ -603,24 +581,11 @@ test("temporal coherence adds registration without changing temporal ownership",
   );
 });
 
-test("signature visibility shares one Rally registration grammar across scales", () => {
+test("Rally registration stays on the shared timeline", () => {
   const player = readFileSync("src/components/ReviewPlayer.vue", "utf8");
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  const workspace = readFileSync("src/styles/workspace.css", "utf8");
   const timelineStyles = readFileSync("src/styles/timeline.css", "utf8");
-
-  assert.match(
-    player,
-    /class="progress-rally-locator"[\s\S]*aria-hidden="true"/,
-  );
-  assert.match(
-    player,
-    /class="rally-registration-index progress-rally-locator-label"/,
-  );
-  assert.doesNotMatch(
-    player,
-    /progress-rally-locator[^>]+(?:tabindex|role="button")/,
-  );
+  assert.doesNotMatch(player, /progress-rally-locator/);
   assert.match(
     timeline,
     /fit === 'rally' && selectedId === item\.id && !lensActive/,
@@ -628,17 +593,6 @@ test("signature visibility shares one Rally registration grammar across scales",
   assert.match(timeline, /class="rally-block-locator"\s+aria-hidden="true"/);
   assert.match(timeline, /class="rally-registration-index rally-block-index"/);
   assert.doesNotMatch(timeline, /<button[^>]+rally-block-locator/);
-  assert.match(
-    workspace,
-    /\.rally-registration-index\s*\{[^}]*font-family:\s*var\(--font-measurement\);[^}]*font-size:\s*10px;[^}]*letter-spacing:\s*0\.08em;/s,
-  );
-  assert.match(workspace, /\.progress-thumb\s*\{[^}]*z-index:\s*6;/s);
-  assert.match(workspace, /\.progress-rally-locator\s*\{[^}]*z-index:\s*5;/s);
-  assert.match(
-    workspace,
-    /\.progress-stroke-tick\s*\{[^}]*z-index:\s*4;[^}]*height:\s*18px;/s,
-  );
-  assert.match(workspace, /\.progress-inspection-tick\s*\{[^}]*z-index:\s*3;/s);
   assert.match(
     timelineStyles,
     /\.rally-block-locator\s*\{[^}]*left:\s*50%;[^}]*width:\s*1px;[^}]*height:\s*11px;/s,
@@ -762,13 +716,13 @@ test("Escape priority and IME safety remain explicit after routed Match selectio
   assert.doesNotMatch(app, /libraryOpen|closeLibrary|MatchLibrary/);
 });
 
-test("player resets source presentation and uses arbitrary time scrubbing", () => {
+test("player resets source presentation while timeline owns arbitrary seek", () => {
   const player = readFileSync("src/components/ReviewPlayer.vue", "utf8");
+  const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   assert.match(player, /mediaAspectRatio\.value = "16 \/ 9"/);
   assert.match(player, /muted\.value = element\?\.muted \?\? false/);
-  assert.match(player, /step="any"/);
-  assert.match(player, /:data-side="rallyLocatorSide"/);
-  assert.doesNotMatch(player, /step="0\.04"/);
+  assert.doesNotMatch(player, /step="any"|rallyLocatorSide/);
+  assert.match(timeline, /function scrubTime\(clientX: number, track: HTMLElement\)/);
 });
 
 test("score labels have a dedicated exact-identity interaction target", () => {
