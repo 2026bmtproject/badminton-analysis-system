@@ -1,0 +1,37 @@
+[e2e 11:36:47] precheck (dry run)
+[e2e 11:36:54] model gemini-3.6-flash reachable
+[e2e 11:36:54] GPU: NVIDIA GeForce RTX 3060 Ti | torch 2.11.0+cu128 (CUDA 12.8) | ort 1.22.0 | git a9adb48 (+7 uncommitted files)
+[e2e 11:36:54] test1: hard-linked input
+[e2e 11:36:54] test5: hard-linked input
+[e2e 11:36:54] test4: hard-linked input
+[e2e 11:36:54] TTY_vs_ASY_2023: hard-linked input
+[e2e 11:36:54] test2: hard-linked input
+[e2e 11:36:54] dry run OK — ready to run: ['test1', 'test5', 'test4', 'TTY_vs_ASY_2023', 'test2']
+[e2e 11:37:29] precheck (full run)
+[e2e 11:37:31] model gemini-3.6-flash reachable
+[e2e 11:37:31] GPU: NVIDIA GeForce RTX 3060 Ti | torch 2.11.0+cu128 (CUDA 12.8) | ort 1.22.0 | git a9adb48 (+7 uncommitted files)
+[e2e 11:37:31] test1: input already prepared
+[e2e 11:37:31] test5: input already prepared
+[e2e 11:37:31] test4: input already prepared
+[e2e 11:37:31] TTY_vs_ASY_2023: input already prepared
+[e2e 11:37:31] test2: input already prepared
+[e2e 11:37:31] sleep inhibited for the duration of the run
+[e2e 11:37:32] === test1: runner start (490.7 s video)
+[e2e 11:57:00] === test1: OK in 19.5 min
+[e2e 11:57:01] === test5: runner start (3439.66 s video)
+[e2e 12:34:59] === test5: OK in 38.0 min
+[e2e 12:35:00] === test4: runner start (4316.06 s video)
+[e2e 13:17:28] === test4: OK in 42.5 min
+[e2e 13:17:29] === TTY_vs_ASY_2023: runner start (5640.06 s video)
+[e2e 13:24:48] === TTY_vs_ASY_2023: FAILED in 7.3 min (not completed: ['pose'])
+[e2e 13:24:49] === test2: runner start (6052.04 s video)
+[e2e 14:39:43] === test2: OK in 74.9 min
+[e2e 14:39:43] all done in 3.04 h — see matches\_e2e\_results\summary.md
+[e2e 17:45:27] precheck (full run)
+[e2e 17:45:30] model gemini-3.6-flash reachable
+[e2e 17:45:30] GPU: NVIDIA GeForce RTX 3060 Ti | torch 2.11.0+cu128 (CUDA 12.8) | ort 1.22.0 | git a9adb48 (+7 uncommitted files)
+[e2e 17:45:30] TTY_vs_ASY_2023: hard-linked input
+[e2e 17:45:30] sleep inhibited for the duration of the run
+[e2e 17:45:30] === TTY_vs_ASY_2023: runner start (5640.06 s video)
+[e2e 19:15:36] === TTY_vs_ASY_2023: OK in 90.1 min
+[e2e 19:15:36] all done in 1.50 h — see matches\_e2e\_results\summary.md
