@@ -36,11 +36,16 @@ experiments/
 │   ├── ans/                    真值，取自 ShuttleSet（非我們標記，見 ans/SOURCE.md）
 │   ├── eval_events.py          評分程式
 │   └── results/                評分結果（由 eval_events.py 產生）
-└── stroke_classification/      球種分類
-    ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
-    ├── eval_strokes.py         評分程式（真值共用 event_detection/ans/）
-    ├── run_oracle.py           用答案擊球幀重跑球種分類，供對照〔需要 GPU〕
-    └── results/                評分結果（oracle.csv 由 run_oracle.py 產生，其餘由 eval_strokes.py）
+├── stroke_classification/      球種分類
+│   ├── README.md               這個模組驗什麼、怎麼跑、結果是什麼
+│   ├── eval_strokes.py         評分程式（真值共用 event_detection/ans/）
+│   ├── run_oracle.py           用答案擊球幀重跑球種分類，供對照〔需要 GPU〕
+│   └── results/                評分結果（oracle.csv 由 run_oracle.py 產生，其餘由 eval_strokes.py）
+└── end_to_end/                 端到端處理時間
+    ├── README.md               量測方式、環境與結果
+    ├── run_e2e.py              冷啟動跑完整管線並計時〔需要 GPU，約 6 小時〕
+    ├── run_e2e.bat             Windows 雙擊執行 run_e2e.py
+    └── results/                計時結果（由 run_e2e.py 產生）
 ```
 
 其他模組之後會以相同形狀加進來。

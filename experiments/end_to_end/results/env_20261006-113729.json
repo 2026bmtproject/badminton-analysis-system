@@ -1,0 +1,32 @@
+{
+  "started_at": "2026-10-06T11:37:29+08:00",
+  "python": "3.12.5",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "cpu": "Intel64 Family 6 Model 151 Stepping 5, GenuineIntel",
+  "git_commit": "a9adb48874f505dadaea270ef785846cf59b4d11",
+  "git_dirty_files": 7,
+  "nvidia_smi": "NVIDIA GeForce RTX 3060 Ti, 591.86, 8192 MiB",
+  "runtime": {
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "gpu": "NVIDIA GeForce RTX 3060 Ti",
+    "onnxruntime": "1.22.0",
+    "ort_providers": [
+      "TensorrtExecutionProvider",
+      "CUDAExecutionProvider",
+      "CPUExecutionProvider"
+    ]
+  },
+  "disk_free_gb": 104.2,
+  "gemini_check": "model gemini-3.6-flash reachable",
+  "matches": [
+    "test1",
+    "test5",
+    "test4",
+    "TTY_vs_ASY_2023",
+    "test2"
+  ],
+  "commentary": "off (runner default)",
+  "precheck_problems": []
+}
