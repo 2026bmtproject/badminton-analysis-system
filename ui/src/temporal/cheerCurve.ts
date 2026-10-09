@@ -1,11 +1,15 @@
 import type { CheerWindowModel } from "../domain/models";
-import type { LeadModel, LeadSide } from "./scoreLead";
+import { GAME_LABEL_WIDTH_PX, type LeadModel, type LeadSide } from "./scoreLead";
 import { timeToPercent, type TimelineViewport } from "./timeline";
 
 /** A smoothed window at or above this probability counts as cheering. */
 export const CHEER_THRESHOLD = 0.5;
 /** How many peaks the lane labels, match-wide. */
 export const CHEER_PEAK_COUNT = 5;
+/** Width of a peak triangle, matching `.cheer-peak`. */
+const CHEER_PEAK_WIDTH_PX = 18;
+/** About two triangles: a game label moved further reads as loose text rather than the separator's. */
+const CHEER_LABEL_MAX_SHIFT_PX = 40;
 
 /** Windows that overlap their neighbour within one segment, in time order, with the 3-window moving average the lane draws. */
 export type CheerRun = { segmentIndex: number; windows: CheerWindowModel[]; smoothed: number[] };
@@ -162,6 +166,32 @@ export function cheerPeakMarks(
       return { rank: peak.rank, segmentIndex: peak.segmentIndex, x: timeToPercent(centre, view) };
     })
     .filter((mark) => mark.x >= 0 && mark.x <= 100);
+}
+
+/**
+ * Game labels moved right past any peak triangle in their way. A triangle
+ * cannot leave its Rally, so the label gives way, staying on its game's side
+ * of the separator; pushed further than CHEER_LABEL_MAX_SHIFT_PX it would
+ * float free of the separator, so it is dropped and the separator alone marks
+ * the game.
+ */
+export function cheerGameLabels<T extends { x: number }>(
+  labels: T[],
+  marks: { x: number }[],
+  trackWidth: number,
+): T[] {
+  if (trackWidth <= 0) return labels;
+  const centres = marks.map((mark) => (mark.x / 100) * trackWidth).sort((a, b) => a - b);
+  return labels.flatMap((label) => {
+    const origin = (label.x / 100) * trackWidth;
+    let left = origin;
+    for (const centre of centres) {
+      if (centre + CHEER_PEAK_WIDTH_PX / 2 > left && centre - CHEER_PEAK_WIDTH_PX / 2 < left + GAME_LABEL_WIDTH_PX)
+        left = centre + CHEER_PEAK_WIDTH_PX / 2;
+    }
+    if (left - origin > CHEER_LABEL_MAX_SHIFT_PX) return [];
+    return [{ ...label, x: (left / trackWidth) * 100 }];
+  });
 }
 
 /**

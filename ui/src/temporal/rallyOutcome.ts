@@ -1,5 +1,5 @@
 import type { RallyModel } from "../domain/models";
-import type { LeadGame, LeadModel, LeadSide } from "./scoreLead";
+import { GAME_LABEL_WIDTH_PX, type LeadGame, type LeadModel, type LeadSide } from "./scoreLead";
 import { timeToPercent, type TimelineViewport } from "./timeline";
 
 /** Who took the point; null when the scoreboard does not say. */
@@ -201,7 +201,6 @@ const INDEX_SLOT_PX = 32;
 const INDEX_STRIDES = [1, 2, 5];
 /** Half a label plus breathing room, so a label pinned at the view edge is never clipped. */
 const INDEX_EDGE_PX = 14;
-const GAME_LABEL_WIDTH_PX = 20;
 /** Half of an arrowed "‹ 014" plus breathing room. */
 const PINNED_EDGE_PX = 22;
 

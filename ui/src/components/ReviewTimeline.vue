@@ -30,6 +30,7 @@ import {
 } from "../temporal/timeline";
 import {
   CHEER_THRESHOLD,
+  cheerGameLabels,
   cheerPeakMarks,
   cheerPeaks,
   cheerRuns,
@@ -52,6 +53,7 @@ import {
   scoreLeadModel,
 } from "../temporal/scoreLead";
 import type { TimelineFit, TimelineViewport } from "../temporal/timeline";
+import TimelineFocusBands from "./timeline/TimelineFocusBands.vue";
 import TimelineLane from "./timeline/TimelineLane.vue";
 import type { TimelineMode } from "../state/workspaceLayout";
 import { activeRallyAt } from "../temporal/activeContext";
@@ -62,6 +64,7 @@ import {
 } from "../temporal/timelineFollow";
 import {
   doubleClickFit,
+  focusBands,
   hoverBandRally,
   panTimelineViewport,
   zoomTimelineViewport,
@@ -114,8 +117,8 @@ const STROKE_SWING_PX = 18;
 const STROKE_BAR_BASELINE_PX = 62;
 const STROKE_BAR_EXTENT_PX = 48;
 /**
- * Cheer lane geometry in track pixels: the label row (peak places now, game
- * labels share it later) above a wave mirrored about CHEER_MID_Y_PX.
+ * Cheer lane geometry in track pixels: the label row (peak places and game
+ * labels) above a wave mirrored about CHEER_MID_Y_PX.
  */
 const CHEER_TRACK_HEIGHT_PX = 64;
 const CHEER_MID_Y_PX = 38;
@@ -385,19 +388,28 @@ const hoverBand = computed(() => {
   const left = position(rally.start);
   return { left, width: Math.max(0, position(rally.end) - left) };
 });
-const leadFocusBands = computed(() => {
-  const bands: { state: "selected" | "active"; left: number; width: number }[] = [];
-  const add = (state: (typeof bands)[number]["state"], rallyId: number | null | undefined) => {
-    const rally = props.model.rallies.find((item) => item.id === rallyId);
-    const entry = rally ? leadEntryAt(leadModel.value, rally.start) : null;
-    if (!entry || entry.rally.id !== rallyId) return;
-    const left = position(entry.start);
-    bands.push({ state, left, width: Math.max(0, position(entry.end) - left) });
-  };
-  add("selected", props.selectedId);
-  if (props.scoreContextId !== props.selectedId) add("active", props.scoreContextId);
-  return bands;
-});
+/** The score lane holds each observation until the next Rally starts, so its bands span that whole step. */
+const leadFocusBands = computed(() =>
+  focusBands(
+    props.selectedId,
+    props.scoreContextId,
+    (rallyId) => {
+      const rally = props.model.rallies.find((item) => item.id === rallyId);
+      const entry = rally ? leadEntryAt(leadModel.value, rally.start) : null;
+      return entry?.rally.id === rallyId ? entry : null;
+    },
+    renderViewport.value,
+  ),
+);
+/** Lanes that draw each Rally on its own span: the bands match the hover band. */
+const rallyFocusBands = computed(() =>
+  focusBands(
+    props.selectedId,
+    props.activeId,
+    (rallyId) => props.model.rallies.find((item) => item.id === rallyId) ?? null,
+    renderViewport.value,
+  ),
+);
 const rallyLane = computed(() => rallyLaneModel(props.model.rallies, leadModel.value));
 const rallyMarks = computed(() =>
   rallyLaneMarks(rallyLane.value, props.model.rallies, renderViewport.value, trackWidth.value),
@@ -455,6 +467,10 @@ const cheerPaths = computed(() =>
 /** Lowest place first, so where marks overlap the better one is drawn on top. */
 const cheerMarks = computed(() =>
   cheerPeakMarks(cheerPeakList.value, props.model.rallies, renderViewport.value).reverse(),
+);
+/** Game labels share the label row with the peaks and give way to them. */
+const cheerGameLabelList = computed(() =>
+  cheerGameLabels(leadMarks.value.labels, cheerMarks.value, trackWidth.value),
 );
 /** Threshold lines either side of the mid line, in track pixels. */
 const cheerThresholdY = [
@@ -1059,12 +1075,8 @@ const timelineStyle = computed(() => ({
             </template>
             <!-- Everything that is not text is drawn in SVG: HTML boxes snap to whole
                  pixels and would crawl against the line while playback scrolls. -->
+            <TimelineFocusBands :bands="leadFocusBands" />
             <svg class="lead-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <template v-for="band in leadFocusBands" :key="`focus-${band.state}`">
-                <rect class="lead-focus" :data-state="band.state" :x="band.left" y="0" :width="band.width" height="100" />
-                <line class="lead-focus-edge" :data-state="band.state" :x1="band.left" :x2="band.left" y1="0" y2="100" />
-                <line v-if="band.state === 'selected'" class="lead-focus-edge" data-state="selected" :x1="band.left + band.width" :x2="band.left + band.width" y1="0" y2="100" />
-              </template>
               <line v-for="separator in leadMarks.separators" :key="`separator-${separator.game}`" class="lead-separator" :x1="separator.x" :x2="separator.x" y1="0" y2="100" />
               <line v-for="y in leadGrid" :key="`grid-${y}`" class="lead-chart__grid" x1="0" x2="100" :y1="y" :y2="y" />
               <line class="lead-chart__zero" x1="0" x2="100" y1="50" y2="50" />
@@ -1146,9 +1158,11 @@ const timelineStyle = computed(() => ({
             kind="stroke"
             :description="strokeDescription"
           >
+            <TimelineFocusBands :bands="rallyFocusBands" />
             <!-- Percent x and pixel y, like the rally lane: nothing stretches, and the
                  marks glide by subpixels while playback scrolls. -->
             <svg class="stroke-chart" aria-hidden="true">
+              <line v-for="separator in leadMarks.separators" :key="`separator-${separator.game}`" class="lead-separator" :x1="separator.x + '%'" :x2="separator.x + '%'" y1="0" y2="100%" />
               <template v-if="strokeMarks.mode === 'bars'">
                 <template v-for="bar in strokeMarks.bars" :key="`bar-${bar.rallyId}`">
                   <!-- One pixel short of its share: the surface shows through between families. -->
@@ -1202,6 +1216,13 @@ const timelineStyle = computed(() => ({
                 </svg>
               </template>
             </svg>
+            <span
+              v-for="label in leadMarks.labels"
+              :key="`game-${label.game}`"
+              class="lead-game-label"
+              :style="{ left: label.x + '%' }"
+              aria-hidden="true"
+            >{{ label.text }}</span>
             <!-- Text glides on a composited transform in track-width units, like the rally numbers. -->
             <template v-if="strokeMarks.mode === 'trace'">
               <span
@@ -1255,6 +1276,7 @@ const timelineStyle = computed(() => ({
             :description="cheerDescription"
           >
             <template v-if="cheerRunList.length">
+              <TimelineFocusBands :bands="rallyFocusBands" />
               <!-- Percent x through a stretched viewBox whose y units are track pixels:
                    filled areas have no stroke to distort. Solid wherever the crowd is
                    past the threshold, faint elsewhere. -->
@@ -1269,9 +1291,17 @@ const timelineStyle = computed(() => ({
               </svg>
               <!-- Unstretched, so the dashes keep their length at any zoom. -->
               <svg class="cheer-curve" aria-hidden="true">
+                <line v-for="separator in leadMarks.separators" :key="`separator-${separator.game}`" class="lead-separator" :x1="separator.x + '%'" :x2="separator.x + '%'" y1="0" y2="100%" />
                 <line class="cheer-mid" x1="0" x2="100%" :y1="CHEER_MID_Y_PX" :y2="CHEER_MID_Y_PX" />
                 <line v-for="y in cheerThresholdY" :key="y" class="cheer-threshold" x1="0" x2="100%" :y1="y" :y2="y" />
               </svg>
+              <span
+                v-for="label in cheerGameLabelList"
+                :key="`game-${label.game}`"
+                class="lead-game-label"
+                :style="{ left: label.x + '%' }"
+                aria-hidden="true"
+              >{{ label.text }}</span>
               <!-- A downward triangle over its Rally, gliding on a composited transform
                    in track-width units like the rally numbers. -->
               <span

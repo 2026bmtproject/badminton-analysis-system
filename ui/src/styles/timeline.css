@@ -317,17 +317,27 @@
   stroke: var(--color-text-muted);
   stroke-dasharray: 3 3;
 }
-.lead-focus[data-state="selected"] {
+/* Selected (white) and playing (green) Rally behind a lane's marks; shared by the score, stroke and cheer lanes. */
+.timeline-focus-bands {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.timeline-focus[data-state="selected"] {
   fill: rgb(212 216 218 / 10%);
 }
-.lead-focus[data-state="active"] {
+.timeline-focus[data-state="active"] {
   fill: rgb(120 197 139 / 10%);
 }
-.lead-focus-edge {
+.timeline-focus-edge {
   stroke: var(--line-selected);
   stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
-.lead-focus-edge[data-state="active"] {
+.timeline-focus-edge[data-state="active"] {
   stroke: var(--line-active);
 }
 .lead-separator {

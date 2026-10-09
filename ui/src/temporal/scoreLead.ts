@@ -252,6 +252,8 @@ export type LeadChartMarks = {
 };
 
 const GAME_LABEL_MIN_PX = 28;
+/** Room a "G2" label takes from its left edge, for marks that must keep clear of it. */
+export const GAME_LABEL_WIDTH_PX = 20;
 const PEAK_LABEL_MIN_LEAD = 3;
 const PEAK_LABEL_MIN_GAME_PX = 80;
 /** Beyond this fraction the line is too close to the lane edge for a label outside it. */

@@ -6,6 +6,7 @@ import { parseMatchModel } from "../src/data/matchParser";
 import type { CheerWindowModel, RallyModel } from "../src/domain/models";
 import {
   CHEER_THRESHOLD,
+  cheerGameLabels,
   cheerPeakMarks,
   cheerPeaks,
   cheerRuns,
@@ -138,6 +139,23 @@ test("each peak is marked over the centre of its whole Rally, even where marks c
     [1, 10.4], [2, 11.5], [3, 40.4],
   ]);
   assert.deepEqual(cheerPeakMarks(peaks, rallies, { startSec: 109, endSec: 1109, durationSec: 1000 }).map((mark) => mark.rank), [2, 3]);
+});
+
+test("game labels move right past the peak triangles that share their row", () => {
+  const labels = [
+    { game: 0, x: 0, text: "G1" },
+    { game: 1, x: 40, text: "G2" },
+    { game: 2, x: 80, text: "G3" },
+  ];
+  // 1000 px track: G2 spans 400–420 px; a triangle spans its centre ± 9 px.
+  const placed = (...xs: number[]) =>
+    cheerGameLabels(labels, xs.map((x) => ({ x })), 1000).map((label) => [label.text, Math.round(label.x * 10) / 10]);
+  assert.deepEqual(placed(39), [["G1", 0], ["G2", 40], ["G3", 80]], "a triangle that ends at the separator");
+  assert.deepEqual(placed(43), [["G1", 0], ["G2", 40], ["G3", 80]], "a triangle past the label's end");
+  assert.deepEqual(placed(41), [["G1", 0], ["G2", 41.9], ["G3", 80]], "the label starts where the triangle ends");
+  assert.deepEqual(placed(39.2), [["G1", 0], ["G2", 40.1], ["G3", 80]], "a triangle reaching past the separator");
+  assert.deepEqual(placed(41.5, 43), [["G1", 0], ["G2", 43.9], ["G3", 80]], "past every triangle in the way");
+  assert.deepEqual(placed(41, 42.6, 44.2), [["G1", 0], ["G3", 80]], "dropped rather than pushed far from its separator");
 });
 
 function rally(id: number, score: [number, number] | null, game = 0): RallyModel {

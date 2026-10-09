@@ -548,7 +548,11 @@ test("temporal coherence adds registration without changing temporal ownership",
   assert.match(timeline, /hoveredMark = ref/);
   assert.match(timeline, /resolveHoveredMark/);
   assert.match(timeline, /nearestTemporalMark/);
-  assert.match(timeline, /<rect class="lead-focus" :data-state="band\.state" :x="band\.left"/);
+  assert.match(timeline, /<TimelineFocusBands :bands="leadFocusBands" \/>/);
+  assert.match(
+    readFileSync("src/components/timeline/TimelineFocusBands.vue", "utf8"),
+    /<rect class="timeline-focus" :data-state="band\.state" :x="band\.left"/,
+  );
   assert.match(
     timelineStyles,
     /\.timeline-inspection > span\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/s,

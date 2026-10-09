@@ -5,6 +5,7 @@ import type { RallyModel } from "../src/domain/models";
 import {
   constrainTimelineViewport,
   doubleClickFit,
+  focusBands,
   hoverBandRally,
   panTimelineViewport,
   zoomTimelineViewport,
@@ -144,6 +145,29 @@ test("18. the hover band follows the rally under the pointer only while it can b
 test("19. the score lane leaves hover to the shared band and keeps only selected and active", () => {
   const timeline = source("src/components/ReviewTimeline.vue");
   assert.match(timeline, /class="timeline-hover-band"/);
-  assert.doesNotMatch(timeline, /add\("hovered"/);
-  assert.doesNotMatch(source("src/styles/timeline.css"), /\.lead-focus\s*\{/);
+  assert.doesNotMatch(timeline, /"hovered"/);
+  assert.doesNotMatch(source("src/components/timeline/TimelineFocusBands.vue"), /hovered/);
+  assert.doesNotMatch(source("src/styles/timeline.css"), /\.timeline-focus\s*\{/);
+});
+test("20. selected and playing bands follow each lane's span, and the playing one yields to the selected one", () => {
+  const view = { startSec: 0, endSec: 100, durationSec: 100 };
+  const spans: Record<number, { start: number; end: number }> = { 1: { start: 10, end: 18 }, 2: { start: 30, end: 36 } };
+  const spanOf = (id: number) => spans[id] ?? null;
+  assert.deepEqual(focusBands(1, 2, spanOf, view), [
+    { state: "selected", left: 10, width: 8 },
+    { state: "active", left: 30, width: 6 },
+  ]);
+  assert.deepEqual(focusBands(1, 1, spanOf, view), [{ state: "selected", left: 10, width: 8 }]);
+  assert.deepEqual(focusBands(null, 2, spanOf, view), [{ state: "active", left: 30, width: 6 }]);
+  assert.deepEqual(focusBands(9, null, spanOf, view), [], "a Rally without a span on this lane has no band");
+});
+test("21. the stroke and cheer lanes share the score lane's bands, game separators and labels", () => {
+  const timeline = source("src/components/ReviewTimeline.vue");
+  assert.match(timeline, /<TimelineFocusBands :bands="leadFocusBands" \/>\s*<svg class="lead-chart"/);
+  for (const kind of ["stroke", "cheer"]) {
+    const lane = timeline.slice(timeline.indexOf(`kind="${kind}"`), timeline.indexOf("</TimelineLane>", timeline.indexOf(`kind="${kind}"`)));
+    assert.match(lane, /<TimelineFocusBands :bands="rallyFocusBands" \/>/, kind);
+    assert.match(lane, /v-for="separator in leadMarks\.separators"[^>]*class="lead-separator"/, kind);
+    assert.match(lane, /class="lead-game-label"/, kind);
+  }
 });
