@@ -1,3 +1,4 @@
+import { TIMELINE_FIT_HEIGHT_PX } from "../presentation/workspaceDensity";
 import { defaultWorkspaceLayout, type PanelLayout, type WorkspacePanelId } from "./workspaceLayout";
 
 export type WorkspaceBounds = { width: number; height: number };
@@ -8,6 +9,8 @@ export const PANEL_MAX_WIDTH_RATIO = 0.96;
 export const PANEL_MAX_HEIGHT_RATIO = 0.92;
 export const PANEL_HEADER_HEIGHT_PX = 42;
 export const FULLSCREEN_SNAP_DISTANCE_PX = 72;
+/** Timeline lanes have fixed pixel heights, so the floating timeline uses the same fitted height as the dock. */
+export const FULLSCREEN_TIMELINE_HEIGHT_PX = TIMELINE_FIT_HEIGHT_PX;
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
@@ -62,6 +65,19 @@ export function fullscreenHomePanel(
 ): PanelLayout {
   const home = defaultWorkspaceLayout().fullscreenPanels[id];
   return constrainPanel({ ...panel, x: home.x, y: home.y }, bounds);
+}
+
+/**
+ * An untouched fullscreen timeline floats at a fixed pixel height anchored to
+ * its default bottom edge, so it neither scrolls on short screens nor towers on
+ * tall ones. Once the user resizes it, their stored size wins.
+ */
+export function fittedFullscreenTimeline(panel: PanelLayout, boundsHeight: number): PanelLayout {
+  const home = defaultWorkspaceLayout().fullscreenPanels.timeline;
+  if (panel.height !== home.height) return panel;
+  const height = Math.min(PANEL_MAX_HEIGHT_RATIO, FULLSCREEN_TIMELINE_HEIGHT_PX / Math.max(1, boundsHeight));
+  const y = panel.y === home.y ? Math.max(0, home.y + home.height - height) : panel.y;
+  return { ...panel, height, y };
 }
 
 export function fullscreenSnapCandidate(

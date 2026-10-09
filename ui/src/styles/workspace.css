@@ -46,7 +46,12 @@
   text-align: left;
 }
 .match-score-context {
+  /* Reserve the 34px score line + 15px label so entering or leaving a rally never shifts the workspace below. */
+  display: grid;
+  align-content: center;
+  justify-items: center;
   min-width: 116px;
+  min-height: 49px;
   flex: 0 0 auto;
   text-align: center;
 }

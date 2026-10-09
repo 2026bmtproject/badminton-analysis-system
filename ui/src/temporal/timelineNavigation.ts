@@ -1,4 +1,4 @@
-import type { TimelineViewport } from "./timeline";
+import type { TimelineFit, TimelineViewport } from "./timeline";
 
 /** 500 ms remains well above one video frame and avoids meaningless sub-frame zoom. */
 export const MIN_TIMELINE_VIEWPORT_SECONDS = 0.5;
@@ -55,14 +55,16 @@ export function panTimelineViewport(
   );
 }
 
-export function centerTimelineViewport(
-  current: TimelineViewport,
-  timeSec: number,
-  totalDurationSec: number,
-) {
-  return constrainTimelineViewport(
-    timeSec - current.durationSec / 2,
-    current.durationSec,
-    totalDurationSec,
-  );
+/**
+ * Double-click toggles rally focus. Inside a focused rally any double-click
+ * returns to the match; elsewhere it focuses the rally under the pointer, and
+ * a custom zoom over a gap resets to the match.
+ */
+export function doubleClickFit<T>(
+  fit: TimelineFit | "custom",
+  rallyAtPoint: T | null,
+): { fit: TimelineFit; rally: T | null } | null {
+  if (fit === "rally") return { fit: "match", rally: null };
+  if (rallyAtPoint) return { fit: "rally", rally: rallyAtPoint };
+  return fit === "custom" ? { fit: "match", rally: null } : null;
 }

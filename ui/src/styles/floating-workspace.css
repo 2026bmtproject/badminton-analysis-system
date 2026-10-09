@@ -193,7 +193,6 @@
   border: 0;
 }
 .workspace-window__body .intelligence-timeline { min-width: 0; padding: var(--space-2); }
-.workspace-window__body .timeline-header { margin-bottom: var(--space-2); }
 .workspace-window__resize-grip {
   position: absolute;
   right: 0;

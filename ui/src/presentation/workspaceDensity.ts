@@ -11,6 +11,9 @@ export type AdaptivePanelSizes = {
   timelineHeight: number;
 };
 
+/** Window height (header + body) that fits every timeline lane without scrolling or blank space. */
+export const TIMELINE_FIT_HEIGHT_PX = 160;
+
 const NICE_INTERVALS_SEC = [
   1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1_800, 3_600,
 ] as const;
@@ -21,7 +24,8 @@ export function resolveTimelineDensity(
   forcedRail = false,
 ): PanelDensity {
   if (forcedRail) return "rail";
-  if (width < 720 || height < 190) return "compact";
+  // 110px holds the tallest lane (cheer curve, zoomed stroke labels) at full density inside the default 160px window.
+  if (width < 720 || height < 110) return "compact";
   return "full";
 }
 
@@ -36,13 +40,10 @@ export function adaptiveDefaultPanelSizes(
 ): AdaptivePanelSizes {
   if (viewportWidth > 1_100 && viewportWidth <= 1_400) {
     return viewportHeight <= 800
-      ? { analysisWidth: 260, timelineHeight: 164 }
-      : { analysisWidth: 280, timelineHeight: 180 };
+      ? { analysisWidth: 260, timelineHeight: TIMELINE_FIT_HEIGHT_PX }
+      : { analysisWidth: 280, timelineHeight: TIMELINE_FIT_HEIGHT_PX };
   }
-  if (viewportWidth >= 1_440 && viewportHeight >= 850) {
-    return { analysisWidth: 340, timelineHeight: 240 };
-  }
-  return { analysisWidth: 340, timelineHeight: 200 };
+  return { analysisWidth: 340, timelineHeight: TIMELINE_FIT_HEIGHT_PX };
 }
 
 export function timelineTicks(

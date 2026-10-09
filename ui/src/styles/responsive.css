@@ -48,6 +48,7 @@
   }
   .match-score-context {
     min-width: 96px;
+    min-height: 45px;
   }
   .match-score-context strong {
     font-size: 28px;
@@ -75,20 +76,6 @@
   }
   .intelligence-timeline {
     padding: var(--space-3);
-  }
-  .timeline-header {
-    grid-template-columns: 1fr auto;
-    align-items: start;
-  }
-  .timeline-header > span {
-    text-align: right;
-  }
-  .timeline-controls {
-    grid-column: 1 / -1;
-    justify-content: space-between;
-  }
-  .track-filters {
-    grid-template-columns: max-content;
   }
   .timeline-surface {
     --timeline-group-label: 44px;
@@ -125,16 +112,6 @@
   }
   .player-name {
     max-width: none;
-  }
-  .timeline-header {
-    grid-template-columns: 1fr;
-  }
-  .timeline-header > span {
-    text-align: left;
-  }
-  .timeline-controls {
-    grid-column: 1;
-    flex-wrap: wrap;
   }
   .score-section {
     align-items: flex-start;

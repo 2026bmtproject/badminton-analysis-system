@@ -4,97 +4,6 @@
   border-top: 1px solid var(--color-border-strong);
   overflow-x: clip;
 }
-.timeline-header {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: end;
-  gap: var(--space-4);
-  margin-bottom: var(--space-3);
-}
-.timeline-header h2 {
-  margin-top: 2px;
-}
-.timeline-header > span {
-  color: var(--color-text-secondary);
-  font-family: var(--font-measurement);
-  font-size: var(--font-size-metadata);
-  font-variant-numeric: tabular-nums;
-}
-.timeline-header--compact { grid-template-columns: 1fr auto; align-items: center; }
-.return-to-live { min-height: var(--control-compact); padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-strong); }
-.timeline-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.fit-controls {
-  display: flex;
-  gap: 0;
-}
-.fit-controls button,
-.timeline-controls summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--control-normal);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--type-control);
-  line-height: var(--leading-control);
-}
-.fit-controls button {
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  border-radius: 0;
-}
-.timeline-controls summary {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-}
-.fit-controls button[aria-pressed="true"] {
-  color: var(--color-text);
-  background: transparent;
-  border-bottom: 2px solid var(--line-selected);
-  box-shadow: none;
-}
-.fit-controls button:not(:disabled)[aria-pressed="false"] {
-  color: var(--color-text-secondary);
-  background: transparent;
-}
-.fit-controls button:disabled {
-  color: var(--color-text-muted);
-  background: transparent;
-  border-style: dashed;
-}
-.timeline-controls details {
-  position: relative;
-  color: var(--color-text-secondary);
-}
-.track-filters {
-  position: absolute;
-  z-index: var(--z-dropdown);
-  top: calc(100% + var(--space-2));
-  right: 0;
-  display: grid;
-  grid-template-columns: max-content max-content;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-dropdown);
-}
-.track-filters label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-compact);
-}
-.track-filters input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--color-accent);
-}
 .timeline-surface {
   --timeline-group-label: 48px;
   --timeline-lane-label: 44px;
@@ -104,6 +13,7 @@
   position: relative;
   padding-bottom: var(--space-2);
   overflow-x: clip;
+  user-select: none;
 }
 .intelligence-timeline[data-lens-active="true"] .timeline-surface {
   pointer-events: none;
@@ -458,8 +368,10 @@
   font-size: var(--font-size-metadata);
   font-variant-numeric: tabular-nums;
 }
+/* The target spans label and tick: a 30px label, a 10px connector gap, then the 16px tick. */
 .stroke-marker--semantic {
-  top: 24px;
+  height: 56px;
+  min-height: 56px;
   opacity: var(--lens-detail-opacity, 1);
   overflow: visible;
 }
@@ -469,25 +381,16 @@
   bottom: 0;
   left: 50%;
   width: 1px;
-  height: 15px;
+  height: 16px;
   background: var(--color-stroke);
   transform: translateX(-50%);
-}
-.stroke-marker-index {
-  position: relative;
-  z-index: 1;
-  display: block;
-  padding-bottom: 12px;
-  font-family: var(--font-measurement);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading-micro);
 }
 .stroke-marker-detail {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 12px);
+  bottom: 26px;
   display: grid;
-  width: 112px;
+  width: 72px;
   padding: 0;
   color: var(--color-text);
   text-align: center;
@@ -529,6 +432,7 @@
 }
 .stroke-marker-detail strong {
   font-size: 11px;
+  line-height: 14px;
   font-weight: var(--weight-semibold);
 }
 .stroke-marker-detail small {
@@ -537,6 +441,7 @@
   font-family: var(--font-measurement);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  line-height: 12px;
 }
 .stroke-marker.selected {
   color: var(--color-text);
@@ -548,13 +453,6 @@
 }
 .stroke-marker.active { color: var(--color-text); }
 .stroke-marker.active::before { width: 3px; background: var(--line-active); }
-.stroke-marker.active .stroke-marker-index::after {
-  content: "目前";
-  display: block;
-  color: var(--color-text-secondary);
-  font-size: 9px;
-  line-height: 10px;
-}
 .stroke-marker.hovered:not(.selected) {
   color: var(--color-text);
 }
@@ -636,14 +534,6 @@
 .intelligence-timeline[data-density="compact"] {
   padding: var(--space-1) var(--space-2) var(--space-2);
 }
-.intelligence-timeline[data-density="compact"] .timeline-header--compact {
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2);
-  margin-bottom: var(--space-1);
-}
-.intelligence-timeline[data-density="compact"] .timeline-controls { gap: var(--space-1); }
-.intelligence-timeline[data-density="compact"] .fit-controls button,
-.intelligence-timeline[data-density="compact"] .return-to-live { min-height: 30px; padding: var(--space-1) var(--space-2); font-size: var(--type-meta); }
 .intelligence-timeline[data-density="compact"] .timeline-surface {
   --timeline-group-label: 0px;
   --timeline-lane-label: 0px;

@@ -40,6 +40,9 @@ const detachedDefaults: Record<WorkspacePanelId, Omit<PanelLayout, "presentation
   analysis: { x: 0.735, y: 0.035, width: 0.24, height: 0.57, collapsed: false, alpha: 0.94 },
 };
 
+/** Earlier releases floated a 25%-tall fullscreen timeline; layouts still at that spot adopt the current default. */
+const LEGACY_FULLSCREEN_TIMELINE = { y: 0.66, height: 0.25 };
+
 const modes: TimelineMode[] = ["rally", "stroke", "score", "commentary", "cheer"];
 const views: AnalysisView[] = ["analysis", "court"];
 const presentations: PanelPresentation[] = ["docked", "detached"];
@@ -85,7 +88,7 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
       analysis: { ...detachedDefaults.analysis, presentation: "docked" },
     },
     fullscreenPanels: {
-      timeline: { x: 0.025, y: 0.66, width: 0.69, height: 0.25, collapsed: false, alpha: 0.94, presentation: "detached" },
+      timeline: { x: 0.025, y: 0.72, width: 0.69, height: 0.19, collapsed: false, alpha: 0.94, presentation: "detached" },
       analysis: { ...detachedDefaults.analysis, presentation: "detached" },
     },
   })) as WorkspaceLayout;
@@ -102,6 +105,11 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       ...fallback.panels[id],
       presentation: migratedFromFloatingV1 ? "detached" : "docked",
     });
+    const fullscreenTimeline = sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline);
+    if (fullscreenTimeline.y === LEGACY_FULLSCREEN_TIMELINE.y && fullscreenTimeline.height === LEGACY_FULLSCREEN_TIMELINE.height) {
+      fullscreenTimeline.y = fallback.fullscreenPanels.timeline.y;
+      fullscreenTimeline.height = fallback.fullscreenPanels.timeline.height;
+    }
     return {
       version: 3,
       timelineMode: modes.includes(value.timelineMode as TimelineMode) ? value.timelineMode! : "rally",
@@ -114,7 +122,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
         analysis: sanitizePanel(value.panels?.analysis, panelFallback("analysis")),
       },
       fullscreenPanels: {
-        timeline: sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline),
+        timeline: fullscreenTimeline,
         analysis: sanitizePanel(value.fullscreenPanels?.analysis, fallback.fullscreenPanels.analysis),
       },
     };

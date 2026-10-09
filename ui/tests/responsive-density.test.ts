@@ -13,6 +13,8 @@ const source = (path: string) => readFileSync(path, "utf8");
 
 test("Timeline size only chooses full or compact; explicit collapse chooses rail", () => {
   assert.equal(resolveTimelineDensity(900, 230), "full");
+  assert.equal(resolveTimelineDensity(900, 116), "full");
+  assert.equal(resolveTimelineDensity(900, 100), "compact");
   assert.equal(resolveTimelineDensity(620, 170), "compact");
   assert.equal(resolveTimelineDensity(330, 170), "compact");
   assert.equal(resolveTimelineDensity(900, 90), "compact");
@@ -21,10 +23,10 @@ test("Timeline size only chooses full or compact; explicit collapse chooses rail
 });
 
 test("adaptive defaults prioritize video on constrained desktop viewports", () => {
-  assert.deepEqual(adaptiveDefaultPanelSizes(1920, 1080), { analysisWidth: 340, timelineHeight: 240 });
-  assert.deepEqual(adaptiveDefaultPanelSizes(1440, 900), { analysisWidth: 340, timelineHeight: 240 });
-  assert.deepEqual(adaptiveDefaultPanelSizes(1366, 768), { analysisWidth: 260, timelineHeight: 164 });
-  assert.deepEqual(adaptiveDefaultPanelSizes(1280, 720), { analysisWidth: 260, timelineHeight: 164 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1920, 1080), { analysisWidth: 340, timelineHeight: 160 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1440, 900), { analysisWidth: 340, timelineHeight: 160 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1366, 768), { analysisWidth: 260, timelineHeight: 160 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1280, 720), { analysisWidth: 260, timelineHeight: 160 });
 });
 
 test("pixel-aware ticks reduce count while retaining valid ordered ranges", () => {
@@ -48,7 +50,6 @@ test("Analysis resize resolves full or compact without becoming a collapsed rail
 
 test("responsive presentation removes DOM horizontal timeline navigation", () => {
   const timelineStyles = source("src/styles/timeline.css");
-  assert.doesNotMatch(timelineStyles, /\.timeline-controls\s*\{[^}]*overflow-x:\s*auto/s);
   assert.match(timelineStyles, /overflow-x:\s*clip/);
 });
 

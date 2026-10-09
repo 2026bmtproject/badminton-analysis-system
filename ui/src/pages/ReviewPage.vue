@@ -24,7 +24,7 @@ import {
   type WorkspacePanelId,
 } from "../state/workspaceLayout";
 import { adaptiveDefaultPanelSizes } from "../presentation/workspaceDensity";
-import { fullscreenHomePanel } from "../state/workspaceGeometry";
+import { fittedFullscreenTimeline, fullscreenHomePanel } from "../state/workspaceGeometry";
 
 defineOptions({ name: "ReviewPage" });
 const context = useMatchContext();
@@ -80,7 +80,13 @@ const effectiveTimelineDockHeight = computed(() =>
     ? adaptiveSizes.value.timelineHeight
     : layout.timelineDockHeight,
 );
-const panels = computed(() => fullscreen.value ? layout.fullscreenPanels : layout.panels);
+const fullscreenPanels = computed(() => ({
+  ...layout.fullscreenPanels,
+  timeline: fittedFullscreenTimeline(layout.fullscreenPanels.timeline, viewportHeight.value),
+}));
+const panels = computed(() => fullscreen.value ? fullscreenPanels.value : layout.panels);
+/** Writable panel layouts; `panels` may present a fitted copy. */
+const storedPanels = () => fullscreen.value ? layout.fullscreenPanels : layout.panels;
 const analysisDetached = computed(() => panels.value.analysis.presentation === "detached");
 const analysisCollapsed = computed(() => panels.value.analysis.presentation === "docked" && panels.value.analysis.collapsed);
 
@@ -123,7 +129,16 @@ function openEvidence(evidence: EvidenceModel) {
   const target = findStrokeTarget(match.value, evidence.eventIndex);
   if (target) workspace.selectStroke(target.stroke);
 }
-function updatePanel(id: WorkspacePanelId, panel: PanelLayout) { panels.value[id] = panel; }
+function updatePanel(id: WorkspacePanelId, panel: PanelLayout) {
+  const shown = panels.value[id];
+  const stored = storedPanels()[id];
+  // Moving, collapsing or fading a fitted panel must not freeze its fitted size into storage.
+  storedPanels()[id] = {
+    ...panel,
+    height: panel.height === shown.height ? stored.height : panel.height,
+    y: panel.y === shown.y ? stored.y : panel.y,
+  };
+}
 function fullscreenBounds() {
   return { width: stage.value?.clientWidth ?? window.innerWidth, height: stage.value?.clientHeight ?? window.innerHeight };
 }
@@ -144,7 +159,7 @@ const snapGuideStyle = computed(() => {
   return { left: `${panel.x * 100}%`, top: `${panel.y * 100}%`, width: `${panel.width * 100}%`, height: `${panel.height * 100}%` };
 });
 function setPresentation(id: WorkspacePanelId, presentation: "docked" | "detached") {
-  panels.value[id].presentation = presentation;
+  storedPanels()[id].presentation = presentation;
   activeWindow.value = id;
 }
 function setAnalysisSide(side: AnalysisDockSide) {
@@ -155,7 +170,7 @@ function setDockSize(id: WorkspacePanelId, value: number) {
   else layout.timelineDockHeight = constrainTimelineDockHeight(value);
 }
 function expandTimeline() {
-  panels.value.timeline.collapsed = false;
+  storedPanels().timeline.collapsed = false;
 }
 function clearIdleTimer() {
   if (idleTimer !== undefined) window.clearTimeout(idleTimer);
@@ -252,7 +267,7 @@ onBeforeUnmount(() => {
       <div class="header-actions">
         <WorkspacePopover label="快捷鍵" :min-width="320">
           <template #trigger><span aria-hidden="true">?</span></template>
-          <div class="shortcut-help__content"><strong>快捷鍵</strong><p>Space／K 播放 · ←／→ 跳 5 秒 · Shift + ←／→ 切換擊球 · [／] 切換片段</p><p>時間軸滾輪平移 · Ctrl／Cmd + 滾輪縮放</p></div>
+          <div class="shortcut-help__content"><strong>快捷鍵</strong><p>Space／K 播放 · ←／→ 跳 5 秒 · Shift + ←／→ 切換擊球 · [／] 切換片段</p><p>時間軸雙擊片段放大 · 再次雙擊回到全場</p><p>時間軸滾輪平移 · Ctrl／Cmd + 滾輪縮放</p></div>
         </WorkspacePopover>
         <WorkspacePopover label="工作區設定" :min-width="220">
           <template #trigger><span class="workspace-settings__label">工作區</span></template>
@@ -284,7 +299,7 @@ onBeforeUnmount(() => {
             <label class="timeline-mode-selector" @wheel="modeWheel"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
           </template>
-          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="panels.timeline.presentation === 'docked' && panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :active-id="activeId" :show-header="false" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @expand="expandTimeline" />
+          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="panels.timeline.presentation === 'docked' && panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @expand="expandTimeline" />
         </WorkspaceWindow>
 
         <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @presentation="setPresentation('analysis', $event)" @dock-side="setAnalysisSide" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @snap-drag="updateSnapDrag('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">

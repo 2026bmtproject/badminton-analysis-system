@@ -3,7 +3,7 @@ import test from "node:test";
 import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel, useWorkspaceLayout } from "../src/state/workspaceLayout";
 import { availableTimelineModes } from "../src/components/timeline/timelineModeRegistry";
 import type { MatchCapabilities } from "../src/domain/models";
-import { FULLSCREEN_SNAP_DISTANCE_PX, fullscreenHomePanel, fullscreenSnapCandidate } from "../src/state/workspaceGeometry";
+import { FULLSCREEN_SNAP_DISTANCE_PX, FULLSCREEN_TIMELINE_HEIGHT_PX, fittedFullscreenTimeline, fullscreenHomePanel, fullscreenSnapCandidate } from "../src/state/workspaceGeometry";
 
 test("invalid persisted workspace state falls back without breaking Review", () => {
   assert.deepEqual(parseWorkspaceLayout("not-json"), defaultWorkspaceLayout());
@@ -43,6 +43,31 @@ test("normal and fullscreen floating settings persist independently", () => {
   assert.equal(restored.fullscreenPanels.timeline.y, 0.45);
   const v2 = { ...source, version: 2, fullscreenPanels: undefined };
   assert.deepEqual(parseWorkspaceLayout(JSON.stringify(v2)).fullscreenPanels, defaultWorkspaceLayout().fullscreenPanels);
+});
+
+test("untouched legacy fullscreen timeline adopts the shorter default; moved ones are kept", () => {
+  const legacy = defaultWorkspaceLayout();
+  legacy.fullscreenPanels.timeline = { ...legacy.fullscreenPanels.timeline, x: 0.1, y: 0.66, height: 0.25 };
+  const migrated = parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline;
+  assert.equal(migrated.y, defaultWorkspaceLayout().fullscreenPanels.timeline.y);
+  assert.equal(migrated.height, defaultWorkspaceLayout().fullscreenPanels.timeline.height);
+  assert.equal(migrated.x, 0.1);
+  legacy.fullscreenPanels.timeline.y = 0.5;
+  assert.equal(parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline.height, 0.25);
+});
+
+test("untouched fullscreen timeline fits a fixed pixel height above its default bottom edge", () => {
+  const home = defaultWorkspaceLayout().fullscreenPanels.timeline;
+  const bottom = home.y + home.height;
+  for (const height of [900, 1080, 1440]) {
+    const fitted = fittedFullscreenTimeline(home, height);
+    assert.equal(Math.round(fitted.height * height), FULLSCREEN_TIMELINE_HEIGHT_PX);
+    assert.ok(Math.abs(fitted.y + fitted.height - bottom) < 1e-9);
+  }
+  const moved = { ...home, y: 0.3 };
+  assert.equal(fittedFullscreenTimeline(moved, 1440).y, 0.3);
+  const resized = { ...home, height: 0.4 };
+  assert.deepEqual(fittedFullscreenTimeline(resized, 1440), resized);
 });
 
 test("fullscreen home restores position without changing size, opacity, or normal layout", () => {

@@ -218,10 +218,10 @@ test("timeline exposes three perceptual bands without prototype instruction copy
   assert.match(timeline, /timeline-band--stroke/);
   assert.match(timeline, /timeline-band--signals/);
   assert.doesNotMatch(timeline, /整場標記密集/);
-  assert.match(timeline, /fit === 'match'/);
+  assert.match(timeline, /:data-fit="fit"/);
   assert.match(timeline, /stroke-marker-detail/);
-  assert.match(timeline, />\s*全場\s*</);
-  assert.match(timeline, />\s*片段\s*</);
+  assert.doesNotMatch(timeline, /class="fit-controls"/);
+  assert.match(timeline, /@dblclick="toggleFitOnDoubleClick"/);
   assert.doesNotMatch(timeline, />\s*Fit (?:Match|Rally)\s*</);
 });
 
@@ -308,7 +308,7 @@ test("rally fit retains window curve but hides segment highlight marks", () => {
   );
   assert.match(timeline, /showCheerCurveLane\.value \? 1 : 1 - lensProgress\.value/);
   assert.match(timeline, /v-if="showCheerCurveLane"/);
-  assert.match(timeline, /v-if="showOverviewSignals && filters\.highlight/);
+  assert.match(timeline, /v-if="showOverviewSignals && modeShows\('highlight'\)/);
   assert.doesNotMatch(signalHeader, /fit === 'rally'/);
 });
 
@@ -634,10 +634,6 @@ test("fit, active, and selected states use the line selection grammar", () => {
   const timeline = readFileSync("src/styles/timeline.css", "utf8");
   const inspector = readFileSync("src/styles/inspector.css", "utf8");
   assert.match(
-    timeline,
-    /\.fit-controls button\[aria-pressed="true"\]\s*\{[^}]*background:\s*transparent;[^}]*border-bottom:\s*2px solid var\(--line-selected\);/s,
-  );
-  assert.match(
     inspector,
     /\.hit-list > button\.selected\s*\{[^}]*background:\s*transparent;[^}]*border-left-color:\s*var\(--line-selected\);/s,
   );
@@ -675,18 +671,11 @@ test("Match Bar and player context never fall back to stale selection", () => {
   assert.match(app, /label: "比賽空檔"/);
 });
 
-test("timeline filters distinguish missing, error, and Fit-only availability", () => {
+test("timeline has no header row: no track filter, fit toggle, summary, or return button", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  assert.match(timeline, /score: "scores"/);
-  assert.match(timeline, /stroke: "events"/);
-  assert.match(timeline, /cheer: "audio_signals"/);
-  assert.match(
-    timeline,
-    /statuses\.includes\("stale"\)[\s\S]*"資料已過期"/,
-  );
-  assert.match(timeline, /statuses\.includes\("error"\)[\s\S]*"讀取失敗"/);
-  assert.match(timeline, /fitOnlyUnavailable[\s\S]*"僅全場"/);
-  assert.match(timeline, /:disabled="filterDisabled\(track\)"/);
+  assert.doesNotMatch(timeline, /class="timeline-header"/);
+  assert.doesNotMatch(timeline, /顯示軌道|回到目前|filters\./);
+  assert.doesNotMatch(timeline, /段 ·/);
   assert.doesNotMatch(timeline, /surfaceWidth\.value - 92/);
   assert.match(timeline, /measureTrackWidth/);
   assert.match(timeline, /scheduleInspectionRestore/);
@@ -757,6 +746,9 @@ test("exact Stroke evidence uses one precise formatter", () => {
   assert.match(detail, /formatPreciseTime\(selectedStroke\.time\)/);
   assert.match(detail, /formatPreciseTimeParts\(stroke\.time\)\.fraction/);
   assert.match(player, /formatPreciseTime\(activeStroke\.time\)/);
-  assert.match(timeline, /formatPreciseTime\(stroke\.time\)/);
+  // Timeline stroke labels carry only type and player; exact time lives in the inspector and hover preview.
+  assert.doesNotMatch(timeline, /formatPreciseTime\(stroke\.time\)/);
+  assert.doesNotMatch(timeline, /stroke-marker-index/);
+  assert.match(timeline, /<small>\{\{ playerName\(stroke\.player\) \}\}<\/small>/);
   assert.doesNotMatch(detail, /Math\.round\(\(stroke\.time % 1\) \* 100\)/);
 });

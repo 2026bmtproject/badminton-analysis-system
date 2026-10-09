@@ -4,7 +4,6 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
-  reactive,
   ref,
   watch,
 } from "vue";
@@ -16,7 +15,6 @@ import type {
 } from "../domain/models";
 import {
   formatPreciseTime,
-  formatTime,
   formatTimelineAxisTime,
   playerName,
 } from "../format";
@@ -36,12 +34,9 @@ import type { TimelineFit, TimelineViewport } from "../temporal/timeline";
 import TimelineLane from "./timeline/TimelineLane.vue";
 import type { TimelineMode } from "../state/workspaceLayout";
 import { activeRallyAt } from "../temporal/activeContext";
+import { playbackFollowViewport } from "../temporal/timelineFollow";
 import {
-  playbackFollowViewport,
-  viewportContainsTime,
-} from "../temporal/timelineFollow";
-import {
-  centerTimelineViewport,
+  doubleClickFit,
   panTimelineViewport,
   zoomTimelineViewport,
 } from "../temporal/timelineNavigation";
@@ -66,40 +61,18 @@ type TrackKey =
   | "cheer"
   | "highlight"
   | "commentary";
-const trackLabels: Record<TrackKey, string> = {
-  rally: "片段",
-  score: "比分",
-  stroke: "擊球",
-  cheer: "歡呼訊號",
-  highlight: "精華分數",
-  commentary: "賽評",
-};
-const trackOrder: TrackKey[] = [
-  "rally",
-  "score",
-  "stroke",
-  "cheer",
-  "highlight",
-  "commentary",
-];
-const trackStageKeys: Record<TrackKey, string | null> = {
-  rally: null,
-  score: "scores",
-  stroke: "events",
-  cheer: "audio_signals",
-  highlight: "highlights",
-  commentary: "commentary",
-};
 const LENS_DURATION_MS = 220;
+/** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
+const FOLLOW_RESUME_DELAY_MS = 2000;
 const SCORE_LABEL_MIN_GAP_PX = 132;
-const SEMANTIC_LABEL_TARGET_WIDTH_PX = 132;
+const SEMANTIC_LABEL_TARGET_WIDTH_PX = 84;
 const INSPECTION_EDGE_PADDING_PX = 64;
 const SEMANTIC_REVEAL_START_MULTIPLIER = 4;
 const SEMANTIC_REVEAL_END_MULTIPLIER = 1.75;
 const SEMANTIC_LABEL_EDGE_PERCENT = 8;
 const STROKE_LANE_BASE_HEIGHT_PX = 38;
 const STROKE_TRACK_BASE_HEIGHT_PX = 28;
-const STROKE_DETAIL_HEIGHT_PX = 54;
+const STROKE_DETAIL_HEIGHT_PX = 32;
 const SIGNAL_LANE_HEIGHT_PX = 72;
 const SIGNAL_LANE_MARGIN_PX = 8;
 const props = withDefaults(
@@ -111,7 +84,6 @@ const props = withDefaults(
     activeId: number | null;
     activeStrokeIndex?: number | null;
     scoreContextId?: number | null;
-    showHeader?: boolean;
     timelineMode?: TimelineMode | "all";
     compactRail?: boolean;
   }>(),
@@ -119,7 +91,6 @@ const props = withDefaults(
     timelineMode: "all",
     activeStrokeIndex: null,
     scoreContextId: null,
-    showHeader: true,
     compactRail: false,
   },
 );
@@ -132,14 +103,6 @@ const emit = defineEmits<{
   inspect: [timeSec: number | null];
   expand: [];
 }>();
-const filters = reactive<Record<TrackKey, boolean>>({
-  rally: true,
-  score: true,
-  stroke: true,
-  cheer: true,
-  highlight: true,
-  commentary: true,
-});
 const density = ref<PanelDensity>(props.compactRail ? "rail" : "full");
 const modeShows = (track: TrackKey) =>
   props.compactRail
@@ -187,6 +150,7 @@ let reducedMotionQuery: MediaQueryList | undefined;
 let lensFrame: number | undefined;
 let inspectionFrame: number | undefined;
 let lensRequest = 0;
+let followResumeTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPointer: {
   clientX: number;
   clientY: number;
@@ -225,6 +189,7 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   reducedMotionQuery?.removeEventListener("change", handleReducedMotionChange);
   cancelLens();
+  clearTimeout(followResumeTimer);
   if (inspectionFrame !== undefined) cancelAnimationFrame(inspectionFrame);
 });
 const selectedRally = computed(
@@ -233,7 +198,7 @@ const selectedRally = computed(
 );
 watch([() => props.selectedId, () => props.model.duration], (id) => {
   if (id[0] === null && fit.value === "rally") {
-    setFit("match", false);
+    setFit("match");
     return;
   }
   if (fit.value === "custom") {
@@ -274,7 +239,6 @@ watch(
     clearInspection();
   },
 );
-watch(filters, () => void nextTick(measureTrackWidth), { deep: true });
 watch(
   () => props.compactRail,
   () => void nextTick(() => {
@@ -371,7 +335,7 @@ const showOverviewSignals = computed(
   () => fit.value === "match" || lensActive.value || fit.value === "custom",
 );
 const showCheerCurveLane = computed(() =>
-  filters.cheer && modeShows("cheer") && capability("cheer"),
+  modeShows("cheer") && capability("cheer"),
 );
 const cheerPaths = computed(() =>
   cheerCurvePaths(props.model.cheerTimeline ?? [], renderViewport.value),
@@ -382,9 +346,6 @@ const position = (timeSec: number) =>
 const playheadFraction = computed(() =>
   Math.min(1, Math.max(0, position(props.time) / 100)),
 );
-const playheadVisible = computed(() =>
-  viewportContainsTime(renderViewport.value, props.time),
-);
 const capability = (track: TrackKey) =>
   ({
     rally: true,
@@ -394,22 +355,6 @@ const capability = (track: TrackKey) =>
     highlight: props.model.capabilities.highlight,
     commentary: props.model.capabilities.commentary,
   })[track];
-function fitOnlyUnavailable(track: TrackKey) {
-  return fit.value === "rally" && track === "highlight";
-}
-function filterDisabled(track: TrackKey) {
-  return !capability(track) || fitOnlyUnavailable(track);
-}
-function filterStatus(track: TrackKey) {
-  if (!capability(track)) {
-    const stage = trackStageKeys[track];
-    const statuses = [stage ? props.model.states[stage]?.status : undefined,
-      track === "commentary" ? props.model.states.commentary_segments?.status : undefined];
-    if (statuses.includes("stale")) return "資料已過期";
-    return statuses.includes("error") ? "讀取失敗" : "未提供";
-  }
-  return fitOnlyUnavailable(track) ? "僅全場" : null;
-}
 function authoritativeViewport(next: TimelineFit) {
   return fitViewport(next, props.model.duration, selectedRally.value);
 }
@@ -471,14 +416,19 @@ function handleReducedMotionChange(event: MediaQueryListEvent) {
     fit.value === "rally" ? 1 : 0,
   );
 }
-function setFit(next: TimelineFit, manual = true) {
-  const anchor = selectedRally.value ?? activeRallyAt(props.model.rallies, props.time);
+function resumeFollow() {
+  clearTimeout(followResumeTimer);
+  followResumeTimer = undefined;
+  manualNavigation.value = false;
+}
+function setFit(next: TimelineFit, focus: RallyModel | null = null) {
+  const anchor = focus ?? selectedRally.value ?? activeRallyAt(props.model.rallies, props.time);
   if (next === "rally" && !anchor) return;
   if (next === fit.value) return;
   const from = { ...renderViewport.value };
   const fromProgress = lensProgress.value;
   fit.value = next;
-  manualNavigation.value = manual && next === "rally";
+  resumeFollow();
   const target = fitViewport(next, props.model.duration, anchor);
   const targetProgress = next === "rally" ? 1 : 0;
   clearInspection(false);
@@ -505,35 +455,16 @@ function setFit(next: TimelineFit, manual = true) {
   };
   lensFrame = requestAnimationFrame(step);
 }
-function returnToPlayback() {
-  manualNavigation.value = false;
-  if (fit.value === "custom") {
-    renderViewport.value = centerTimelineViewport(
-      renderViewport.value,
-      props.time,
-      props.model.duration,
-    );
-  } else {
-    const active = activeRallyAt(props.model.rallies, props.time);
-    const forcedOutside = {
-      ...renderViewport.value,
-      startSec: props.time + 1,
-      endSec: props.time + 1,
-    };
-    renderViewport.value = playbackFollowViewport(
-      false,
-      props.time,
-      forcedOutside,
-      props.model.duration,
-      active,
-    );
-  }
+function pauseFollow() {
+  manualNavigation.value = true;
+  clearTimeout(followResumeTimer);
+  followResumeTimer = setTimeout(resumeFollow, FOLLOW_RESUME_DELAY_MS);
 }
 function panTimeline(event: WheelEvent) {
   if (event.shiftKey || lensActive.value) return;
   event.preventDefault();
   cancelLens();
-  manualNavigation.value = true;
+  pauseFollow();
   fit.value = "custom";
   const track = surface.value?.querySelector<HTMLElement>(".timeline-lane-track");
   const width = Math.max(1, track?.getBoundingClientRect().width ?? trackWidth.value);
@@ -559,21 +490,20 @@ function panTimeline(event: WheelEvent) {
   }
   scheduleInspectionRestore();
 }
-function quickFit(event: MouseEvent) {
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  if (target.closest(".timeline-lane-track,button,input,select,summary,a")) return;
-  const active = activeRallyAt(props.model.rallies, props.time);
-  if (active) {
-    cancelLens();
-    fit.value = "rally";
-    manualNavigation.value = true;
-    renderViewport.value = fitViewport("rally", props.model.duration, active);
-    lensProgress.value = 1;
-    scheduleInspectionRestore();
-  } else {
-    setFit("match", false);
+async function toggleFitOnDoubleClick(event: MouseEvent) {
+  if (props.compactRail || lensActive.value) return;
+  const track = surface.value?.querySelector<HTMLElement>(".timeline-lane-track");
+  if (!track) return;
+  const bounds = track.getBoundingClientRect();
+  const timeSec = timeFromClientX(event.clientX, bounds.left, bounds.width, renderViewport.value);
+  const next = doubleClickFit(fit.value, activeRallyAt(props.model.rallies, timeSec));
+  if (!next) return;
+  if (next.rally && next.rally.id !== props.selectedId) {
+    emit("rallyAt", next.rally, Math.min(next.rally.end, Math.max(next.rally.start, timeSec)));
+    // Let the selection watcher settle before the lens starts, or it would cancel the animation.
+    await nextTick();
   }
+  setFit(next.fit, next.rally);
 }
 function clearInspection(forgetPointer = true) {
   if (forgetPointer) lastPointer = null;
@@ -920,52 +850,6 @@ const timelineStyle = computed(() => ({
     :aria-busy="lensActive"
     :style="timelineStyle"
   >
-    <header v-if="!compactRail" class="timeline-header" :class="{ 'timeline-header--compact': !showHeader }">
-      <div v-if="showHeader">
-        <h2>{{ fit === "rally" ? "片段時間軸" : "比賽時間軸" }}</h2>
-      </div>
-      <span
-        >{{ rallies.length }} 段 ·
-        {{ formatTime(renderViewport.durationSec) }}<template v-if="zoomLevel > 1.05"> · {{ zoomLevel.toFixed(1) }}×</template></span
-      >
-      <div class="timeline-controls">
-        <div class="fit-controls">
-          <button
-            v-if="density === 'full'"
-            type="button"
-            :aria-pressed="fit === 'match'"
-            @click="setFit('match', true)"
-          >
-            全場
-          </button>
-          <button
-            type="button"
-            :aria-pressed="fit === 'rally'"
-            :disabled="!selectedRally"
-            :title="selectedRally ? '聚焦目前選取片段' : '請先選取片段'"
-            @click="setFit('rally', true)"
-          >
-            片段
-          </button>
-        </div>
-        <details v-if="timelineMode === 'all' && density === 'full'">
-          <summary>顯示軌道</summary>
-          <div class="track-filters">
-            <label v-for="track in trackOrder" :key="track"
-              ><input
-                v-model="filters[track]"
-                type="checkbox"
-                :disabled="filterDisabled(track)"
-              />{{ trackLabels[track]
-              }}<span v-if="filterStatus(track)"
-                >（{{ filterStatus(track) }}）</span
-              ></label
-            >
-          </div>
-        </details>
-        <button v-if="manualNavigation || !playheadVisible" type="button" class="return-to-live" @click="returnToPlayback">回到目前</button>
-      </div>
-    </header>
     <div
       ref="surface"
       class="timeline-surface"
@@ -976,7 +860,7 @@ const timelineStyle = computed(() => ({
       @pointercancel="endScrub"
       @pointerleave="clearInspection()"
       @click="clickTimeline"
-      @dblclick="quickFit"
+      @dblclick="toggleFitOnDoubleClick"
       @wheel="panTimeline"
     >
       <button v-if="compactRail" type="button" class="timeline-rail-expand" @click.stop="emit('expand')">展開時間軸</button>
@@ -986,7 +870,7 @@ const timelineStyle = computed(() => ({
         </header>
         <div class="timeline-band-tracks">
           <TimelineLane
-            v-if="filters.rally && modeShows('rally')"
+            v-if="modeShows('rally')"
             kind="rally"
             label="片段"
             description="分析片段軌道"
@@ -1019,7 +903,7 @@ const timelineStyle = computed(() => ({
             </template>
           </TimelineLane>
           <TimelineLane
-            v-if="filters.score && modeShows('score') && capability('score')"
+            v-if="modeShows('score') && capability('score')"
             kind="score"
             label="比分"
             description="片段比分觀察軌道"
@@ -1067,7 +951,7 @@ const timelineStyle = computed(() => ({
         </header>
         <div class="timeline-band-tracks">
           <TimelineLane
-            v-if="filters.stroke && modeShows('stroke') && capability('stroke')"
+            v-if="modeShows('stroke') && capability('stroke')"
             kind="stroke"
             description="擊球事件軌道"
           >
@@ -1103,23 +987,19 @@ const timelineStyle = computed(() => ({
                 :aria-label="`第 ${stroke.ordinal} 拍，${playerName(stroke.player)}，${stroke.type ?? '球種未提供'}`"
                 @click.stop="emit('stroke', stroke)"
               >
-                <span class="stroke-marker-index">{{ stroke.ordinal }}</span>
                 <span
                   v-if="showStrokeDetail(index)"
                   class="stroke-marker-detail"
                   :data-side="strokeDetailSide(stroke.time)"
                 >
                   <strong>{{ stroke.type ?? "球種未提供" }}</strong>
-                  <small
-                    >{{ playerName(stroke.player) }} ·
-                    {{ formatPreciseTime(stroke.time) }}</small
-                  >
+                  <small>{{ playerName(stroke.player) }}</small>
                 </span>
               </button>
             </template>
           </TimelineLane>
           <TimelineLane
-            v-if="filters.commentary && modeShows('commentary') && capability('commentary')"
+            v-if="modeShows('commentary') && capability('commentary')"
             kind="commentary"
             label="賽評"
             description="賽評事件軌道"
@@ -1145,7 +1025,7 @@ const timelineStyle = computed(() => ({
       <section
         v-if="
           showCheerCurveLane ||
-          (showOverviewSignals && filters.highlight && modeShows('highlight') && capability('highlight'))
+          (showOverviewSignals && modeShows('highlight') && capability('highlight'))
         "
         class="timeline-band timeline-band--signals"
         aria-label="訊號"
@@ -1166,7 +1046,7 @@ const timelineStyle = computed(() => ({
             <span v-else class="cheer-curve-empty">無窗口歡呼資料</span>
           </TimelineLane>
           <TimelineLane
-            v-if="showOverviewSignals && filters.highlight && modeShows('highlight') && capability('highlight')"
+            v-if="showOverviewSignals && modeShows('highlight') && capability('highlight')"
             kind="highlight"
             label="精華"
             description="片段精華屬性軌道"

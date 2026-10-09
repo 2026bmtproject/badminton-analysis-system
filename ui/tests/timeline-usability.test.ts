@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { RallyModel } from "../src/domain/models";
 import {
-  centerTimelineViewport,
   constrainTimelineViewport,
+  doubleClickFit,
   panTimelineViewport,
   zoomTimelineViewport,
 } from "../src/temporal/timelineNavigation";
@@ -47,13 +47,20 @@ test("4. navigation clamps both match boundaries", () => {
   assert.deepEqual(constrainTimelineViewport(-10, 30, 100), { startSec: 0, endSec: 30, durationSec: 30 });
   assert.deepEqual(panTimelineViewport({ startSec: 70, endSec: 100, durationSec: 30 }, 20, 100), { startSec: 70, endSec: 100, durationSec: 30 });
 });
-test("5. return-to-playback recenters while preserving custom scale", () => {
-  assert.deepEqual(centerTimelineViewport({ startSec: 10, endSec: 30, durationSec: 20 }, 70, 100), { startSec: 60, endSec: 80, durationSec: 20 });
+test("5. double-click focuses the rally under the pointer and returns to the match from anywhere", () => {
+  const rally = { id: 3 };
+  assert.deepEqual(doubleClickFit("match", rally), { fit: "rally", rally });
+  assert.equal(doubleClickFit("match", null), null);
+  assert.deepEqual(doubleClickFit("custom", rally), { fit: "rally", rally });
+  assert.deepEqual(doubleClickFit("custom", null), { fit: "match", rally: null });
+  assert.deepEqual(doubleClickFit("rally", rally), { fit: "match", rally: null });
+  assert.deepEqual(doubleClickFit("rally", null), { fit: "match", rally: null });
 });
 test("6. zoom and pan are manual navigation, never seek emissions", () => {
   const timeline = source("src/components/ReviewTimeline.vue");
-  const body = timeline.slice(timeline.indexOf("function panTimeline"), timeline.indexOf("function quickFit"));
-  assert.match(body, /manualNavigation\.value = true/);
+  const body = timeline.slice(timeline.indexOf("function panTimeline"), timeline.indexOf("function toggleFitOnDoubleClick"));
+  assert.match(body, /pauseFollow\(\)/);
+  assert.match(timeline, /function pauseFollow\(\) \{[^}]*manualNavigation\.value = true;[^}]*setTimeout\(resumeFollow, FOLLOW_RESUME_DELAY_MS\)/s);
   assert.match(body, /fit\.value = "custom"/);
   assert.doesNotMatch(body, /emit\("seek"/);
 });
