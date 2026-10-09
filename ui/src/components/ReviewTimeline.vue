@@ -29,6 +29,7 @@ import {
   visibleRallies,
 } from "../temporal/timeline";
 import { cheerCurvePaths } from "../temporal/cheerCurve";
+import { strokeLaneMarks, strokeSpacingSec } from "../temporal/strokeRhythm";
 import {
   breakAt,
   rallyIndexLabels,
@@ -85,14 +86,7 @@ type TrackKey =
 const LENS_DURATION_MS = 220;
 /** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
 const FOLLOW_RESUME_DELAY_MS = 2000;
-const SEMANTIC_LABEL_TARGET_WIDTH_PX = 84;
 const INSPECTION_EDGE_PADDING_PX = 64;
-const SEMANTIC_REVEAL_START_MULTIPLIER = 4;
-const SEMANTIC_REVEAL_END_MULTIPLIER = 1.75;
-const SEMANTIC_LABEL_EDGE_PERCENT = 8;
-const STROKE_LANE_BASE_HEIGHT_PX = 38;
-const STROKE_TRACK_BASE_HEIGHT_PX = 28;
-const STROKE_DETAIL_HEIGHT_PX = 32;
 const SIGNAL_LANE_HEIGHT_PX = 72;
 const SIGNAL_LANE_MARGIN_PX = 8;
 /**
@@ -103,6 +97,16 @@ const SIGNAL_LANE_MARGIN_PX = 8;
 const RALLY_FLAG_Y_PX = 17;
 const RALLY_BASELINE_PX = 42;
 const RALLY_BAR_EXTENT_PX = 20;
+/**
+ * Stroke lane geometry in track pixels, top to bottom: the game label row,
+ * the far (video top) hitter's label row, the trace swinging STROKE_SWING_PX
+ * either side of the net line, then the near hitter's label row. Zoomed out, composition bars take the label rows'
+ * space too.
+ */
+const STROKE_NET_Y_PX = 44;
+const STROKE_SWING_PX = 18;
+const STROKE_BAR_BASELINE_PX = 62;
+const STROKE_BAR_EXTENT_PX = 48;
 const props = withDefaults(
   defineProps<{
     model: MatchModel;
@@ -406,37 +410,32 @@ const leadDescription = computed(
   () =>
     `領先折線圖：中線為平手，往上為 ${playerName(props.model.players.a, "A")} 領先，往下為 ${playerName(props.model.players.b, "B")} 領先`,
 );
-const strokeDetailStride = computed(() => {
-  if (!showSemanticStrokes.value) return Number.POSITIVE_INFINITY;
-  const availableLabels = Math.max(
-    1,
-    Math.floor(trackWidth.value / SEMANTIC_LABEL_TARGET_WIDTH_PX),
-  );
-  return Math.max(1, Math.ceil(strokes.value.length / availableLabels));
-});
-const semanticRevealProgress = computed(() => {
-  if (!selectedRally.value) return 0;
-  const revealStart =
-    selectedRally.value.duration * SEMANTIC_REVEAL_START_MULTIPLIER;
-  const revealEnd =
-    selectedRally.value.duration * SEMANTIC_REVEAL_END_MULTIPLIER;
-  return Math.min(
-    1,
-    Math.max(
-      0,
-      (revealStart - renderViewport.value.durationSec) /
-        (revealStart - revealEnd),
+/** Match-wide, so the switch from bars to the trace depends on zoom alone. */
+const strokeSpacing = computed(() => strokeSpacingSec(props.model.rallies));
+const strokeMarks = computed(() =>
+  strokeLaneMarks(props.model.rallies, renderViewport.value, trackWidth.value, {
+    spacingSec: strokeSpacing.value,
+    focusEventIndices: [props.selectedStrokeIndex, props.activeStrokeIndex].filter(
+      (index): index is number => index !== null && index !== undefined,
     ),
-  );
-});
-const showSemanticStrokes = computed(() => semanticRevealProgress.value > 0);
+  }),
+);
+const strokeY = (level: number) => STROKE_NET_Y_PX - level * STROKE_SWING_PX;
+function strokeState(eventIndex: number) {
+  return {
+    selected: props.selectedStrokeIndex === eventIndex,
+    active: props.activeStrokeIndex === eventIndex,
+    hovered: hoveredMark.value?.kind === "stroke" && hoveredMark.value.id === eventIndex,
+  };
+}
+const strokeDescription =
+  "擊球過程：縮小時每個片段一根球種組成條；放大後為來回軌跡，上下跟影片畫面一致，離中線越遠代表站得越靠後場";
 const showCheerCurveLane = computed(() =>
   modeShows("cheer") && capability("cheer"),
 );
 const cheerPaths = computed(() =>
   cheerCurvePaths(props.model.cheerTimeline ?? [], renderViewport.value),
 );
-const detailOpacity = computed(() => semanticRevealProgress.value);
 const position = (timeSec: number) =>
   timeToPercent(timeSec, renderViewport.value);
 const playheadFraction = computed(() =>
@@ -671,6 +670,11 @@ function resolveHoveredMark(
     return rally ? { kind, id: rally.id } : null;
   }
   if (kind === "stroke") {
+    // A bar summarises its whole Rally, so it answers for the Rally, not one stroke in it.
+    if (strokeMarks.value.mode === "bars") {
+      const rally = activeRallyAt(props.model.rallies, timeSec);
+      return rally?.hits?.length ? { kind: "stroke-rally" as const, id: rally.id } : null;
+    }
     const stroke = nearestTemporalMark(
       strokes.value,
       timeSec,
@@ -820,17 +824,6 @@ function clickTimeline(event: MouseEvent) {
     renderViewport.value,
   );
   const kind = lane.dataset.kind as TrackKey | undefined;
-  if (kind === "rally") {
-    const rally = activeRallyAt(props.model.rallies, timeSec);
-    if (rally) {
-      emit(
-        "rallyAt",
-        rally,
-        Math.min(rally.end, Math.max(rally.start, timeSec)),
-      );
-    } else emit("seek", timeSec);
-    return;
-  }
   if (kind === "score") {
     const rally = scoreLaneRally(
       leadModel.value,
@@ -843,20 +836,27 @@ function clickTimeline(event: MouseEvent) {
     else emit("seek", timeSec);
     return;
   }
+  // A stroke bar stands for its whole Rally, so clicking one selects the Rally like the rally lane.
+  if (kind === "rally" || (kind === "stroke" && strokeMarks.value.mode === "bars")) {
+    const rally = activeRallyAt(props.model.rallies, timeSec);
+    if (rally) {
+      emit(
+        "rallyAt",
+        rally,
+        Math.min(rally.end, Math.max(rally.start, timeSec)),
+      );
+    } else emit("seek", timeSec);
+    return;
+  }
   if (kind === "stroke") {
-    const eventIndex = target.closest<HTMLElement>(
-      ".stroke-tick,.stroke-marker",
-    )?.dataset.eventIndex;
-    const stroke =
-      eventIndex === undefined
-        ? nearestTemporalMark(
-            strokes.value,
-            timeSec,
-            (item) => item.time,
-            renderViewport.value,
-            track.clientWidth,
-          )
-        : strokes.value.find((item) => item.eventIndex === Number(eventIndex));
+    // Stroke marks are SVG that lets the pointer through, so the nearest stroke in time is the target.
+    const stroke = nearestTemporalMark(
+      strokes.value,
+      timeSec,
+      (item) => item.time,
+      renderViewport.value,
+      track.clientWidth,
+    );
     if (stroke) emit("stroke", stroke);
     else emit("seek", timeSec);
     return;
@@ -901,29 +901,9 @@ function selectScoreMarker(rallyId: number) {
 function scoreMarkHovered(rallyId: number) {
   return hoveredMark.value?.kind === "score" && hoveredMark.value.id === rallyId;
 }
-function showStrokeDetail(index: number) {
-  return index % strokeDetailStride.value === 0;
-}
-function strokeDetailSide(timeSec: number) {
-  const percent = position(timeSec);
-  return percent < SEMANTIC_LABEL_EDGE_PERCENT
-    ? "start"
-    : percent > 100 - SEMANTIC_LABEL_EDGE_PERCENT
-      ? "end"
-      : "center";
-}
 const timelineStyle = computed(() => ({
   "--lens-detail-progress": lensProgress.value,
-  "--lens-detail-opacity": detailOpacity.value,
   "--lens-overview-opacity": showCheerCurveLane.value ? 1 : 1 - lensProgress.value,
-  "--lens-stroke-height":
-    STROKE_LANE_BASE_HEIGHT_PX +
-    STROKE_DETAIL_HEIGHT_PX * lensProgress.value +
-    "px",
-  "--lens-stroke-track-height":
-    STROKE_TRACK_BASE_HEIGHT_PX +
-    STROKE_DETAIL_HEIGHT_PX * lensProgress.value +
-    "px",
   "--lens-signal-height":
     SIGNAL_LANE_HEIGHT_PX * (showCheerCurveLane.value ? 1 : 1 - lensProgress.value) + "px",
   "--lens-signal-margin":
@@ -1137,49 +1117,75 @@ const timelineStyle = computed(() => ({
           <TimelineLane
             v-if="modeShows('stroke') && capability('stroke')"
             kind="stroke"
-            description="擊球事件軌道"
+            :description="strokeDescription"
           >
-            <template
-              v-for="(stroke, index) in strokes"
-              :key="stroke.eventIndex"
-            >
-              <span
-                v-if="!showSemanticStrokes"
-                class="stroke-tick"
-                :data-event-index="stroke.eventIndex"
-                :class="{
-                  selected: selectedStrokeIndex === stroke.eventIndex,
-                  active: activeStrokeIndex === stroke.eventIndex,
-                  hovered:
-                    hoveredMark?.kind === 'stroke' &&
-                    hoveredMark.id === stroke.eventIndex,
-                }"
-                :style="{ left: position(stroke.time) + '%' }"
-              />
-              <button
-                v-else
-                class="stroke-marker stroke-marker--semantic"
-                :data-event-index="stroke.eventIndex"
-                :class="{
-                  selected: selectedStrokeIndex === stroke.eventIndex,
-                  active: activeStrokeIndex === stroke.eventIndex,
-                  hovered:
-                    hoveredMark?.kind === 'stroke' &&
-                    hoveredMark.id === stroke.eventIndex,
-                }"
-                :style="{ left: position(stroke.time) + '%' }"
-                :aria-label="`第 ${stroke.ordinal} 拍，${playerName(stroke.player)}，${stroke.type ?? '球種未提供'}`"
-                @click.stop="emit('stroke', stroke)"
-              >
-                <span
-                  v-if="showStrokeDetail(index)"
-                  class="stroke-marker-detail"
-                  :data-side="strokeDetailSide(stroke.time)"
+            <!-- Percent x and pixel y, like the rally lane: nothing stretches, and the
+                 marks glide by subpixels while playback scrolls. -->
+            <svg class="stroke-chart" aria-hidden="true">
+              <template v-if="strokeMarks.mode === 'bars'">
+                <template v-for="bar in strokeMarks.bars" :key="`bar-${bar.rallyId}`">
+                  <!-- One pixel short of its share: the surface shows through between families. -->
+                  <rect
+                    v-for="segment in bar.segments"
+                    :key="segment.family"
+                    class="stroke-bar"
+                    :data-family="segment.family"
+                    :data-wide="bar.wide || undefined"
+                    :x="bar.x + '%'"
+                    :width="bar.width + '%'"
+                    :y="STROKE_BAR_BASELINE_PX - segment.to * STROKE_BAR_EXTENT_PX"
+                    :height="Math.max(0.5, (segment.to - segment.from) * STROKE_BAR_EXTENT_PX - 1)"
+                  />
+                </template>
+                <line
+                  v-for="marker in strokeMarks.markers"
+                  :key="`marker-${marker.eventIndex}`"
+                  class="stroke-focus"
+                  :class="strokeState(marker.eventIndex)"
+                  :x1="marker.x + '%'"
+                  :x2="marker.x + '%'"
+                  :y1="STROKE_BAR_BASELINE_PX - STROKE_BAR_EXTENT_PX"
+                  :y2="STROKE_BAR_BASELINE_PX"
+                />
+              </template>
+              <template v-else>
+                <line class="stroke-chart__net" x1="0" x2="100%" :y1="STROKE_NET_Y_PX" :y2="STROKE_NET_Y_PX" />
+                <line
+                  v-for="link in strokeMarks.links"
+                  :key="`link-${link.from}`"
+                  class="stroke-link"
+                  :data-dashed="link.dashed || undefined"
+                  :x1="link.x1 + '%'"
+                  :x2="link.x2 + '%'"
+                  :y1="strokeY(link.y1)"
+                  :y2="strokeY(link.y2)"
+                />
+                <svg
+                  v-for="vertex in strokeMarks.vertices"
+                  :key="`vertex-${vertex.eventIndex}`"
+                  class="stroke-vertex"
+                  :class="strokeState(vertex.eventIndex)"
+                  :data-event-index="vertex.eventIndex"
+                  :data-family="vertex.family"
+                  :x="vertex.x + '%'"
+                  :y="strokeY(vertex.level)"
+                  overflow="visible"
                 >
-                  <strong>{{ stroke.type ?? "球種未提供" }}</strong>
-                  <small>{{ playerName(stroke.player) }}</small>
-                </span>
-              </button>
+                  <circle r="3.5" />
+                </svg>
+              </template>
+            </svg>
+            <!-- Text glides on a composited transform in track-width units, like the rally numbers. -->
+            <template v-if="strokeMarks.mode === 'trace'">
+              <span
+                v-for="label in strokeMarks.labels"
+                :key="`label-${label.eventIndex}`"
+                class="stroke-label"
+                :class="{ selected: label.selected }"
+                :data-row="label.row"
+                :style="{ transform: `translateX(calc(${label.x}cqw - 50%))` }"
+                aria-hidden="true"
+              >{{ label.text }}</span>
             </template>
           </TimelineLane>
           <TimelineLane

@@ -2,12 +2,18 @@ import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
 import { RALLY_BREAK_LABELS, highlightRanks, rallyWinner, type RallyBreak } from "../../temporal/rallyOutcome";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
+import {
+  STROKE_FAMILY_LABELS,
+  strokeDepth,
+  strokeFamilyCounts,
+  type StrokeFamily,
+} from "../../temporal/strokeRhythm";
 import type { TimelineFit } from "../../temporal/timeline";
 import { doubleClickFit } from "../../temporal/timelineNavigation";
 
 export type TimelineHoverMark = {
-  /** `break` ids the Rally a break follows. */
-  kind: "rally" | "break" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window";
+  /** `break` ids the Rally a break follows; `stroke-rally` ids a Rally summarised by its stroke bar. */
+  kind: "rally" | "break" | "score" | "stroke" | "stroke-rally" | "commentary" | "cheer" | "cheer-window";
   id: number | string;
 };
 
@@ -110,7 +116,23 @@ export function timelineHoverPreview(
     const lines = [formatPreciseTime(stroke.time)];
     if (stroke.type) lines.push(stroke.type);
     if (stroke.player) lines.push(playerName(stroke.player));
+    // Names what a dashed swing on the lane stands for.
+    if (stroke.hitterSide && strokeDepth(stroke).estimated) lines.push("站位未量測，深度為估計");
     return { title: `第 ${stroke.ordinal} 拍`, lines };
+  }
+  if (mark.kind === "stroke-rally") {
+    const rally = rallies.find((item) => item.id === mark.id);
+    if (!rally?.hits?.length) return null;
+    const counts = strokeFamilyCounts(rally.hits);
+    // Most aggressive first, as the bar stacks them from the top; unknown shots last.
+    const order: StrokeFamily[] = ["attack", "net", "transition", "serve", "unknown"];
+    return {
+      title: rallyIndex(rally),
+      lines: [
+        `${rally.hits.length} 拍`,
+        ...order.flatMap((family) => (counts[family] ? [`${STROKE_FAMILY_LABELS[family]} ${counts[family]}`] : [])),
+      ],
+    };
   }
   if (mark.kind === "commentary") {
     const [rallyId, strokeIndex] = String(mark.id).split(":").map(Number);

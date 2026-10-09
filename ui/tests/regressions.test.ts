@@ -218,7 +218,7 @@ test("timeline exposes three perceptual bands without prototype instruction copy
   assert.match(timeline, /timeline-band--signals/);
   assert.doesNotMatch(timeline, /整場標記密集/);
   assert.match(timeline, /:data-fit="fit"/);
-  assert.match(timeline, /stroke-marker-detail/);
+  assert.match(timeline, /class="stroke-label"/);
   assert.doesNotMatch(timeline, /class="fit-controls"/);
   assert.match(timeline, /@dblclick="toggleFitOnDoubleClick"/);
   assert.doesNotMatch(timeline, />\s*Fit (?:Match|Rally)\s*</);
@@ -490,10 +490,10 @@ test("temporal signature remains shape-led and preserves semantic hierarchy", ()
   assert.doesNotMatch(readFileSync("src/components/ReviewTimeline.vue", "utf8"), /data-winner|連得/);
   assert.match(timeline, /\.lead-chart__line,\s*\.lead-chart__gap\s*\{[^}]*stroke:\s*var\(--color-score\);/s);
   assert.match(timeline, /\.lead-chart__area\s*\{[^}]*fill:\s*var\(--color-player-a\);/s);
-  assert.match(
-    timeline,
-    /\.stroke-tick\s*\{[^}]*width:\s*1px;[^}]*height:\s*12px;/s,
-  );
+  // Stroke families have their own hues; the A/B colours mean a player's side, so the trace's height carries the hitter.
+  assert.match(timeline, /\.stroke-bar\s*\{[^}]*fill:\s*var\(--shot\);/s);
+  assert.doesNotMatch(timeline, /\.stroke-[^{]*\{[^}]*--color-player-/s);
+  assert.doesNotMatch(readFileSync("src/styles/tokens.css", "utf8"), /--color-shot-[a-z]+:\s*var\(--color-player-/);
   assert.match(timeline, /\.cheer-curve path\s*\{[^}]*stroke:\s*var\(--color-cheer\)/s);
   assert.match(
     timeline,
@@ -718,9 +718,10 @@ test("exact Stroke evidence uses one precise formatter", () => {
   assert.match(detail, /formatPreciseTimeParts\(stroke\.time\)\.fraction/);
   // The player carries no stroke HUD or segment summary; stroke evidence lives in the inspector.
   assert.doesNotMatch(player, /evidence-hud|now-playing|activeStroke/);
-  // Timeline stroke labels carry only type and player; exact time lives in the inspector and hover preview.
+  // Timeline stroke labels carry only the shot; the side of the net line already says who hit it,
+  // and exact time and player name live in the inspector and hover preview.
   assert.doesNotMatch(timeline, /formatPreciseTime\(stroke\.time\)/);
   assert.doesNotMatch(timeline, /stroke-marker-index/);
-  assert.match(timeline, /<small>\{\{ playerName\(stroke\.player\) \}\}<\/small>/);
+  assert.doesNotMatch(timeline, /playerName\(stroke\.player\)/);
   assert.doesNotMatch(detail, /Math\.round\(\(stroke\.time % 1\) \* 100\)/);
 });

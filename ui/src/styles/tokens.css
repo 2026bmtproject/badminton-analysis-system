@@ -51,6 +51,16 @@
   --color-player-a: #4f93cf;
   --color-player-b: #cf6f5e;
   --color-stroke: #858f94;
+  /*
+   * Shot families on the stroke lane, kept clear of the A/B hues. Serve and
+   * transition are deliberate neutrals so attack and net stand out; the
+   * stacked order passes CVD (ΔE ≥ 9.8) and normal-vision (≥ 15.7) checks.
+   */
+  --color-shot-serve: #626b71;
+  --color-shot-transition: #aab3b8;
+  --color-shot-net: #2f9e8f;
+  --color-shot-attack: #a066c9;
+  --color-shot-unknown: #3d4449;
   --color-playhead: #f2f3f0;
   --color-media-progress: #f3efe4;
   --space-1: 4px;
