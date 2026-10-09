@@ -988,14 +988,10 @@ const timelineStyle = computed(() => ({
         <rect :x="hoverBand.left" y="0" :width="hoverBand.width" height="100" />
       </svg>
       <section v-if="modeShows('rally') || modeShows('score')" class="timeline-band timeline-band--match" aria-label="比賽">
-        <header class="timeline-band-label">
-          <strong>比賽</strong>
-        </header>
         <div class="timeline-band-tracks">
           <TimelineLane
             v-if="modeShows('rally')"
             kind="rally"
-            label="片段"
             :description="rallyDescription"
           >
             <!-- Percent x and pixel y: bars stay crisp at any track width and glide
@@ -1149,9 +1145,6 @@ const timelineStyle = computed(() => ({
       </section>
 
       <section v-if="modeShows('stroke') || modeShows('commentary')" class="timeline-band timeline-band--stroke" aria-label="擊球">
-        <header class="timeline-band-label">
-          <strong>擊球</strong>
-        </header>
         <div class="timeline-band-tracks">
           <TimelineLane
             v-if="modeShows('stroke') && capability('stroke')"
@@ -1239,7 +1232,6 @@ const timelineStyle = computed(() => ({
           <TimelineLane
             v-if="modeShows('commentary') && capability('commentary')"
             kind="commentary"
-            label="賽評"
             description="賽評事件軌道"
           >
             <button
@@ -1265,14 +1257,10 @@ const timelineStyle = computed(() => ({
         class="timeline-band timeline-band--signals"
         aria-label="訊號"
       >
-        <header class="timeline-band-label">
-          <strong>訊號</strong>
-        </header>
         <div class="timeline-band-tracks">
           <TimelineLane
             v-if="showCheerCurveLane"
             kind="cheer"
-            label="歡呼"
             :description="cheerDescription"
           >
             <template v-if="cheerRunList.length">

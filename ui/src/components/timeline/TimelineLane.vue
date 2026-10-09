@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ label?: string; description: string; kind: string }>();
+defineProps<{ description: string; kind: string }>();
 </script>
 
 <template>
@@ -8,9 +8,9 @@ defineProps<{ label?: string; description: string; kind: string }>();
     :class="`timeline-lane--${kind}`"
     :data-kind="kind"
   >
-    <span v-if="$slots.label" class="timeline-lane-label"><slot name="label" /></span>
-    <span v-else-if="label" class="timeline-lane-label">{{ label }}</span>
-    <span v-else class="timeline-lane-label" aria-hidden="true" />
+    <!-- One narrow column for every lane, so tracks line up; the mode selector
+         already names the lane, so only a lane with a legend fills it. -->
+    <span class="timeline-lane-label"><slot name="label" /></span>
     <div class="timeline-lane-track" role="group" :aria-label="description">
       <slot />
     </div>

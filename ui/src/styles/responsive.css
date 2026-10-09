@@ -71,14 +71,6 @@
   .intelligence-timeline {
     padding: var(--space-3);
   }
-  .timeline-surface {
-    --timeline-group-label: 44px;
-    --timeline-lane-label: 40px;
-  }
-  .timeline-band-label,
-  .timeline-lane-label {
-    padding-inline: var(--space-1);
-  }
   .detail-scroll {
     padding: var(--space-3);
   }

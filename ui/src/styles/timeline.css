@@ -5,11 +5,9 @@
   overflow-x: clip;
 }
 .timeline-surface {
-  --timeline-group-label: 48px;
-  --timeline-lane-label: 44px;
-  --timeline-label-total: calc(
-    var(--timeline-group-label) + var(--timeline-lane-label)
-  );
+  /* Room for the score lane's A/B legend; every lane keeps it so tracks line up. */
+  --timeline-lane-label: 36px;
+  --timeline-label-total: var(--timeline-lane-label);
   position: relative;
   padding-bottom: var(--space-2);
   overflow-x: clip;
@@ -32,27 +30,8 @@
   fill: rgb(255 255 255 / 5%);
 }
 .timeline-band {
-  display: grid;
-  grid-template-columns: var(--timeline-group-label) minmax(0, 1fr);
   margin-bottom: var(--space-2);
   border-top: 1px solid var(--color-border);
-}
-.timeline-band-label {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--space-2) var(--space-1);
-  white-space: nowrap;
-}
-.timeline-band-label strong {
-  color: var(--color-text-secondary);
-  font-size: var(--type-meta);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.02em;
-}
-.timeline-band-label span {
-  color: var(--color-text-muted);
-  font-size: 11px;
 }
 .timeline-band-tracks {
   min-width: 0;
@@ -592,11 +571,10 @@
   padding: var(--space-1) var(--space-2) var(--space-2);
 }
 .intelligence-timeline[data-density="compact"] .timeline-surface {
-  --timeline-group-label: 0px;
   --timeline-lane-label: 0px;
 }
-.intelligence-timeline[data-density="compact"] :is(.timeline-band-label, .timeline-lane-label) { display: none; }
-.intelligence-timeline[data-density="compact"] .timeline-band { grid-template-columns: minmax(0, 1fr); margin-bottom: var(--space-1); }
+.intelligence-timeline[data-density="compact"] .timeline-lane-label { display: none; }
+.intelligence-timeline[data-density="compact"] .timeline-band { margin-bottom: var(--space-1); }
 .intelligence-timeline[data-density="compact"] .timeline-lane { grid-template-columns: minmax(0, 1fr); }
 .timeline-playhead {
   position: absolute;
