@@ -17,6 +17,8 @@ export type WorkspaceLayout = {
   version: 3;
   timelineMode: TimelineMode;
   analysisView: AnalysisView;
+  /** Playback skips the gaps between Segments and stops after the last one. */
+  segmentsOnly: boolean;
   analysisDockWidth: number;
   timelineDockHeight: number;
   panels: Record<WorkspacePanelId, PanelLayout>;
@@ -89,6 +91,7 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
     version: 3,
     timelineMode: "rally",
     analysisView: "analysis",
+    segmentsOnly: false,
     analysisDockWidth: DEFAULT_ANALYSIS_DOCK_WIDTH,
     timelineDockHeight: DEFAULT_TIMELINE_DOCK_HEIGHT,
     panels: {
@@ -119,6 +122,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       version: 3,
       timelineMode: modes.includes(value.timelineMode as TimelineMode) ? value.timelineMode! : "rally",
       analysisView: views.includes(value.analysisView as AnalysisView) ? value.analysisView! : "analysis",
+      segmentsOnly: value.segmentsOnly === true,
       analysisDockWidth: constrainAnalysisDockWidth(finite(value.analysisDockWidth, DEFAULT_ANALYSIS_DOCK_WIDTH)),
       timelineDockHeight: constrainTimelineDockHeight(finite(value.timelineDockHeight, DEFAULT_TIMELINE_DOCK_HEIGHT)),
       panels: {

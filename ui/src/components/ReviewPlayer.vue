@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { usePlayer } from "../composables/usePlayer";
 import { formatTime } from "../format";
 import type { PlayerShortcutAction } from "../interaction/playerShortcuts";
+import { segmentSkipTarget } from "../temporal/segmentPlayback";
 import AppIcon from "./ui/AppIcon.vue";
 const props = withDefaults(defineProps<{
   src: string;
   fullscreen?: boolean;
   /** Element that hosts the controls instead of the player, e.g. the floating fullscreen timeline. */
   controlsTarget?: HTMLElement | null;
-}>(), { fullscreen: false, controlsTarget: null });
-const emit = defineEmits<{ time: [value: number]; playing: [value: boolean]; fullscreenToggle: [] }>();
+  /** Sorted Segment intervals; segments-only playback skips the gaps between them. */
+  segments?: readonly { start: number; end: number }[];
+  segmentsOnly?: boolean;
+}>(), { fullscreen: false, controlsTarget: null, segments: () => [], segmentsOnly: false });
+const emit = defineEmits<{ time: [value: number]; playing: [value: boolean]; fullscreenToggle: []; "update:segmentsOnly": [value: boolean] }>();
 const video = ref<HTMLVideoElement | null>(null);
 const mediaAspectRatio = ref("16 / 9");
 const muted = ref(false);
@@ -84,7 +88,43 @@ function handleShortcut(action: PlayerShortcutAction) {
   else if (action === "toggle-fullscreen") emit("fullscreenToggle");
   else if (action === "rate-down") stepRate(-1);
   else if (action === "rate-up") stepRate(1);
+  else if (action === "toggle-segments-only") toggleSegmentsOnly();
 }
+function toggleSegmentsOnly() {
+  if (props.segments.length) emit("update:segmentsOnly", !props.segmentsOnly);
+}
+let skipFrame = 0;
+/** The first check after playback starts: play pressed past the last Segment restarts from the first. */
+let skipFresh = false;
+function stopSkipping() {
+  if (skipFrame) cancelAnimationFrame(skipFrame);
+  skipFrame = 0;
+}
+/** Checks every frame, since `timeupdate` would overrun a Segment end by up to a quarter second. */
+function skipGaps() {
+  skipFrame = 0;
+  const element = video.value;
+  if (!element || element.paused) return;
+  const target = segmentSkipTarget(props.segments, element.currentTime);
+  const fresh = skipFresh;
+  skipFresh = false;
+  if (target === "end") {
+    if (!fresh) { element.pause(); return; }
+    seek(props.segments[0]!.start);
+  } else if (target !== null) seek(target);
+  skipFrame = requestAnimationFrame(skipGaps);
+}
+watch(
+  () => props.segmentsOnly && props.segments.length > 0 && state.ready && !state.paused,
+  (active) => {
+    stopSkipping();
+    if (!active) return;
+    skipFresh = true;
+    skipGaps();
+  },
+  { flush: "post" },
+);
+onBeforeUnmount(stopSkipping);
 watch(
   () => props.src,
   () => {
@@ -148,6 +188,16 @@ defineExpose({ seek, pause, handleShortcut, currentTime });
             <span
               >/ {{ state.ready ? formatTime(state.duration) : "載入中" }}</span
             ></span
+          ><button
+            class="player-icon-button player-icon-button--segments"
+            type="button"
+            aria-label="只播片段"
+            :title="segmentsOnly ? '只播片段：開（S）' : '只播片段：關（S）'"
+            :aria-pressed="segmentsOnly"
+            :disabled="!segments.length"
+            @click="toggleSegmentsOnly"
+          >
+            <AppIcon name="segments" /></button
           ><button
             class="player-icon-button"
             type="button"

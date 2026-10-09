@@ -7,7 +7,8 @@ export type PlayerShortcutAction =
   | "toggle-mute"
   | "toggle-fullscreen"
   | "rate-down"
-  | "rate-up";
+  | "rate-up"
+  | "toggle-segments-only";
 
 export function playerShortcutAction(input: {
   code: string;
@@ -26,6 +27,7 @@ export function playerShortcutAction(input: {
   if (input.code === "ArrowRight") return "seek-forward-5";
   if (input.code === "KeyM") return "toggle-mute";
   if (input.code === "KeyF") return "toggle-fullscreen";
+  if (input.code === "KeyS") return "toggle-segments-only";
   if (input.key === "<" || (input.shiftKey && input.code === "Comma"))
     return "rate-down";
   if (input.key === ">" || (input.shiftKey && input.code === "Period"))

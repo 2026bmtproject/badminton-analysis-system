@@ -235,13 +235,13 @@ onBeforeUnmount(() => {
       <div class="header-actions">
         <WorkspacePopover label="快捷鍵" :min-width="320">
           <template #trigger><span aria-hidden="true">?</span></template>
-          <div class="shortcut-help__content"><strong>快捷鍵</strong><p>Space／K 播放 · ←／→ 跳 5 秒 · Shift + ←／→ 切換擊球 · [／] 切換片段</p><p>時間軸雙擊片段放大 · 再次雙擊回到全場</p><p>時間軸滾輪平移 · Ctrl／Cmd + 滾輪縮放</p></div>
+          <div class="shortcut-help__content"><strong>快捷鍵</strong><p>Space／K 播放 · S 只播片段 · ←／→ 跳 5 秒 · Shift + ←／→ 切換擊球 · [／] 切換片段</p><p>時間軸雙擊片段放大 · 再次雙擊回到全場</p><p>時間軸滾輪平移 · Ctrl／Cmd + 滾輪縮放</p></div>
         </WorkspacePopover>
       </div>
     </header>
     <main class="review-main review-main--workspace">
       <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--analysis-collapsed': analysisDockCollapsed, 'review-workspace-stage--timeline-collapsed': timelineDockCollapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
-        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
+        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
         <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">

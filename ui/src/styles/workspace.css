@@ -304,6 +304,15 @@
   border-color: var(--color-border-strong);
   background: transparent;
 }
+.player-icon-button[aria-pressed="true"] {
+  color: var(--color-accent);
+  border-color: var(--line-strong);
+  background: var(--color-surface-soft);
+}
+.player-icon-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
 .play-button .app-icon--play {
   transform: translateX(0.75px);
 }

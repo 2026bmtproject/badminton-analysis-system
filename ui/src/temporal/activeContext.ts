@@ -8,10 +8,10 @@ export type ActiveMatchContext = {
 };
 
 /** Resolve the last rally whose start is not after time using the sorted match index. */
-export function rallyAtOrBefore(rallies: RallyModel[], timeSec: number) {
+export function rallyAtOrBefore<T extends Pick<RallyModel, "start">>(rallies: readonly T[], timeSec: number) {
   let low = 0;
   let high = rallies.length - 1;
-  let candidate: RallyModel | null = null;
+  let candidate: T | null = null;
   while (low <= high) {
     const middle = (low + high) >> 1;
     const rally = rallies[middle]!;
@@ -25,7 +25,7 @@ export function rallyAtOrBefore(rallies: RallyModel[], timeSec: number) {
   return candidate;
 }
 
-export function activeRallyAt(rallies: RallyModel[], timeSec: number) {
+export function activeRallyAt<T extends Pick<RallyModel, "start" | "end">>(rallies: readonly T[], timeSec: number) {
   if (!Number.isFinite(timeSec)) return null;
   const candidate = rallyAtOrBefore(rallies, timeSec);
   // Half-open intervals make an adjacent rally own the exact shared boundary.
