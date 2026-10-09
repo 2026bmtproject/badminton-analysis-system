@@ -251,7 +251,7 @@ def test_production_fallback_splits_one_primary_hole_from_segment_profiles(monke
         4: profile(4, red, blue), 5: profile(5, red, blue),
     }
 
-    def extracted(_match, bounds, _config):
+    def extracted(_match, bounds, _config, **_kwargs):
         assert all(first == last for first, last in bounds.values())
         return profiles
 
@@ -288,7 +288,7 @@ def test_production_fallback_reports_a_visual_evidence_gap_as_unresolved(monkeyp
 
     monkeypatch.setattr(
         "modules.player_identity.visual._extract_profiles_for_bounds",
-        lambda _match, _bounds, _config: profiles,
+        lambda _match, _bounds, _config, **_kwargs: profiles,
     )
     outcome = HsvIdentityFallback().resolve("unused", primary)
     assert outcome.metadata["status"] == "partially_resolved"

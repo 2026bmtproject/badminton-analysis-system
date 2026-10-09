@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from modules.artifacts import read_records
+from modules.base import ProgressFn
 from modules.contracts import PIPELINE, PlayerIdentityEpoch, artifact_path, resolve_input_video
 from modules.player_identity.policy import IdentityResult
 
@@ -590,6 +591,7 @@ def _extract_profiles_for_bounds(
     match_path: str | Path,
     bounds: dict[int, tuple[int, int]],
     config: HsvFallbackConfig,
+    on_progress: ProgressFn | None = None,
 ) -> dict[int, EpochAppearance]:
     pose_rows = read_records(PIPELINE["pose"], artifact_path(match_path, "pose"))
     samples = _select_samples(pose_rows, bounds, config.max_frame_pairs)
@@ -601,11 +603,14 @@ def _extract_profiles_for_bounds(
         raise VisualFallbackUnavailable(f"cannot open input video for HSV identity: {video}")
     frames = {}
     try:
-        for frame in requested:
+        # Seeking to each sampled frame is where the fallback spends its time.
+        for done, frame in enumerate(requested, start=1):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
             ok, image = cap.read()
             if ok:
                 frames[frame] = image
+            if on_progress:
+                on_progress(done / len(requested))
     finally:
         cap.release()
 
@@ -667,23 +672,32 @@ class HsvIdentityFallback:
     def __init__(self, config: HsvFallbackConfig | None = None) -> None:
         self.config = config or HsvFallbackConfig()
 
-    def resolve(self, match_path: str | Path, primary: IdentityResult) -> HsvFallbackOutcome:
+    def resolve(
+        self,
+        match_path: str | Path,
+        primary: IdentityResult,
+        on_progress: ProgressFn | None = None,
+    ) -> HsvFallbackOutcome:
         try:
             unresolved_segments = {
                 segment: (segment, segment)
                 for row in primary.unresolved
                 for segment in range(int(row["first_segment"]), int(row["last_segment"]) + 1)
             }
+            anchor_bounds = {
+                row.epoch_index: (row.first_segment, row.last_segment)
+                for row in primary.epochs
+            }
+            # Every bound samples up to the same frame budget, so the bound counts
+            # split the two passes' share of the progress bar.
+            share = len(unresolved_segments) / max(1, len(unresolved_segments) + len(anchor_bounds))
             profiles = _extract_profiles_for_bounds(
-                match_path, unresolved_segments, self.config
+                match_path, unresolved_segments, self.config,
+                on_progress=(lambda f: on_progress(share * f)) if on_progress else None,
             )
             anchor_profiles = _extract_profiles_for_bounds(
-                match_path,
-                {
-                    row.epoch_index: (row.first_segment, row.last_segment)
-                    for row in primary.epochs
-                },
-                self.config,
+                match_path, anchor_bounds, self.config,
+                on_progress=(lambda f: on_progress(share + (1 - share) * f)) if on_progress else None,
             ) if primary.epochs else {}
         except FileNotFoundError as exc:
             raise VisualFallbackUnavailable(str(exc)) from exc

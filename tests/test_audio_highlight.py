@@ -133,6 +133,10 @@ def test_module_real_math_and_serialization(tmp_path, audio_boundary):
     assert state.status == StageStatus.COMPLETED
     assert "match_segmentation" in state.inputs
     assert progress[-1] == 1.0
+    # The cold decode and the model load report before the per-window loop, and
+    # the bar never moves backwards.
+    assert progress[:2] == [0.25, 0.45]
+    assert progress == sorted(progress)
 
 
 def test_missing_complete_window_fails_before_tfhub(tmp_path, audio_boundary):
