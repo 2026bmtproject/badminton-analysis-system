@@ -110,6 +110,8 @@
 }
 .timeline-lane--rally .timeline-lane-track {
   height: 48px;
+  /* Lets rally numbers position themselves in track-width units (cqw). */
+  container-type: inline-size;
   background: rgb(0 0 0 / 12%);
   border-bottom-color: var(--line-strong);
 }
@@ -136,96 +138,72 @@
   height: var(--control-compact);
   background: transparent;
 }
-.rally-block {
+.rally-index {
   position: absolute;
-  top: 6px;
-  min-width: 1px;
-  min-height: 36px;
-  height: 36px;
-  padding: 0;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border-right: 0;
-  border-radius: 0;
-  font-size: var(--font-size-metadata);
-  font-variant-numeric: tabular-nums;
-}
-.rally-block::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: 0;
+  top: 2px;
   left: 0;
-  height: 10px;
-  transform: translateY(-50%);
-  background: transparent;
-  border-top: 2px solid var(--color-rally);
-  border-right: 1px solid var(--color-rally);
-  border-left: 1px solid var(--color-rally);
-  transition:
-    border-color 100ms ease-out,
-    background-color 100ms ease-out,
-    box-shadow 100ms ease-out;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: transform;
 }
-.rally-block::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: max(100%, var(--control-compact));
-  height: var(--control-compact);
-  transform: translateX(-50%);
+.rally-index.selected {
+  color: var(--color-text);
 }
-.rally-block-locator {
+.rally-chart {
   position: absolute;
-  top: 3px;
-  left: 50%;
-  z-index: 2;
-  width: 1px;
-  height: 11px;
-  transform: translateX(-50%);
-  background: var(--line-selected);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   pointer-events: none;
 }
-.rally-block-locator::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: -3px;
-  width: 7px;
-  height: 1px;
-  background: var(--line-selected);
+.rally-chart__baseline {
+  stroke: var(--line-strong);
+  stroke-width: 1;
 }
-.rally-block-index {
+/* One neutral tone: the lane shows rhythm, never who won.
+   Hover < selected (white) < playing (green); hover never outshines where playback is. */
+.rally-bar {
+  fill: var(--color-rally-hover);
+  fill-opacity: 0.55;
+  stroke: transparent;
+  stroke-width: 1;
+  transition:
+    fill-opacity 100ms ease-out,
+    stroke 100ms ease-out;
+}
+.rally-bar.hovered:not(.selected):not(.active) {
+  fill-opacity: 0.9;
+}
+.rally-bar.selected {
+  fill-opacity: 0.9;
+  stroke: var(--line-selected);
+}
+.rally-bar.active {
+  fill-opacity: 0.9;
+  stroke: var(--line-active);
+  stroke-width: 1.5;
+}
+.rally-bar.rally-bar[data-wide] {
+  fill-opacity: 0.2;
+}
+.rally-bar.rally-bar[data-wide].hovered {
+  fill-opacity: 0.3;
+}
+.rally-interval line {
+  stroke: var(--color-text-muted);
+  stroke-width: 1.5;
+}
+.rally-interval-label {
   position: absolute;
-  bottom: calc(100% + 2px);
-  left: 50%;
-  color: var(--color-text);
+  top: 16px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  line-height: 12px;
   white-space: nowrap;
+  pointer-events: none;
   transform: translateX(-50%);
-}
-.rally-block:hover {
-  background: transparent;
-}
-.rally-block.hovered:not(.selected):not(.active)::before {
-  border-color: var(--color-rally-hover);
-  background: rgb(255 255 255 / 6%);
-  box-shadow: 0 0 6px rgb(152 163 169 / 30%);
-}
-.rally-block.selected {
-  color: var(--color-text);
-  background: transparent;
-  outline: 0;
-}
-.rally-block.selected::before {
-  border-color: var(--line-selected);
-  outline: 0;
-}
-.rally-block.active {
-  box-shadow: none;
-}
-.rally-block.active::before {
-  box-shadow: inset 0 -2px var(--line-active);
 }
 .signal-block {
   position: absolute;

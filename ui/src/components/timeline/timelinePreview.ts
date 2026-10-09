@@ -1,11 +1,13 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
+import { RALLY_BREAK_LABELS, rallyWinner, type RallyBreak } from "../../temporal/rallyOutcome";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
 import type { TimelineFit } from "../../temporal/timeline";
 import { doubleClickFit } from "../../temporal/timelineNavigation";
 
 export type TimelineHoverMark = {
-  kind: "rally" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window" | "highlight";
+  /** `break` ids the Rally a break follows. */
+  kind: "rally" | "break" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window" | "highlight";
   id: number | string;
 };
 
@@ -28,6 +30,13 @@ export function withDoubleClickHint(
 ): TimelineHoverPreview | null {
   if (!hint) return preview;
   return { ...(preview ?? { title: "", lines: [] }), hint };
+}
+
+export function rallyBreakPreview(item: RallyBreak): TimelineHoverPreview {
+  return {
+    title: RALLY_BREAK_LABELS[item.kind],
+    lines: [`${(item.end - item.start).toFixed(1)} 秒`],
+  };
 }
 
 function rallyIndex(rally: RallyModel) {
@@ -68,6 +77,9 @@ export function timelineHoverPreview(
     const lines = [`${rally.duration.toFixed(2)} 秒`];
     if (rally.hits !== null) lines.push(`${rally.hits.length} 拍`);
     if (rally.score) lines.push(`比分 ${scoreText(rally.score)}`);
+    // The lane itself stays neutral; who took the point is shown only on request.
+    const winner = lead ? rallyWinner(lead.model, rally.id) : null;
+    if (winner && lead) lines.push(`得分：${playerName(lead.players[winner], winner.toUpperCase())}`);
     return { title: `片段 ${String(rally.id + 1).padStart(3, "0")}`, lines };
   }
   if (mark.kind === "score") {

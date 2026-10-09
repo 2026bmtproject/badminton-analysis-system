@@ -502,10 +502,10 @@ test("signature score remains an editorial axis in the Match Bar", () => {
 
 test("temporal signature remains shape-led and preserves semantic hierarchy", () => {
   const timeline = readFileSync("src/styles/timeline.css", "utf8");
-  assert.match(
-    timeline,
-    /\.rally-block::before\s*\{[^}]*background:\s*transparent;[^}]*border-top:\s*2px solid var\(--color-rally\);[^}]*border-right:\s*1px solid var\(--color-rally\);[^}]*border-left:\s*1px solid var\(--color-rally\);/s,
-  );
+  // The rally lane is neutral so it never spoils a match being watched; winners live in the hover text.
+  assert.match(timeline, /\.rally-bar\s*\{[^}]*fill:\s*var\(--color-rally-hover\);/s);
+  assert.doesNotMatch(timeline, /\.rally-bar[^{]*\{[^}]*--color-player-/s);
+  assert.doesNotMatch(readFileSync("src/components/ReviewTimeline.vue", "utf8"), /data-winner|連得/);
   assert.match(timeline, /\.lead-chart__line,\s*\.lead-chart__gap\s*\{[^}]*stroke:\s*var\(--color-score\);/s);
   assert.match(timeline, /\.lead-chart__area\s*\{[^}]*fill:\s*var\(--color-player-a\);/s);
   assert.match(
@@ -562,7 +562,7 @@ test("temporal coherence adds registration without changing temporal ownership",
   const timelineStyles = readFileSync("src/styles/timeline.css", "utf8");
   assert.doesNotMatch(player, /progress-rally-locator|progress-stroke-tick/);
   assert.match(app, /@time="workspace\.updateTime"/);
-  assert.match(timeline, /:style="\{ left: item\.left \+ '%', width: item\.width \+ '%' \}"/);
+  assert.match(timeline, /class="rally-bar"[\s\S]{0,400}:x="bar\.x \+ '%'"[\s\S]{0,60}:width="bar\.width \+ '%'"/);
 
   assert.match(timeline, /hoveredMark = ref/);
   assert.match(timeline, /resolveHoveredMark/);
@@ -592,17 +592,11 @@ test("Rally registration stays on the shared timeline", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const timelineStyles = readFileSync("src/styles/timeline.css", "utf8");
   assert.doesNotMatch(player, /progress-rally-locator/);
-  assert.match(
-    timeline,
-    /fit === 'rally' && selectedId === item\.id && !lensActive/,
-  );
-  assert.match(timeline, /class="rally-block-locator"\s+aria-hidden="true"/);
-  assert.match(timeline, /class="rally-registration-index rally-block-index"/);
-  assert.doesNotMatch(timeline, /<button[^>]+rally-block-locator/);
-  assert.match(
-    timelineStyles,
-    /\.rally-block-locator\s*\{[^}]*left:\s*50%;[^}]*width:\s*1px;[^}]*height:\s*11px;/s,
-  );
+  // Numbers every Rally the zoom has room for, so they never come and go while playback scrolls.
+  assert.match(timeline, /fit\.value === "match" \|\| lensActive\.value\s*\? \[\]\s*: rallyIndexLabels\(/);
+  assert.match(timeline, /class="rally-registration-index rally-index"[\s\S]{0,160}translateX\(calc\(\$\{label\.x\}cqw - 50%\)\)/);
+  assert.doesNotMatch(timeline, /rally-block-locator/);
+  assert.match(timelineStyles, /\.rally-index \{[^}]*will-change: transform;/s);
 });
 
 test("editorial inspector keeps content order and stable measurement columns", () => {

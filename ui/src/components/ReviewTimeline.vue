@@ -26,10 +26,15 @@ import {
 import {
   fitViewport,
   timeToPercent,
-  timelineItems,
   visibleRallies,
 } from "../temporal/timeline";
 import { cheerCurvePaths } from "../temporal/cheerCurve";
+import {
+  breakAt,
+  rallyIndexLabels,
+  rallyLaneMarks,
+  rallyLaneModel,
+} from "../temporal/rallyOutcome";
 import {
   leadChartMarks,
   leadDomain,
@@ -56,6 +61,7 @@ import {
 } from "../temporal/timelineNavigation";
 import {
   doubleClickHint,
+  rallyBreakPreview,
   timelineHoverPreview,
   withDoubleClickHint,
   type TimelineHoverMark,
@@ -90,6 +96,9 @@ const STROKE_TRACK_BASE_HEIGHT_PX = 28;
 const STROKE_DETAIL_HEIGHT_PX = 32;
 const SIGNAL_LANE_HEIGHT_PX = 72;
 const SIGNAL_LANE_MARGIN_PX = 8;
+/** Rally lane geometry in track pixels: bars grow up from a baseline under the game label row. */
+const RALLY_BASELINE_PX = 42;
+const RALLY_BAR_EXTENT_PX = 26;
 const props = withDefaults(
   defineProps<{
     model: MatchModel;
@@ -154,10 +163,12 @@ const inspectionClientY = ref(0);
 const hoveredMark = ref<TimelineHoverMark | null>(null);
 const hoverPreview = computed(() =>
   withDoubleClickHint(
-    timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
-      model: leadModel.value,
-      players: props.model.players,
-    }),
+    hoveredMark.value?.kind === "break"
+      ? breakPreview(Number(hoveredMark.value.id))
+      : timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
+          model: leadModel.value,
+          players: props.model.players,
+        }),
     inspectionTime.value === null
       ? null
       : doubleClickHint(fit.value, activeRallyAt(props.model.rallies, inspectionTime.value)),
@@ -289,9 +300,6 @@ watch(
 const rallies = computed(() =>
   visibleRallies(props.model.rallies, renderViewport.value),
 );
-const layout = computed(() =>
-  timelineItems(rallies.value, renderViewport.value),
-);
 const axisTicks = computed(() =>
   timelineTicks(
     renderViewport.value.startSec,
@@ -359,6 +367,27 @@ const leadFocusBands = computed(() => {
   if (props.scoreContextId !== props.selectedId) add("active", props.scoreContextId);
   return bands;
 });
+const rallyLane = computed(() => rallyLaneModel(props.model.rallies, leadModel.value));
+const rallyMarks = computed(() =>
+  rallyLaneMarks(rallyLane.value, props.model.rallies, renderViewport.value, trackWidth.value),
+);
+function breakPreview(afterRallyId: number) {
+  const item = rallyLane.value.breaks.find((candidate) => candidate.afterRallyId === afterRallyId);
+  return item ? rallyBreakPreview(item) : null;
+}
+/** Numbers every visible Rally the zoom has room for, not only the selected one, so they never come and go while playback scrolls. */
+const rallyIndices = computed(() =>
+  fit.value === "match" || lensActive.value
+    ? []
+    : rallyIndexLabels(
+        props.model.rallies,
+        renderViewport.value,
+        trackWidth.value,
+        props.selectedId,
+        leadMarks.value.labels,
+      ),
+);
+const rallyDescription = "回合節奏：每個片段一根長條，高度代表回合時長；滑過片段可查看得分方";
 const leadDescription = computed(
   () =>
     `領先折線圖：中線為平手，往上為 ${playerName(props.model.players.a, "A")} 領先，往下為 ${playerName(props.model.players.b, "B")} 領先`,
@@ -616,7 +645,9 @@ function resolveHoveredMark(
 ) {
   if (kind === "rally") {
     const rally = activeRallyAt(props.model.rallies, timeSec);
-    return rally ? { kind, id: rally.id } : null;
+    if (rally) return { kind, id: rally.id };
+    const item = breakAt(rallyLane.value, timeSec);
+    return item ? { kind: "break" as const, id: item.afterRallyId } : null;
   }
   if (kind === "score") {
     const rally = scoreLaneRally(
@@ -963,34 +994,67 @@ const timelineStyle = computed(() => ({
             v-if="modeShows('rally')"
             kind="rally"
             label="片段"
-            description="分析片段軌道"
+            :description="rallyDescription"
           >
-            <template v-for="item in layout.items" :key="item.id">
-              <span
-                class="rally-block"
+            <!-- Percent x and pixel y: bars stay crisp at any track width and glide
+                 by subpixels while playback scrolls. Nothing here says who won a
+                 point, so the lane never spoils a match being watched. -->
+            <svg class="rally-chart" aria-hidden="true">
+              <line v-for="separator in leadMarks.separators" :key="`separator-${separator.game}`" class="lead-separator" :x1="separator.x + '%'" :x2="separator.x + '%'" y1="0" y2="100%" />
+              <line class="rally-chart__baseline" x1="0" x2="100%" :y1="RALLY_BASELINE_PX" :y2="RALLY_BASELINE_PX" />
+              <rect
+                v-for="bar in rallyMarks.bars"
+                :key="`bar-${bar.rallyId}`"
+                class="rally-bar"
                 :class="{
-                  selected: selectedId === item.id,
-                  active: activeId === item.id,
-                  hovered:
-                    hoveredMark?.kind === 'rally' && hoveredMark.id === item.id,
+                  selected: selectedId === bar.rallyId,
+                  active: activeId === bar.rallyId,
+                  hovered: hoveredMark?.kind === 'rally' && hoveredMark.id === bar.rallyId,
                 }"
-                :style="{ left: item.left + '%', width: item.width + '%' }"
-                :data-rally-id="item.id"
-                aria-hidden="true"
+                :data-wide="bar.wide || undefined"
+                :data-rally-id="bar.rallyId"
+                :x="bar.x + '%'"
+                :width="bar.width + '%'"
+                :y="RALLY_BASELINE_PX - bar.fraction * RALLY_BAR_EXTENT_PX"
+                :height="bar.fraction * RALLY_BAR_EXTENT_PX"
+              />
+              <svg
+                v-for="item in rallyMarks.intervals"
+                :key="`interval-${item.key}`"
+                class="rally-interval"
+                :x="item.x + '%'"
+                :y="RALLY_BASELINE_PX"
+                overflow="visible"
               >
-                <span
-                  v-if="
-                    fit === 'rally' && selectedId === item.id && !lensActive
-                  "
-                  class="rally-block-locator"
-                  aria-hidden="true"
-                >
-                  <span class="rally-registration-index rally-block-index">{{
-                    String(item.id + 1).padStart(3, "0")
-                  }}</span>
-                </span>
-              </span>
+                <line x1="-2" x2="-2" y1="-9" y2="-2" />
+                <line x1="2" x2="2" y1="-9" y2="-2" />
+              </svg>
+            </svg>
+            <span
+              v-for="label in leadMarks.labels"
+              :key="`game-${label.game}`"
+              class="lead-game-label"
+              :style="{ left: label.x + '%' }"
+              aria-hidden="true"
+            >{{ label.text }}</span>
+            <template v-for="item in rallyMarks.intervals" :key="`interval-label-${item.key}`">
+              <span
+                v-if="item.text"
+                class="rally-interval-label"
+                :style="{ left: item.x + '%' }"
+                aria-hidden="true"
+              >{{ item.text }}</span>
             </template>
+            <!-- Positioned by a composited transform in track-width units, like the
+                 score chips, so the digits glide with the bars instead of snapping. -->
+            <span
+              v-for="label in rallyIndices"
+              :key="`index-${label.rallyId}`"
+              class="rally-registration-index rally-index"
+              :class="{ selected: label.selected }"
+              :style="{ transform: `translateX(calc(${label.x}cqw - 50%))` }"
+              aria-hidden="true"
+            >{{ label.text }}</span>
           </TimelineLane>
           <TimelineLane
             v-if="modeShows('score') && capability('score')"
