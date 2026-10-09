@@ -10,6 +10,18 @@ export type PlayerShortcutAction =
   | "rate-up"
   | "toggle-segments-only";
 
+/** Seeks keep stepping while their key is held; every other action fires once per press. */
+const HOLD_REPEATS: ReadonlySet<PlayerShortcutAction> = new Set([
+  "seek-back-10",
+  "seek-forward-10",
+  "seek-back-5",
+  "seek-forward-5",
+]);
+
+export function repeatsWhileHeld(action: PlayerShortcutAction): boolean {
+  return HOLD_REPEATS.has(action);
+}
+
 export function playerShortcutAction(input: {
   code: string;
   key: string;

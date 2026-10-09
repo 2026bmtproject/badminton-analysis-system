@@ -71,7 +71,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("scroll", place, true);
   document.removeEventListener("fullscreenchange", syncTeleportTarget);
 });
-defineExpose({ close });
+defineExpose({ close, toggle });
 </script>
 
 <template>

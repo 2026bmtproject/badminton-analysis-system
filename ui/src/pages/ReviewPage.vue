@@ -9,7 +9,7 @@ import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
 import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
 import type { EvidenceModel } from "../domain/models";
 import { playerName, scoreText } from "../format";
-import { playerShortcutAction } from "../interaction/playerShortcuts";
+import { playerShortcutAction, repeatsWhileHeld } from "../interaction/playerShortcuts";
 import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
 import { useMatchContext } from "../state/matchContext";
 import {
@@ -25,6 +25,29 @@ import { adaptiveDefaultPanelSizes } from "../presentation/workspaceDensity";
 import { fittedFullscreenTimeline, fullscreenHomePanel } from "../state/workspaceGeometry";
 
 defineOptions({ name: "ReviewPage" });
+/** Each item lists alternative key combos; each combo is the keys pressed together. */
+const SHORTCUT_GROUPS: readonly { title: string; items: readonly { keys: readonly (readonly string[])[]; label: string }[] }[] = [
+  { title: "播放", items: [
+    { keys: [["Space"], ["K"]], label: "播放／暫停" },
+    { keys: [["←"], ["→"]], label: "倒退／快轉 5 秒" },
+    { keys: [["J"], ["L"]], label: "倒退／快轉 10 秒" },
+    { keys: [["<"], [">"]], label: "減慢／加快速度" },
+    { keys: [["S"]], label: "只播片段" },
+    { keys: [["M"]], label: "靜音" },
+    { keys: [["F"]], label: "全螢幕" },
+  ] },
+  { title: "導覽", items: [
+    { keys: [["["], ["]"]], label: "上一個／下一個片段" },
+    { keys: [["Shift", "←"], ["→"]], label: "上一拍／下一拍" },
+    { keys: [["Esc"]], label: "取消選取" },
+  ] },
+  { title: "時間軸", items: [
+    { keys: [["雙擊片段"]], label: "放大／回到全場" },
+    { keys: [["滾輪"]], label: "平移" },
+    { keys: [["Ctrl", "滾輪"]], label: "縮放" },
+    { keys: [["Shift", "滾輪"]], label: "切換時間軸模式" },
+  ] },
+];
 const context = useMatchContext();
 const route = useRoute();
 const { model, workspace } = context;
@@ -32,6 +55,7 @@ const { layout } = useWorkspaceLayout();
 const activeWindow = ref<WorkspacePanelId>("analysis");
 const playing = workspace.playing;
 const player = ref<InstanceType<typeof ReviewPlayer> | null>(null);
+const shortcutHelp = ref<InstanceType<typeof WorkspacePopover> | null>(null);
 const stage = ref<HTMLElement | null>(null);
 /** The timeline's toolbar hosts the player controls, so the video and the timeline share one control bar. */
 const playerControlsHost = ref<HTMLElement | null>(null);
@@ -96,12 +120,24 @@ watch(model, () => {
   if (!timelineModes.value.some((item) => item.id === layout.timelineMode)) layout.timelineMode = "rally";
 }, { flush: "sync" });
 
+/** Input types that take no typed text, so shortcuts still apply while they hold focus. */
+const NON_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"]);
 function isTextEditingTarget(event: KeyboardEvent) {
-  return event.target instanceof Element && Boolean(event.target.closest("input,select,textarea,[contenteditable]"));
+  if (!(event.target instanceof Element)) return false;
+  const field = event.target.closest("input,textarea,[contenteditable]:not([contenteditable='false'])");
+  return field !== null && !(field instanceof HTMLInputElement && NON_TEXT_INPUTS.has(field.type));
 }
+/**
+ * Only typing and system chords are exempt: a clicked button, select or slider keeps focus, and the
+ * shortcut must win over its own Space/arrow handling, or Space would press the button again.
+ */
 function shortcutBlocked(event: KeyboardEvent) {
-  return event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.repeat ||
-    (event.target instanceof Element && Boolean(event.target.closest("input,select,textarea,button,a,summary,[contenteditable]")));
+  return event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isTextEditingTarget(event);
+}
+/** Runs in the capture phase, so a consumed key never reaches the focused control. */
+function consume(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
 }
 function keyboard(event: KeyboardEvent) {
   revealUi();
@@ -111,11 +147,20 @@ function keyboard(event: KeyboardEvent) {
     return;
   }
   if (shortcutBlocked(event)) return;
-  if (workspace.handleKeyboard(event)) return;
+  if (event.code === "KeyH" && !event.shiftKey) {
+    consume(event);
+    if (!event.repeat) shortcutHelp.value?.toggle();
+    return;
+  }
+  if (!event.repeat && workspace.handleKeyboard(event)) { event.stopPropagation(); return; }
   const action = playerShortcutAction(event);
   if (!action) return;
-  event.preventDefault();
-  player.value?.handleShortcut(action);
+  consume(event);
+  if (!event.repeat || repeatsWhileHeld(action)) player.value?.handleShortcut(action);
+}
+/** A button fires its Space click on keyup, so the matching keyup is swallowed too. */
+function keyboardRelease(event: KeyboardEvent) {
+  if (event.code === "Space" && !shortcutBlocked(event)) consume(event);
 }
 function openEvidence(evidence: EvidenceModel) {
   const target = findStrokeTarget(match.value, evidence.eventIndex);
@@ -187,10 +232,16 @@ function cycleTimelineMode(direction: -1 | 1) {
   const index = timelineModes.value.findIndex((item) => item.id === layout.timelineMode);
   layout.timelineMode = timelineModes.value[(index + direction + timelineModes.value.length) % timelineModes.value.length]?.id ?? "rally";
 }
+/**
+ * Shift + wheel cycles the timeline mode wherever the pointer is; the timeline leaves Shift + wheel unpanned.
+ * Some platforms turn a shifted wheel into horizontal scroll, so either axis counts.
+ */
 function modeWheel(event: WheelEvent) {
-  if (!event.shiftKey || event.deltaY === 0) return;
+  if (!event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+  const delta = event.deltaY || event.deltaX;
+  if (delta === 0) return;
   event.preventDefault();
-  cycleTimelineMode(event.deltaY > 0 ? 1 : -1);
+  cycleTimelineMode(delta > 0 ? 1 : -1);
 }
 function updateViewport() {
   viewportWidth.value = window.innerWidth;
@@ -203,14 +254,23 @@ onMounted(() => {
   window.addEventListener("pointercancel", pointerUp);
   updateViewport();
 });
-onActivated(() => window.addEventListener("keydown", keyboard));
+onActivated(() => {
+  window.addEventListener("keydown", keyboard, true);
+  window.addEventListener("keyup", keyboardRelease, true);
+  window.addEventListener("wheel", modeWheel, { passive: false });
+});
 onDeactivated(() => {
-  window.removeEventListener("keydown", keyboard);
+  window.removeEventListener("keydown", keyboard, true);
+  window.removeEventListener("keyup", keyboardRelease, true);
+  window.removeEventListener("wheel", modeWheel);
+  shortcutHelp.value?.close();
   player.value?.pause();
   clearIdleTimer();
 });
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", keyboard);
+  window.removeEventListener("keydown", keyboard, true);
+  window.removeEventListener("keyup", keyboardRelease, true);
+  window.removeEventListener("wheel", modeWheel);
   window.removeEventListener("resize", updateViewport);
   document.removeEventListener("fullscreenchange", syncFullscreen);
   window.removeEventListener("pointerup", pointerUp);
@@ -235,9 +295,20 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="header-actions">
-        <WorkspacePopover label="快捷鍵" :min-width="320">
+        <WorkspacePopover ref="shortcutHelp" label="快捷鍵（H）" :min-width="360">
           <template #trigger><span aria-hidden="true">?</span></template>
-          <div class="shortcut-help__content"><strong>快捷鍵</strong><p>Space／K 播放 · S 只播片段 · ←／→ 跳 5 秒 · Shift + ←／→ 切換擊球 · [／] 切換片段</p><p>時間軸雙擊片段放大 · 再次雙擊回到全場</p><p>時間軸滾輪平移 · Ctrl／Cmd + 滾輪縮放</p></div>
+          <div class="shortcut-help__content">
+            <header class="shortcut-help__title"><strong>快捷鍵</strong><span><kbd>H</kbd> 開關 · <kbd>Esc</kbd> 關閉</span></header>
+            <section v-for="group in SHORTCUT_GROUPS" :key="group.title" class="shortcut-help__group">
+              <h3>{{ group.title }}</h3>
+              <dl>
+                <div v-for="item in group.items" :key="item.label" class="shortcut-help__row">
+                  <dt><template v-for="(combo, comboIndex) in item.keys" :key="comboIndex"><span v-if="comboIndex" class="shortcut-help__or">/</span><span class="shortcut-help__combo"><template v-for="(key, keyIndex) in combo" :key="key"><span v-if="keyIndex" class="shortcut-help__plus">+</span><kbd>{{ key }}</kbd></template></span></template></dt>
+                  <dd>{{ item.label }}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
         </WorkspacePopover>
       </div>
     </header>
@@ -248,7 +319,7 @@ onBeforeUnmount(() => {
 
         <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
-            <label class="timeline-mode-selector" @wheel="modeWheel"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
+            <label class="timeline-mode-selector"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
             <div v-if="controlsInTimeline" ref="playerControlsHost" class="workspace-window__player-controls" />
           </template>

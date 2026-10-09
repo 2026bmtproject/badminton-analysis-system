@@ -20,7 +20,7 @@ import {
   timeToPercent,
   visibleRallies,
 } from "../src/temporal/timeline";
-import { playerShortcutAction } from "../src/interaction/playerShortcuts";
+import { playerShortcutAction, repeatsWhileHeld } from "../src/interaction/playerShortcuts";
 import {
   edgeLabelSide,
   nearestTemporalMark,
@@ -166,6 +166,16 @@ test("consumer playback shortcut map keeps stroke navigation precedence", () => 
   assert.equal(action("Comma", "<", true), "rate-down");
   assert.equal(action("Period", ">", true), "rate-up");
   assert.equal(action("ArrowRight", "", true), null);
+});
+
+test("held seek keys keep seeking while one-shot actions fire once", () => {
+  assert.equal(repeatsWhileHeld("seek-back-5"), true);
+  assert.equal(repeatsWhileHeld("seek-forward-5"), true);
+  assert.equal(repeatsWhileHeld("seek-back-10"), true);
+  assert.equal(repeatsWhileHeld("seek-forward-10"), true);
+  assert.equal(repeatsWhileHeld("toggle"), false);
+  assert.equal(repeatsWhileHeld("toggle-mute"), false);
+  assert.equal(repeatsWhileHeld("rate-up"), false);
 });
 
 test("inspection remains selected while video time advances active context", () => {

@@ -510,7 +510,11 @@ test("signature interaction uses one guarded shortcut path and lane delegation",
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const composable = readFileSync("src/composables/usePlayer.ts", "utf8");
   assert.match(app, /function shortcutBlocked\(event: KeyboardEvent\)/);
-  assert.match(app, /window\.addEventListener\("keydown", keyboard\)/);
+  assert.match(app, /window\.addEventListener\("keydown", keyboard, true\)/);
+  assert.match(app, /window\.addEventListener\("keyup", keyboardRelease, true\)/);
+  // A focused button or select must not swallow shortcuts; only text entry does.
+  assert.doesNotMatch(app, /closest\("[^"]*button/);
+  assert.match(app, /event\.code === "KeyH"/);
   assert.doesNotMatch(composable, /addEventListener\("keydown"/);
   assert.match(player, /@click="toggle"/);
   assert.match(player, /<\/div>\s*<Teleport [^>]*>\s*<div class="controls">/);
@@ -685,7 +689,7 @@ test("Escape priority and IME safety remain explicit after routed Match selectio
   const app = readFileSync("src/pages/ReviewPage.vue", "utf8");
   assert.match(app, /event\.isComposing/);
   assert.match(app, /if \(workspace\.selectedRallyIndex\.value !== null\)[\s\S]*workspace\.clearSelection/);
-  assert.match(app, /"input,select,textarea,\[contenteditable\]"/);
+  assert.match(app, /closest\("input,textarea,\[contenteditable\]/);
   assert.doesNotMatch(app, /libraryOpen|closeLibrary|MatchLibrary/);
 });
 
