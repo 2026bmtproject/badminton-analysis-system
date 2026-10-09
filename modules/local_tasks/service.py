@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from modules.base import StageStatus, read_status
-from modules.contracts import PIPELINE, artifact_path, stage_path
+from modules.contracts import PIPELINE, artifact_path, resolve_input_video, stage_path
 from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
 from modules.local_tasks.locking import WorkerLock
 from modules.local_tasks.planning import build_plan, resolve_match
@@ -131,8 +131,9 @@ class TaskManager:
                 match = resolve_match(self.matches_root, folder.name)
             except ValueError:
                 continue
-            video = match / "input" / "match.mp4"
-            if not video.is_file():
+            try:
+                resolve_input_video(match)
+            except FileNotFoundError:
                 continue
             completed = []
             for name in available_modules():

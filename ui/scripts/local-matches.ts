@@ -1,5 +1,5 @@
-import { readFile, mkdir, writeFile, rename, stat, rm } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { readFile, readdir, mkdir, writeFile, rename, stat, rm } from "node:fs/promises";
+import { resolve, join, extname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -37,6 +37,25 @@ async function optionalJson(path: string) {
     throw error;
   }
 }
+const VIDEO_EXTENSIONS = [".mp4", ".mkv", ".mov", ".avi", ".m4v"];
+/** Mirror of modules.contracts.resolve_input_video: the first video file under input/ by name.
+ * Windows paths sort case-insensitively in Python, so match that to pick the same file. */
+export async function resolveInputVideo(matchRoot: string): Promise<string | null> {
+  const folder = join(matchRoot, "input");
+  let names: string[];
+  try { names = await readdir(folder); }
+  catch (error) {
+    if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+    throw error;
+  }
+  const key = (name: string) => process.platform === "win32" ? name.toLowerCase() : name;
+  for (const name of names.sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)) {
+    if (!VIDEO_EXTENSIONS.includes(extname(name).toLowerCase())) continue;
+    const path = join(folder, name);
+    if (await stat(path).then(info => info.isFile(), () => false)) return path;
+  }
+  return null;
+}
 async function save(path: string, value: unknown) {
   await writeFile(path + ".tmp", JSON.stringify(value, null, 2) + "\n");
   await rename(path + ".tmp", path);
@@ -68,11 +87,10 @@ export async function registerMatch(
 }
 
 /** Invoke the Python data boundary with an argv array; no shell command is composed. */
-export async function exportReview(context: string | LocalRuntime, id: string): Promise<MatchModel> {
+export async function exportReview(context: string | LocalRuntime, id: string, videoPath: string): Promise<MatchModel> {
   matchIdSchema.parse(id);
   const { backendDir: repositoryRoot, matchesDir, dataDir: localDir, uvBinary } = runtime(context);
   const matchRoot = resolve(matchesDir, id);
-  const videoPath = join(matchRoot, "input/match.mp4");
   const metadata = z.object({
     title: z.string().optional(),
     players: z.object({ a: z.string(), b: z.string() }).optional(),
@@ -108,9 +126,10 @@ export async function exportReview(context: string | LocalRuntime, id: string): 
 export async function importMatch(context: string | LocalRuntime, id: string) {
   const config = runtime(context);
   const matchRoot = resolve(config.matchesDir, id);
-  const videoPath = join(matchRoot, "input/match.mp4");
+  const videoPath = await resolveInputVideo(matchRoot);
+  if (!videoPath) throw new Error("input/ 中找不到影片檔");
   const before = await stat(videoPath);
-  const model = await exportReview(config, id);
+  const model = await exportReview(config, id, videoPath);
   const after = await stat(videoPath);
   if (before.size !== after.size || before.mtimeMs !== after.mtimeMs)
     throw new Error("匯入期間影片變動");

@@ -137,6 +137,14 @@ def test_match_symlink_cannot_escape_matches_root(tmp_path):
         resolve_match(match.parent, "Link")
 
 
+def test_matches_lists_any_input_video_name(tmp_path):
+    match = match_fixture(tmp_path)
+    (match / "input" / "match.mp4").rename(match / "input" / "Broadcast (1080p25).mkv")
+    (match.parent / "NoVideo" / "input").mkdir(parents=True)
+    manager = TaskManager(match.parent, tmp_path / "tasks")
+    assert [row["id"] for row in manager.matches()] == ["Sample"]
+
+
 class DeferredProcess:
     def __init__(self):
         self.done = threading.Event()

@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
-import { browserRuntime, importMatch, matchIdSchema, type LocalRuntime } from "./local-matches";
+import { browserRuntime, importMatch, matchIdSchema, resolveInputVideo, type LocalRuntime } from "./local-matches";
 
 type Candidate = { id: string; available: boolean; reason?: string };
 
@@ -28,8 +28,8 @@ export async function listImportableMatches(context: string | LocalRuntime): Pro
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(async (entry) => {
       const root = join(config.matchesDir, entry.name);
-      if (!await exists(join(root, "input", "match.mp4")))
-        return { id: entry.name, available: false, reason: "缺少 input/match.mp4" };
+      if (!await resolveInputVideo(root))
+        return { id: entry.name, available: false, reason: "input/ 中找不到影片檔" };
       if (!await exists(join(root, "stages", "match_segmentation", "segments.json")))
         return { id: entry.name, available: false, reason: "缺少分段結果" };
       const statusPath = join(root, "stages", "match_segmentation", "status.json");
