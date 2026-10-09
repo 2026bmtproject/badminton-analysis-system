@@ -147,7 +147,9 @@ function clearIdleTimer() {
 }
 function interactionActive() {
   return pointerPressed.value || panelInteracting.value.analysis || panelInteracting.value.timeline ||
-    Boolean(stage.value?.querySelector("select:focus, input:focus, [aria-expanded='true']:focus"));
+    // A pointer resting on a window keeps it: hidden windows let presses through to the video,
+    // so the next drag would toggle playback instead of moving the window.
+    Boolean(stage.value?.querySelector("select:focus, input:focus, [aria-expanded='true']:focus, .workspace-window:hover"));
 }
 function scheduleIdle() {
   clearIdleTimer();

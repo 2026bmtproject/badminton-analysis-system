@@ -105,3 +105,8 @@ test("10. stacked responsive panels hide resizing and avoid fixed inner overflow
   assert.match(styles, /\.workspace-window__body > \.intelligence-timeline \{ min-width: 0; \}/);
   assert.doesNotMatch(styles, /min-width: 680px/);
 });
+test("11. fullscreen chrome never idles away under a pointer resting on a window", () => {
+  // Hidden windows let presses through to the video, so a drag started after resting would toggle playback.
+  const page = readFileSync("src/pages/ReviewPage.vue", "utf8");
+  assert.match(page, /function interactionActive\(\)[\s\S]*?\.workspace-window:hover/);
+});
