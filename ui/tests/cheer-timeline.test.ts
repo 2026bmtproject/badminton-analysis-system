@@ -6,7 +6,7 @@ import { parseMatchModel } from "../src/data/matchParser";
 import type { CheerWindowModel, RallyModel } from "../src/domain/models";
 import {
   CHEER_THRESHOLD,
-  cheerPeakLabels,
+  cheerPeakMarks,
   cheerPeaks,
   cheerRuns,
   cheerScoreMoments,
@@ -121,20 +121,23 @@ test("peaks rank Rallies by how long the crowd stays above the threshold, one pe
   assert.deepEqual(cheerPeaks(cheerRuns(windowsAt(4, 0, [0, 0, 1, 1]))).map((peak) => peak.seconds), [1]);
 });
 
-test("peak labels shorten to the place where a better peak crowds them and keep their text while scrolling", () => {
+test("each peak is marked over the centre of its whole Rally, even where marks crowd", () => {
   const peaks = [
-    { rank: 1, segmentIndex: 46, start: 100, end: 110, seconds: 10 },
-    { rank: 2, segmentIndex: 3, start: 160, end: 170, seconds: 10 },
-    { rank: 3, segmentIndex: 7, start: 400, end: 410, seconds: 10 },
+    { rank: 2, segmentIndex: 3, start: 112, end: 116, seconds: 4 },
+    { rank: 1, segmentIndex: 46, start: 102, end: 106, seconds: 4 },
+    { rank: 3, segmentIndex: 7, start: 402, end: 406, seconds: 4 },
+  ];
+  const rallies = [
+    { id: 46, start: 100, end: 108 },
+    { id: 3, start: 110, end: 120 },
+    { id: 7, start: 400, end: 408 },
   ];
   const view = { startSec: 0, endSec: 1000, durationSec: 1000 };
-  // 60 s apart is 60 px at 1000 px: room for "#2", not for its full label.
-  assert.deepEqual(cheerPeakLabels(peaks, view, 1000).map((label) => label.text), ["#1 片段 047", "#2", "#3 片段 008"]);
-  // Too close even for the place: the lower peak is dropped.
-  assert.deepEqual(cheerPeakLabels(peaks, view, 400).map((label) => label.text), ["#1 片段 047", "#3 片段 008"]);
-  // Scrolling the best peak out of view leaves the second one's text as it was.
-  const scrolled = cheerPeakLabels(peaks, { startSec: 112, endSec: 1112, durationSec: 1000 }, 1000);
-  assert.deepEqual(scrolled.map((label) => label.text), ["#2", "#3 片段 008"]);
+  // Rally 3 is centred at 115 s though its cheer is centred at 114 s; 1 s from its neighbour, it still stays put.
+  assert.deepEqual(cheerPeakMarks(peaks, rallies, view).map((mark) => [mark.rank, Math.round(mark.x * 1e6) / 1e6]), [
+    [1, 10.4], [2, 11.5], [3, 40.4],
+  ]);
+  assert.deepEqual(cheerPeakMarks(peaks, rallies, { startSec: 109, endSec: 1109, durationSec: 1000 }).map((mark) => mark.rank), [2, 3]);
 });
 
 function rally(id: number, score: [number, number] | null, game = 0): RallyModel {

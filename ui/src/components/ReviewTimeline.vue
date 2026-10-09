@@ -30,7 +30,7 @@ import {
 } from "../temporal/timeline";
 import {
   CHEER_THRESHOLD,
-  cheerPeakLabels,
+  cheerPeakMarks,
   cheerPeaks,
   cheerRuns,
   cheerWavePaths,
@@ -452,8 +452,9 @@ const cheerPeakList = computed(() => cheerPeaks(cheerRunList.value));
 const cheerPaths = computed(() =>
   cheerWavePaths(cheerRunList.value, renderViewport.value, { mid: CHEER_MID_Y_PX, amp: CHEER_AMP_PX }),
 );
-const cheerPeakMarks = computed(() =>
-  cheerPeakLabels(cheerPeakList.value, renderViewport.value, trackWidth.value),
+/** Lowest place first, so where marks overlap the better one is drawn on top. */
+const cheerMarks = computed(() =>
+  cheerPeakMarks(cheerPeakList.value, props.model.rallies, renderViewport.value).reverse(),
 );
 /** Threshold lines either side of the mid line, in track pixels. */
 const cheerThresholdY = [
@@ -1271,14 +1272,15 @@ const timelineStyle = computed(() => ({
                 <line class="cheer-mid" x1="0" x2="100%" :y1="CHEER_MID_Y_PX" :y2="CHEER_MID_Y_PX" />
                 <line v-for="y in cheerThresholdY" :key="y" class="cheer-threshold" x1="0" x2="100%" :y1="y" :y2="y" />
               </svg>
-              <!-- Glides on a composited transform in track-width units, like the rally numbers. -->
+              <!-- A downward triangle over its Rally, gliding on a composited transform
+                   in track-width units like the rally numbers. -->
               <span
-                v-for="label in cheerPeakMarks"
-                :key="`peak-${label.rank}`"
+                v-for="mark in cheerMarks"
+                :key="`peak-${mark.rank}`"
                 class="cheer-peak"
-                :style="{ transform: `translateX(calc(${label.x}cqw - 50%))` }"
+                :style="{ transform: `translateX(calc(${mark.x}cqw - 50%))` }"
                 aria-hidden="true"
-              >{{ label.text }}</span>
+              >{{ mark.rank }}</span>
             </template>
             <span v-else class="cheer-curve-empty">無窗口歡呼資料</span>
           </TimelineLane>

@@ -141,36 +141,27 @@ export function cheerPeaks(runs: CheerRun[], count = CHEER_PEAK_COUNT): CheerPea
     .map(({ mean: _mean, ...peak }, index) => ({ ...peak, rank: index + 1 }));
 }
 
-export type CheerPeakLabel = { rank: number; segmentIndex: number; x: number; text: string };
-
-/** Rough widths at the lane's 11px label size, with breathing room between labels. */
-const PEAK_LABEL_FULL_PX = 66;
-const PEAK_LABEL_SHORT_PX = 20;
-const PEAK_LABEL_GAP_PX = 6;
+/** A ranked Rally marked on the lane, at the Rally's centre as a Timeline percent. */
+export type CheerPeakMark = { rank: number; segmentIndex: number; x: number };
 
 /**
- * Peak labels centred on each visible peak: "#1 片段 047" where there is room,
- * just the place where a better-ranked label crowds it, and dropped when even
- * that would overlap. Only the zoom decides the text, so labels never flicker
- * while playback scrolls.
+ * One mark per peak, centred on its whole Rally rather than on the cheer, so
+ * it points at the Rally the tooltip names. Crowded marks overlap instead of
+ * moving, so each one always sits over its own Rally.
  */
-export function cheerPeakLabels(peaks: CheerPeak[], view: TimelineViewport, trackWidth: number): CheerPeakLabel[] {
-  const placed: { left: number; right: number }[] = [];
-  const labels: CheerPeakLabel[] = [];
-  for (const peak of [...peaks].sort((a, b) => a.rank - b.rank)) {
-    // Peaks outside the view still claim their room, so one scrolling away never changes a neighbour's text.
-    const x = timeToPercent((peak.start + peak.end) / 2, view);
-    const px = (x / 100) * trackWidth;
-    const full = `#${peak.rank} 片段 ${String(peak.segmentIndex + 1).padStart(3, "0")}`;
-    for (const [text, width] of [[full, PEAK_LABEL_FULL_PX], [`#${peak.rank}`, PEAK_LABEL_SHORT_PX]] as const) {
-      const box = { left: px - width / 2 - PEAK_LABEL_GAP_PX, right: px + width / 2 + PEAK_LABEL_GAP_PX };
-      if (placed.some((other) => box.left < other.right && other.left < box.right)) continue;
-      placed.push(box);
-      labels.push({ rank: peak.rank, segmentIndex: peak.segmentIndex, x, text });
-      break;
-    }
-  }
-  return labels.filter((label) => label.x >= 0 && label.x <= 100);
+export function cheerPeakMarks(
+  peaks: CheerPeak[],
+  rallies: { id: number; start: number; end: number }[],
+  view: TimelineViewport,
+): CheerPeakMark[] {
+  return [...peaks]
+    .sort((a, b) => a.rank - b.rank)
+    .map((peak) => {
+      const rally = rallies.find((item) => item.id === peak.segmentIndex);
+      const centre = rally ? (rally.start + rally.end) / 2 : (peak.start + peak.end) / 2;
+      return { rank: peak.rank, segmentIndex: peak.segmentIndex, x: timeToPercent(centre, view) };
+    })
+    .filter((mark) => mark.x >= 0 && mark.x <= 100);
 }
 
 /**

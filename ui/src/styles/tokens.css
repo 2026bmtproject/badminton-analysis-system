@@ -40,6 +40,8 @@
   --color-accent: #92b89d;
   --color-selected: #d4d8da;
   --color-cheer: #b58d4a;
+  /* Brighter than the cheer wave and the warning amber, so a peak never reads as a review flag. */
+  --color-cheer-peak: #f0d04a;
   --color-warning: #d9a84e;
   --color-error: #ff938b;
   --color-error-bg: #281516;

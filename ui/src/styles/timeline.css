@@ -225,14 +225,20 @@
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
+/* The place, in a triangle pointing down at its Rally; the tooltip names the Rally. */
 .cheer-peak {
   position: absolute;
-  top: 2px;
+  top: 0;
   left: 0;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  line-height: 12px;
-  white-space: nowrap;
+  width: 18px;
+  height: 15px;
+  background: var(--color-cheer-peak);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  color: var(--color-surface);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: 10px;
+  text-align: center;
   pointer-events: none;
   will-change: transform;
 }
