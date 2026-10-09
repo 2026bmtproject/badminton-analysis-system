@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
 import CourtCalibrationPanel from "./CourtCalibrationPanel.vue";
+import StageProgress from "./ui/StageProgress.vue";
 import { stageLabel } from "../data/stageLabels";
 import { importLocalMatch, loadCatalog, loadMatch } from "../data/matchRepository";
 import {
-  getPipelineLogs, getPipelineTask, listPipelineStages, previewPipeline, startPipeline,
-  taskStatusLabel,
+  LOG_PAGE_SIZE, getPipelineLogs, getPipelineTask, listPipelineStages, planReasonLabel, previewPipeline,
+  startPipeline, taskElapsed, taskProgress, taskStatusLabel,
   type LocalAnalysisMatch, type PipelinePlan, type PipelineStage, type PipelineTask,
 } from "../data/pipelineTasks";
 
-const props = defineProps<{ match: LocalAnalysisMatch; hasReview: boolean; openCourt?: boolean }>();
+const props = defineProps<{ match: LocalAnalysisMatch; hasReview: boolean }>();
 const emit = defineEmits<{ updated: [] }>();
 const stages = ref<PipelineStage[]>([]);
 const selected = ref<string[]>([]);
 const mode = ref<"continue" | "rerun-selected">("continue");
 const plan = ref<PipelinePlan | null>(null);
+const planning = ref(false);
 const task = ref<PipelineTask | null>(props.match.latestTask);
 const busy = ref(false);
 const publishing = ref(false);
@@ -27,15 +28,35 @@ const lines = ref<string[]>([]);
 const logOffset = ref(0);
 const clock = ref(Date.now());
 let pollTimer: ReturnType<typeof setInterval> | undefined;
+let planVersion = 0;
+let fetchingLogs = false;
 
 const running = computed(() => task.value?.status === "queued" || task.value?.status === "running");
-const elapsed = computed(() => {
-  if (!task.value?.startedAt) return "—";
-  const end = task.value.finishedAt ? Date.parse(task.value.finishedAt) : clock.value;
-  return `${Math.max(0, Math.floor((end - Date.parse(task.value.startedAt)) / 1000))} 秒`;
-});
+const locked = computed(() => running.value || busy.value);
+const elapsed = computed(() => task.value ? taskElapsed(task.value, clock.value) : null);
+const overall = computed(() => task.value ? taskProgress(task.value) : null);
+const incomplete = computed(() => stages.value.map(stage => stage.name).filter(name => !props.match.completedStages.includes(name)));
+const runRows = computed(() => plan.value?.stages.filter(row => row.action === "run") ?? []);
+const skipRows = computed(() => plan.value?.stages.filter(row => row.action === "skip") ?? []);
 
-watch([selected, mode], () => { plan.value = null; }, { deep: true });
+/** The plan follows the selection, so there is no separate "preview" step before starting. */
+async function refreshPlan() {
+  const version = ++planVersion;
+  plan.value = null;
+  if (!selected.value.length) { planning.value = false; return; }
+  planning.value = true; error.value = "";
+  try {
+    const result = await previewPipeline(props.match.id, selected.value, mode.value);
+    if (version === planVersion) plan.value = result;
+  } catch (cause) {
+    if (version === planVersion) error.value = cause instanceof Error ? cause.message : "無法產生執行計畫";
+  } finally {
+    if (version === planVersion) planning.value = false;
+  }
+}
+
+watch([selected, mode], () => { void refreshPlan(); }, { deep: true });
+watch(() => props.match.completedStages.join(), () => { if (selected.value.length && !running.value) void refreshPlan(); });
 watch(() => props.match.id, () => {
   selected.value = []; plan.value = null; task.value = props.match.latestTask;
   lines.value = []; logOffset.value = 0; error.value = "";
@@ -46,24 +67,35 @@ watch(() => props.match.latestTask, (value) => {
   if (!task.value || (value && task.value.id !== value.id)) task.value = value;
 });
 
-async function preview() {
-  error.value = ""; busy.value = true;
-  try { plan.value = await previewPipeline(props.match.id, selected.value, mode.value); }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : "無法產生計畫"; }
-  finally { busy.value = false; }
+function pick(names: string[]) {
+  selected.value = [...names];
+  mode.value = "continue";
+}
+
+async function launch(next: PipelinePlan) {
+  task.value = await startPipeline(next);
+  lines.value = []; logOffset.value = 0; publishDone.value = false; publishError.value = "";
+  emit("updated");
 }
 
 async function begin() {
   if (!plan.value) return;
   error.value = ""; busy.value = true;
-  try {
-    task.value = await startPipeline(plan.value);
-    lines.value = []; logOffset.value = 0; publishDone.value = false; publishError.value = "";
-    emit("updated");
-  } catch (cause) {
+  try { await launch(plan.value); }
+  catch (cause) {
     error.value = cause instanceof Error ? cause.message : "無法開始分析";
-    plan.value = null;
+    void refreshPlan();
   } finally { busy.value = false; }
+}
+
+async function retry() {
+  if (!task.value) return;
+  const { requestedStages, mode: previousMode } = task.value.plan;
+  selected.value = [...requestedStages]; mode.value = previousMode;
+  error.value = ""; busy.value = true;
+  try { await launch(await previewPipeline(props.match.id, requestedStages, previousMode)); }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : "無法重新開始分析"; }
+  finally { busy.value = false; }
 }
 
 async function publish() {
@@ -97,13 +129,24 @@ async function syncReviewAfterSuccess() {
   await publish();
 }
 
-async function moreLogs() {
-  if (!task.value) return;
+/** Reads every log line not yet shown, page by page, so the panel never needs a "load more" button. */
+async function fetchLogs() {
+  if (!task.value || fetchingLogs) return;
+  fetchingLogs = true;
   try {
-    const page = await getPipelineLogs(task.value.id, logOffset.value);
-    lines.value.push(...page.lines);
-    logOffset.value = page.nextOffset;
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : "無法讀取 log"; }
+    for (;;) {
+      const page = await getPipelineLogs(task.value.id, logOffset.value);
+      lines.value.push(...page.lines);
+      logOffset.value = page.nextOffset;
+      if (page.lines.length < LOG_PAGE_SIZE) break;
+    }
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : "無法讀取詳細記錄"; }
+  finally { fetchingLogs = false; }
+}
+
+function toggleLogs() {
+  showLogs.value = !showLogs.value;
+  if (showLogs.value) void fetchLogs();
 }
 
 async function poll() {
@@ -112,7 +155,7 @@ async function poll() {
   try {
     const previous = task.value.status;
     task.value = await getPipelineTask(task.value.id);
-    if (showLogs.value) await moreLogs();
+    if (showLogs.value) await fetchLogs();
     if (previous !== task.value.status && !running.value) {
       emit("updated");
       if (task.value.status === "succeeded") await syncReviewAfterSuccess();
@@ -131,50 +174,63 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 
 <template>
   <section class="pipeline-panel" :aria-label="`${match.id} 分析設定`">
-    <header><h3>分析 {{ match.id }}</h3><span>{{ match.hasSegments ? "已有分段資料" : "尚未分析分段" }}</span></header>
-    <fieldset :disabled="running || busy">
-      <legend>選擇分析項目</legend>
-      <label v-for="stage in stages" :key="stage.name" class="pipeline-stage-choice">
-        <input v-model="selected" type="checkbox" :value="stage.name" />
-        <span>{{ stageLabel(stage.name) }} <small v-if="stage.usesGemini">使用 Gemini API</small></span>
-      </label>
-    </fieldset>
-    <fieldset :disabled="running || busy" class="pipeline-mode">
-      <legend>執行方式</legend>
-      <label><input v-model="mode" type="radio" value="continue" /> 沿用有效結果，補跑缺少或過期階段</label>
-      <label><input v-model="mode" type="radio" value="rerun-selected" /> 重跑選取項目</label>
-    </fieldset>
-    <button type="button" :disabled="!selected.length || running || busy" @click="preview">查看執行計畫</button>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <section v-if="plan" class="pipeline-plan" aria-label="執行計畫">
-      <h4>執行計畫</h4>
-      <p v-if="plan.includesGemini">此計畫會呼叫 Gemini API。</p>
-      <ol><li v-for="row in plan.stages" :key="row.name">
-        <strong>{{ stageLabel(row.name) }}</strong> · {{ row.action === "run" ? "執行" : "沿用" }} · {{ row.reason }}
-        <span v-if="row.unknown">（舊結果的輸入狀態未知）</span>
-      </li></ol>
-      <p v-if="plan.affectedOutsideScope.length">本次範圍外受影響下游：{{ plan.affectedOutsideScope.map(stageLabel).join("、") }}</p>
-      <button type="button" :disabled="busy || running || !plan.stages.some(row => row.action === 'run')" @click="begin">開始分析</button>
+    <section class="pipeline-setup" aria-labelledby="pipeline-setup-title">
+      <header class="pipeline-section-header">
+        <h3 id="pipeline-setup-title">分析項目</h3>
+        <button type="button" class="button-secondary" :disabled="locked || !incomplete.length" @click="pick(incomplete)">全選未完成</button>
+      </header>
+      <fieldset :disabled="locked" class="pipeline-stage-list">
+        <legend class="sr-only">選擇分析項目</legend>
+        <label v-for="stage in stages" :key="stage.name" class="pipeline-stage-choice">
+          <input v-model="selected" type="checkbox" :value="stage.name" />
+          <span>{{ stageLabel(stage.name) }}</span>
+          <span class="status-chip" :data-status="match.completedStages.includes(stage.name) ? 'succeeded' : 'missing'">{{ match.completedStages.includes(stage.name) ? "已完成" : "未執行" }}</span>
+        </label>
+      </fieldset>
+      <fieldset :disabled="locked" class="pipeline-mode">
+        <legend>已完成的項目</legend>
+        <label><input v-model="mode" type="radio" value="continue" /> 沿用，只補跑缺少或過期的</label>
+        <label><input v-model="mode" type="radio" value="rerun-selected" /> 勾選的全部重跑</label>
+      </fieldset>
+      <div v-if="selected.length && !running" class="pipeline-plan" aria-label="執行計畫" aria-live="polite">
+        <p v-if="planning" class="secondary">正在計算要執行的階段…</p>
+        <template v-else-if="plan">
+          <p v-if="!runRows.length" class="secondary">勾選的項目都已是最新結果，不需要執行。</p>
+          <ol v-else><li v-for="row in runRows" :key="row.name"><strong>{{ stageLabel(row.name) }}</strong><span class="secondary">{{ planReasonLabel(row) }}</span></li></ol>
+          <details v-if="skipRows.length" class="pipeline-plan-skipped">
+            <summary>其餘 {{ skipRows.length }} 項沿用既有結果</summary>
+            <ul><li v-for="row in skipRows" :key="row.name">{{ stageLabel(row.name) }} · {{ planReasonLabel(row) }}</li></ul>
+          </details>
+          <p v-if="plan.affectedOutsideScope.length" class="warning">完成後，這些未勾選的階段結果會過期：{{ plan.affectedOutsideScope.map(stageLabel).join("、") }}</p>
+          <p v-if="plan.includesGemini" class="warning">此計畫會呼叫 Gemini API。</p>
+        </template>
+      </div>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <button type="button" class="button-primary pipeline-start" :disabled="locked || planning || !runRows.length" @click="begin">開始分析</button>
     </section>
-    <section v-if="task" class="pipeline-task">
-      <h4 role="status">任務：{{ taskStatusLabel(task.status) }}</h4>
-      <p>經過時間：{{ elapsed }}<span v-if="task.currentStage"> · 目前階段：{{ stageLabel(task.currentStage) }}</span></p>
-      <p v-if="running">關閉頁面後分析會繼續。重新開啟即可查看進度。</p>
-      <ul><li v-for="(stage, name) in task.stageStates" :key="name">
-        {{ stageLabel(String(name)) }}：{{ taskStatusLabel(stage.status) }}<span v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</span>
+
+    <section v-if="task && overall" class="pipeline-task" aria-labelledby="pipeline-task-title">
+      <header class="pipeline-section-header">
+        <h3 id="pipeline-task-title" role="status">{{ taskStatusLabel(task.status) }}</h3>
+        <span class="secondary">{{ overall.done }}/{{ overall.total }} 階段<template v-if="elapsed"> · {{ elapsed }}</template></span>
+      </header>
+      <StageProgress :status="task.status" :progress="overall.fraction" label="整體進度" />
+      <ul class="task-stage-list"><li v-for="(stage, name) in task.stageStates" :key="name">
+        <span>{{ stageLabel(String(name)) }}</span><span>{{ taskStatusLabel(stage.status) }}<template v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</template></span>
+        <StageProgress :status="stage.status" :progress="stage.progress" :label="`${stageLabel(String(name))}進度`" />
       </li></ul>
-      <p v-if="task.error" class="error" role="alert">{{ task.error }}<span v-if="task.exitCode !== null">（exit {{ task.exitCode }}）</span></p>
-      <button type="button" :aria-expanded="showLogs" @click="showLogs = !showLogs; if (showLogs) moreLogs()">{{ showLogs ? "收合詳細記錄" : "查看詳細記錄" }}</button>
-      <div v-if="showLogs" class="pipeline-logs"><pre>{{ lines.join('\n') }}</pre><button type="button" @click="moreLogs">載入更多</button></div>
-      <p v-if="task.status === 'succeeded'">分析已完成。{{ publishDone ? "回看資料已更新。" : "可重新匯入分析結果以更新回看。" }}</p>
-      <button v-if="task.status === 'succeeded'" type="button" :disabled="publishing" @click="publish">{{ publishing ? "匯入中…" : "重新匯入分析結果" }}</button>
-      <p v-if="task.status === 'failed' || task.status === 'interrupted'">可重新查看計畫並建立新任務重試。</p>
+      <p v-if="task.error" class="error" role="alert">{{ task.error }}</p>
+      <p v-if="task.status === 'succeeded' && (publishing || publishDone)" class="secondary">{{ publishing ? "正在更新回看…" : "回看已更新。" }}</p>
+      <div class="pipeline-task-actions">
+        <button v-if="task.status === 'failed' || task.status === 'interrupted'" type="button" class="button-primary" :disabled="busy" @click="retry">重試</button>
+        <button type="button" class="button-secondary" :aria-expanded="showLogs" @click="toggleLogs">{{ showLogs ? "收合詳細記錄" : "查看詳細記錄" }}</button>
+      </div>
+      <div v-if="showLogs" class="pipeline-logs"><pre>{{ lines.join('\n') }}</pre></div>
     </section>
-    <p v-if="publishError" class="error" role="alert">回看更新失敗：{{ publishError }}。原有回看資料仍可使用。</p>
-    <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')" :initial-open="openCourt"
-      :running="running" @updated="emit('updated')"
-      @detect="selected = ['court_detection']; mode = 'continue'; plan = null" />
-    <RouterLink v-if="hasReview" :to="{ name: 'match-review', params: { matchId: `match:${match.id}` } }">查看已有結果 →</RouterLink>
-    <button v-else-if="match.hasSegments" type="button" :disabled="publishing" @click="publish">匯入已有分析結果</button>
+
+    <p v-if="publishError" class="error" role="alert">回看更新失敗：{{ publishError }}。原有回看資料仍可使用。 <button type="button" :disabled="publishing" @click="publish">重新匯入</button></p>
+    <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')"
+      :running="running" @updated="emit('updated')" @select="pick" />
+    <button v-if="!hasReview && match.hasSegments && !running" type="button" class="button-secondary" :disabled="publishing" @click="publish">{{ publishing ? "匯入中…" : "匯入已有分析結果" }}</button>
   </section>
 </template>

@@ -5,7 +5,7 @@ const desktopAvailable = Boolean(window.badmintonDesktop);
 
 <template>
   <main class="section-page settings-page">
-    <header class="section-page-header"><div><span class="section-kicker">系統</span><h1>設定</h1><p>管理桌面分析環境與資料位置。</p></div></header>
+    <header class="section-page-header"><div><h1>設定</h1></div></header>
     <section class="console-panel settings-summary">
       <h2>分析環境</h2>
       <p>桌面版沿用現有的 Python checkout 與 uv。若服務未連線，請展開進階設定檢查路徑。</p>

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import AppIcon from "./ui/AppIcon.vue";
 import { importLocalMatch } from "../data/matchRepository";
 import { clientToCourt, loadCourt, previewCourt, saveCourt, type CourtPoint, type CourtReview } from "../data/courtCalibration";
+import { stageLabel } from "../data/stageLabels";
 
-const props = defineProps<{ matchId: string; available: boolean; running: boolean; initialOpen?: boolean }>();
-const emit = defineEmits<{ updated: []; detect: [] }>();
-const open = ref(Boolean(props.initialOpen));
+const props = defineProps<{ matchId: string; available: boolean; running: boolean }>();
+/** `select` asks the analysis panel to tick these stages for the next run. */
+const emit = defineEmits<{ updated: []; select: [stages: string[]] }>();
+const open = ref(false);
 const court = ref<CourtReview | null>(null);
 const corners = ref<CourtPoint[]>([]);
 const points = ref<CourtPoint[]>([]);
@@ -21,6 +24,18 @@ const svg = ref<SVGSVGElement | null>(null);
 let previewVersion = 0;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 const labels = ["左上", "右上", "左下", "右下"];
+/** Handle sizes scale with the image so they read the same at any preview resolution. */
+const unit = computed(() => court.value ? Math.max(court.value.width, court.value.height) / 100 : 1);
+/** Room around the image so a corner on the edge stays whole and grabbable inside the rounded frame. */
+const view = computed(() => {
+  const pad = unit.value * 3;
+  return { x: -pad, y: -pad, width: (court.value?.width ?? 0) + 2 * pad, height: (court.value?.height ?? 0) + 2 * pad };
+});
+/** Labels sit on the court side of each handle so they never run off the frame. */
+function labelPlacement(index: number) {
+  const left = index % 2 === 0, top = index < 2;
+  return { x: (left ? 1.8 : -1.8) * unit.value, y: (top ? 3.2 : -2) * unit.value, anchor: left ? "start" : "end" };
+}
 const changed = computed(() => court.value !== null && JSON.stringify(corners.value) !== JSON.stringify(court.value.corners));
 const canConfirm = computed(() => court.value !== null &&
   (court.value.coordinateUnknown ? touched.value.length === 4 : changed.value || !court.value.confirmed));
@@ -49,8 +64,13 @@ watch(() => props.matchId, () => {
   open.value = false; court.value = null; error.value = ""; staleStages.value = []; unknownStages.value = [];
 });
 watch(() => props.available, value => { if (value && open.value) void reload(); });
-watch(() => props.initialOpen, value => { if (value && !open.value) toggle(); });
-if (props.initialOpen && props.available) void reload();
+const outdated = computed(() => [...staleStages.value, ...unknownStages.value]);
+const statusLine = computed(() => {
+  if (!court.value) return "";
+  const parts = [court.value.confirmed ? "已確認" : "尚未確認"];
+  if (court.value.detectionFailed) parts.push("自動偵測失敗，已套用預設角點");
+  return parts.join(" · ");
+});
 
 function queuePreview(immediate = false) {
   if (!court.value) return;
@@ -69,7 +89,7 @@ function queuePreview(immediate = false) {
 function move(event: PointerEvent) {
   if (drag.value === null || !court.value || !svg.value) return;
   const rect = svg.value.getBoundingClientRect();
-  corners.value[drag.value] = clientToCourt(event.clientX, event.clientY, rect, court.value.width, court.value.height);
+  corners.value[drag.value] = clientToCourt(event.clientX, event.clientY, rect, view.value, court.value.width, court.value.height);
   corners.value = [...corners.value];
   queuePreview();
 }
@@ -120,19 +140,18 @@ async function save() {
 
 <template>
   <section class="court-calibration" aria-label="場地校正">
-    <button type="button" :aria-expanded="open" @click="toggle">場地校正 {{ open ? "▴" : "▾" }}</button>
+    <button type="button" class="court-calibration-toggle" :aria-expanded="open" @click="toggle">場地校正<AppIcon :name="open ? 'chevron-up' : 'chevron-down'" /></button>
     <div v-if="open" class="court-calibration-body">
       <template v-if="!available">
-        <p>尚無場地結果。請先執行既有的「球場邊界辨識」階段。</p>
-        <button type="button" @click="emit('detect')">選取球場邊界辨識</button>
+        <p>還沒有場地結果，需要先執行「{{ stageLabel("court_detection") }}」。</p>
+        <button type="button" class="button-secondary" @click="emit('select', ['court_detection'])">勾選{{ stageLabel("court_detection") }}</button>
       </template>
       <template v-else>
-        <p v-if="loading" role="status">載入場地預覽中…</p>
-        <p v-if="court">狀態：{{ court.confirmed ? "已確認" : "尚未確認" }} · 自動偵測：{{ court.detectionFailed ? "失敗，使用預設角點" : "成功" }}</p>
-        <p v-if="court?.legacyPreview">此結果未保存預覽，已依原取樣設定重建背景。</p>
-        <p v-if="court?.coordinateUnknown">舊資料沒有記錄校正影像尺寸，無法安全疊加原角點。請在重建背景上逐一標記四角後保存。</p>
+        <p v-if="loading" role="status" class="secondary">載入場地預覽中…</p>
+        <p v-if="court" class="secondary">{{ statusLine }}</p>
+        <p v-if="court?.coordinateUnknown" class="warning">舊結果缺少影像尺寸，請在背景上重新拖曳四個角點後保存。</p>
         <svg v-if="court" ref="svg" class="court-calibration-image"
-          :viewBox="`0 0 ${court.width} ${court.height}`" role="img" aria-label="球場背景與可拖曳角點"
+          :viewBox="`${view.x} ${view.y} ${view.width} ${view.height}`" role="img" aria-label="球場背景與可拖曳角點"
           @pointermove="move" @pointerup="up" @pointercancel="up">
           <image :href="court.image" x="0" y="0" :width="court.width" :height="court.height" />
           <line v-for="([a, b], index) in court.lines" :key="index"
@@ -141,19 +160,21 @@ async function save() {
             :transform="`translate(${x} ${y})`" tabindex="0" role="button"
             :aria-label="`${labels[index]}角點，X ${Math.round(x)}，Y ${Math.round(y)}；方向鍵微調，Shift 加方向鍵移動十像素`"
             @pointerdown.prevent="down($event, index)" @keydown="nudge($event, index)">
-            <circle r="12" /><text x="16" y="-14">{{ labels[index] }}</text>
+            <circle class="court-calibration-hit" :r="unit * 2.6" />
+            <circle class="court-calibration-dot" :r="unit" />
+            <text :x="labelPlacement(index).x" :y="labelPlacement(index).y" :text-anchor="labelPlacement(index).anchor"
+              :font-size="unit * 1.9">{{ labels[index] }}</text>
           </g>
         </svg>
-        <p v-if="court && (running || court.saveBlocked)">此比賽正在分析或 worker 狀態待確認，暫時不能保存場地。</p>
+        <p v-if="court && (running || court.saveBlocked)" class="warning">分析進行中，暫時不能保存場地。</p>
         <div v-if="court" class="court-calibration-actions">
-          <button type="button" :disabled="saving || !changed" @click="reset">重設為本次載入的校正</button>
-          <button type="button" :disabled="saving" @click="toggle">放棄修改</button>
-          <button type="button" :disabled="saving || loading || !canConfirm || running || court.saveBlocked || !!error" @click="save">{{ saving ? "保存中…" : "確認並保存" }}</button>
+          <button type="button" class="button-secondary" :disabled="saving || !changed" @click="reset">還原</button>
+          <button type="button" class="button-primary" :disabled="saving || loading || !canConfirm || running || court.saveBlocked || !!error" @click="save">{{ saving ? "保存中…" : "確認並保存" }}</button>
         </div>
         <p v-if="error" class="error" role="alert">{{ error }} <button type="button" @click="reload">重新載入</button></p>
         <p v-if="publishError" class="error" role="alert">場地已保存，但回看更新失敗：{{ publishError }}。原有回看仍可使用。</p>
-        <p v-if="staleStages.length">以下已完成階段的輸入已過期：{{ staleStages.join("、") }}。可在上方分析項目中查看計畫，自行決定是否重跑。</p>
-        <p v-if="unknownStages.length">以下舊結果的輸入狀態無法確認：{{ unknownStages.join("、") }}。可在上方查看分析計畫。</p>
+        <p v-if="outdated.length" class="warning court-calibration-outdated">場地已保存，這些階段的結果可能需要重跑：{{ outdated.map(stageLabel).join("、") }}
+          <button type="button" class="button-secondary" @click="emit('select', outdated)">勾選這些階段</button></p>
       </template>
     </div>
   </section>

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import AppIcon from "../components/ui/AppIcon.vue";
+import StageProgress from "../components/ui/StageProgress.vue";
 import { mergeLibrary, type LibraryMatch } from "../data/library";
 import { importLocalMatch, listLocalMatches, loadCatalog, loadMatch, type ImportableMatch } from "../data/matchRepository";
 import { listPipelineMatches, taskStatusLabel, type LocalAnalysisMatch } from "../data/pipelineTasks";
@@ -38,10 +39,18 @@ function analysisLabel(row: LibraryMatch) {
   if (!row.local) return serviceError.value ? "分析服務離線" : "未取得分析狀態";
   return ({ completed: "分析完成", partial: "部分完成", unanalysed: "尚未分析" } as const)[row.local.analysisStatus];
 }
-function stageProgress(row: LibraryMatch) {
+function activeTask(row: LibraryMatch) {
   const task = row.local?.latestTask;
-  if (!task || !["queued", "running"].includes(task.status)) return "";
-  const stage = task.currentStage ? task.stageStates[task.currentStage] : null;
+  return task && ["queued", "running"].includes(task.status) ? task : null;
+}
+function currentStageState(row: LibraryMatch) {
+  const task = activeTask(row);
+  return task?.currentStage ? task.stageStates[task.currentStage] ?? null : null;
+}
+function stageProgress(row: LibraryMatch) {
+  const task = activeTask(row);
+  if (!task) return "";
+  const stage = currentStageState(row);
   return `${task.currentStage ? stageLabel(task.currentStage) : "等待執行"}${stage?.progress == null ? "" : ` · ${Math.round(stage.progress * 100)}%`}`;
 }
 async function refresh() {
@@ -79,8 +88,8 @@ onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener(
 
 <template>
   <main class="section-page library-page">
-    <header class="section-page-header"><div><span class="section-kicker">工作空間</span><h1>比賽庫 <span class="heading-count">{{ rows.length }}</span></h1><p>本機比賽與可用回看集中在這裡。</p></div><button type="button" class="button-primary" :disabled="scanning" @click="scan"><AppIcon name="refresh" />{{ scanning ? '掃描中…' : '掃描 matches 資料夾' }}</button></header>
-    <div class="library-toolbar"><label class="library-search"><AppIcon name="search" /><span class="sr-only">搜尋比賽</span><input v-model="query" type="search" placeholder="搜尋比賽名稱或 ID" /></label><label class="library-filter"><span>狀態</span><select v-model="filter"><option value="all">全部</option><option value="review">可回看</option><option value="active">分析中</option><option value="attention">需要處理</option></select></label><span class="library-result-count" aria-live="polite">顯示 {{ visible.length }} 場</span></div>
+    <header class="section-page-header"><div><h1>比賽庫</h1></div><button type="button" class="button-primary" :disabled="scanning" @click="scan"><AppIcon name="refresh" />{{ scanning ? '掃描中…' : '掃描 matches 資料夾' }}</button></header>
+    <div class="library-toolbar"><label class="library-search"><AppIcon name="search" /><span class="sr-only">搜尋比賽</span><input v-model="query" type="search" placeholder="搜尋比賽名稱或 ID" /></label><label class="library-filter"><span>狀態</span><select v-model="filter"><option value="all">全部</option><option value="review">可回看</option><option value="active">分析中</option><option value="attention">需要處理</option></select></label></div>
     <p v-if="serviceError" class="inline-notice" role="status">{{ serviceError }} <RouterLink :to="{ name: 'settings', query: { advanced: '1' } }">前往設定</RouterLink></p>
     <p v-if="catalogError || candidateError" class="inline-notice" role="status">{{ catalogError }} {{ candidateError }}</p>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
@@ -88,8 +97,8 @@ onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener(
     <p v-else-if="!visible.length" class="console-panel empty-state">{{ rows.length ? '找不到符合條件的比賽。' : '尚無比賽。請在設定中選擇 matches 資料夾，或將現有影片資料放入該目錄後掃描。' }}</p>
     <div v-else class="library-list"><article v-for="row in visible" :key="row.id" class="console-panel library-card">
       <div class="library-thumbnail" role="img" aria-label="沒有可用的比賽縮圖"><AppIcon name="video" :size="27" /></div>
-      <div class="library-card-content"><div class="library-card-title"><h2>{{ row.name }}</h2><span v-if="row.kind === 'fixture'" class="status-chip">示範</span></div><div class="library-card-meta"><span class="status-chip" :data-status="row.local?.latestTask?.status ?? row.local?.analysisStatus">{{ analysisLabel(row) }}</span><span class="status-chip" :data-status="row.review ? 'succeeded' : 'missing'">{{ row.review ? '可回看' : '尚無回看' }}</span><span v-if="row.candidate && !row.candidate.available" class="secondary">{{ row.candidate.reason }}</span></div><p v-if="stageProgress(row)" class="library-stage" role="status">{{ stageProgress(row) }}</p><p v-for="issue in reviewIssues[row.id] ?? []" :key="issue" class="library-issue">{{ issue }}</p></div>
-      <div class="library-card-actions"><RouterLink v-if="row.review" class="button-primary" :to="{ name: 'match-review', params: { matchId: row.id } }">開啟回看</RouterLink><RouterLink v-if="row.local && ['running', 'queued'].includes(row.local.latestTask?.status ?? '')" class="button-secondary" :to="{ name: 'tasks' }">查看進度</RouterLink><RouterLink v-else-if="row.local" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">{{ row.local.analysisStatus === 'unanalysed' ? '開始分析' : '繼續分析' }}</RouterLink><details v-if="row.kind === 'match' && (row.local || row.candidate?.available)" class="library-more"><summary title="更多操作" :aria-label="`${row.name} 更多操作`"><AppIcon name="more" /></summary><div class="library-more-menu"><RouterLink v-if="row.local" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">分析設定</RouterLink><RouterLink v-if="row.local" :to="{ name: 'match-analysis', params: { matchId: row.local.id }, query: { court: '1' } }">場地校正</RouterLink><button v-if="row.candidate?.available" type="button" :disabled="publishing !== null" @click="publish(row)">{{ publishing === rawId(row) ? '匯入中…' : row.review ? '重新匯入分析結果' : '匯入已有分析結果' }}</button></div></details></div>
+      <div class="library-card-content"><div class="library-card-title"><h2>{{ row.name }}</h2><span v-if="row.kind === 'fixture'" class="status-chip">示範</span></div><div class="library-card-meta"><span class="status-chip" :data-status="row.local?.latestTask?.status ?? row.local?.analysisStatus">{{ analysisLabel(row) }}</span><span class="status-chip" :data-status="row.review ? 'succeeded' : 'missing'">{{ row.review ? '可回看' : '尚無回看' }}</span><span v-if="row.candidate && !row.candidate.available" class="secondary">{{ row.candidate.reason }}</span></div><p v-if="stageProgress(row)" class="library-stage" role="status">{{ stageProgress(row) }}</p><StageProgress v-if="currentStageState(row)" :status="currentStageState(row)!.status" :progress="currentStageState(row)!.progress" :label="`${row.name} 目前階段進度`" /><p v-for="issue in reviewIssues[row.id] ?? []" :key="issue" class="library-issue">{{ issue }}</p></div>
+      <div class="library-card-actions"><RouterLink v-if="row.review" class="button-primary" :to="{ name: 'match-review', params: { matchId: row.id } }">開啟回看</RouterLink><RouterLink v-if="row.local && ['running', 'queued'].includes(row.local.latestTask?.status ?? '')" class="button-secondary" :to="{ name: 'tasks' }">查看進度</RouterLink><RouterLink v-else-if="row.local" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">{{ row.local.analysisStatus === 'unanalysed' ? '開始分析' : '分析設定' }}</RouterLink><button v-if="row.kind === 'match' && row.candidate?.available" type="button" class="button-secondary" :title="row.review ? '以目前的分析結果更新回看' : '把已有的分析結果匯入成回看'" :disabled="publishing !== null" @click="publish(row)">{{ publishing === rawId(row) ? '匯入中…' : '匯入結果' }}</button></div>
     </article></div>
   </main>
 </template>

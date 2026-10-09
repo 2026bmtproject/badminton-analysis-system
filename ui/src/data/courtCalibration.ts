@@ -25,7 +25,17 @@ export function saveCourt(matchId: string, revision: string, corners: CourtPoint
   return request<{ staleStages: string[]; unknownStages: string[] }>("/save", { matchId, revision, corners });
 }
 
-export function clientToCourt(clientX: number, clientY: number, rect: DOMRect, width: number, height: number): CourtPoint {
-  return [Math.max(0, Math.min(width, (clientX - rect.left) * width / rect.width)),
-    Math.max(0, Math.min(height, (clientY - rect.top) * height / rect.height))];
+export type ViewBox = { x: number; y: number; width: number; height: number };
+
+/**
+ * Maps a pointer position to image pixels through the SVG viewBox. The default
+ * `xMidYMid meet` scales the viewBox uniformly and centres it, so a height-capped
+ * element letterboxes instead of stretching. Results are clamped to the image.
+ */
+export function clientToCourt(clientX: number, clientY: number, rect: DOMRect, view: ViewBox, width: number, height: number): CourtPoint {
+  const scale = Math.min(rect.width / view.width, rect.height / view.height);
+  const left = rect.left + (rect.width - view.width * scale) / 2;
+  const top = rect.top + (rect.height - view.height * scale) / 2;
+  return [Math.max(0, Math.min(width, view.x + (clientX - left) / scale)),
+    Math.max(0, Math.min(height, view.y + (clientY - top) / scale))];
 }

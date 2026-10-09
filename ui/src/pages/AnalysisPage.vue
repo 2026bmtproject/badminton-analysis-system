@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { useRoute } from "vue-router";
 import PipelinePanel from "../components/PipelinePanel.vue";
-import AppIcon from "../components/ui/AppIcon.vue";
 import { loadCatalog } from "../data/matchRepository";
 import { listPipelineMatches, type LocalAnalysisMatch } from "../data/pipelineTasks";
 
@@ -32,9 +31,9 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 <template>
   <main class="section-page analysis-page">
-    <header class="section-page-header"><div><RouterLink class="back-link" :to="{ name: 'matches' }"><AppIcon name="arrow-left" /> 比賽庫</RouterLink><span class="section-kicker">分析設定</span><h1>{{ name }}</h1><p>選擇分析項目、檢查計畫，再開始執行。</p></div><RouterLink v-if="hasReview" class="button-secondary" :to="{ name: 'match-review', params: { matchId: `match:${rawId}` } }">開啟回看</RouterLink></header>
+    <header class="section-page-header"><div><span class="section-kicker">分析設定</span><h1>{{ name }}</h1></div></header>
     <p v-if="loading" role="status">載入中…</p>
     <p v-else-if="error" class="error" role="alert">{{ error }} <button type="button" @click="load">重試</button></p>
-    <PipelinePanel v-else-if="match" :match="match" :has-review="hasReview" :open-court="route.query.court === '1'" @updated="load" />
+    <PipelinePanel v-else-if="match" :match="match" :has-review="hasReview" @updated="load" />
   </main>
 </template>

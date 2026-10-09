@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { getPipelineLogs, listPipelineTasks, taskStatusLabel, type PipelineTask } from "../data/pipelineTasks";
+import StageProgress from "../components/ui/StageProgress.vue";
+import { getPipelineLogs, listPipelineTasks, taskElapsed, taskStatusLabel, type PipelineTask } from "../data/pipelineTasks";
 import { stageLabel } from "../data/stageLabels";
 
 const tasks = ref<PipelineTask[]>([]);
@@ -19,9 +20,7 @@ async function load() {
   finally { loading.value = false; now.value = Date.now(); }
 }
 function elapsed(task: PipelineTask) {
-  if (!task.startedAt) return "尚未開始";
-  const end = task.finishedAt ? Date.parse(task.finishedAt) : now.value;
-  return `${Math.max(0, Math.floor((end - Date.parse(task.startedAt)) / 1000))} 秒`;
+  return taskElapsed(task, now.value) ?? "尚未開始";
 }
 async function moreLogs(id: string) {
   try {
@@ -40,15 +39,15 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 <template>
   <main class="section-page tasks-page">
-    <header class="section-page-header"><div><span class="section-kicker">執行紀錄</span><h1>任務</h1><p>分析會在關閉頁面後繼續；重新開啟即可查看狀態。</p></div><button class="button-secondary" type="button" @click="load">重新整理</button></header>
+    <header class="section-page-header"><div><h1>任務</h1></div><button class="button-secondary" type="button" @click="load">重新整理</button></header>
     <p v-if="loading" role="status">載入任務中…</p>
     <p v-if="error" class="error" role="alert">{{ error }} <RouterLink :to="{ name: 'settings', query: { advanced: '1' } }">檢查服務設定</RouterLink></p>
     <p v-if="!loading && !error && !ordered.length" class="console-panel empty-state">尚無分析任務。請從比賽庫選擇一場比賽開始。</p>
     <div class="task-list"><article v-for="task in ordered" :key="task.id" class="console-panel task-card">
       <header><div><h2>{{ task.matchId }}</h2><span class="secondary">{{ new Date(task.createdAt).toLocaleString('zh-TW') }} · {{ elapsed(task) }}</span></div><span class="status-chip" :data-status="task.status">{{ taskStatusLabel(task.status) }}</span></header>
       <p v-if="task.currentStage">目前階段：{{ stageLabel(task.currentStage) }}</p>
-      <p v-if="task.error" class="error" role="alert">{{ task.error }}<span v-if="task.exitCode !== null">（exit {{ task.exitCode }}）</span></p>
-      <ul class="task-stage-list"><li v-for="(stage, name) in task.stageStates" :key="name"><span>{{ stageLabel(String(name)) }}</span><span>{{ taskStatusLabel(stage.status) }}<template v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</template></span></li></ul>
+      <p v-if="task.error" class="error" role="alert">{{ task.error }}</p>
+      <ul class="task-stage-list"><li v-for="(stage, name) in task.stageStates" :key="name"><span>{{ stageLabel(String(name)) }}</span><span>{{ taskStatusLabel(stage.status) }}<template v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</template></span><StageProgress :status="stage.status" :progress="stage.progress" :label="`${stageLabel(String(name))}進度`" /></li></ul>
       <footer><RouterLink class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: task.matchId } }">查看分析設定</RouterLink><button type="button" class="button-secondary" :aria-expanded="expanded === task.id" @click="toggleLogs(task.id)">{{ expanded === task.id ? '收合記錄' : '詳細記錄' }}</button></footer>
       <div v-if="expanded === task.id" class="pipeline-logs"><pre>{{ (logs[task.id] ?? []).join('\n') }}</pre><button type="button" class="button-secondary" @click="moreLogs(task.id)">載入更多</button></div>
     </article></div>
