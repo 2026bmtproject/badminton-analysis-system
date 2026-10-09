@@ -22,11 +22,10 @@ const props = withDefaults(
     rally: RallyModel;
     activeId: number | null;
     selectedStrokeIndex: number | null;
-    page?: boolean;
     showStrokeList?: boolean;
     followPlayback?: boolean;
   }>(),
-  { page: false, showStrokeList: true, followPlayback: false },
+  { showStrokeList: true, followPlayback: false },
 );
 const emit = defineEmits<{
   back: [];
@@ -138,8 +137,8 @@ function evidenceNavigable(evidence: EvidenceModel) {
 </script>
 
 <template>
-  <div class="rally-detail" :class="{ 'rally-detail--page': page }">
-    <nav v-if="!page && !followPlayback" class="detail-nav" aria-label="片段切換">
+  <div class="rally-detail">
+    <nav v-if="!followPlayback" class="detail-nav" aria-label="片段切換">
       <button ref="backButton" @click="emit('back')">
         <AppIcon name="arrow-left" />返回清單
       </button>

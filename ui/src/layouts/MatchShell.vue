@@ -86,18 +86,6 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
         >
           回看
         </RouterLink>
-        <RouterLink
-          class="match-route-link"
-          :aria-current="
-            route.name === 'match-rallies' ? 'page' : undefined
-          "
-          :to="{
-            name: 'match-rallies',
-            params: { matchId: routeMatchId() ?? '' },
-          }"
-        >
-          片段列表
-        </RouterLink>
       </nav>
     </header>
 

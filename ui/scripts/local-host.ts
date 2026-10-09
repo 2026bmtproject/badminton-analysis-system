@@ -97,7 +97,7 @@ export async function startLocalHost(context: LocalRuntime, distDir: string,
       if (asset) return await file(res, join(dist, "assets", asset[1]), head);
       if (path.startsWith("/assets/") || path.startsWith("/generated/"))
         return json(res, 404, { error: "not found" });
-      if (path === "/" || path === "/matches" || path === "/tasks" || path === "/settings" || /^\/analysis\/[^/]+$/.test(path) || /^\/matches\/[^/]+(?:\/review|\/rallies(?:\/[^/]+)?)?$/.test(path)) {
+      if (path === "/" || path === "/matches" || path === "/tasks" || path === "/settings" || /^\/analysis\/[^/]+$/.test(path) || /^\/matches\/[^/]+(?:\/review)?$/.test(path)) {
         res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'");
         return await file(res, join(dist, "index.html"), head);
       }

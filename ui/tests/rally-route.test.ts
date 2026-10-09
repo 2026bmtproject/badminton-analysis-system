@@ -3,11 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { MatchModel, RallyModel } from "../src/domain/models";
 import {
-  browseRallies,
-  normalizeRallyBrowseQuery,
-  rallyGames,
-} from "../src/rallies/rallyBrowse";
-import {
   canonicalInteger,
   findStrokeTarget,
   resolveRouteRally,
@@ -91,64 +86,6 @@ const model: MatchModel = {
   ],
 };
 
-test("browse query accepts only canonical game, commentary and available Highlight sort", () => {
-  assert.deepEqual(rallyGames(model), [0, 1]);
-  const normalized = normalizeRallyBrowseQuery(
-    { game: "1", commentary: "available", sort: "highlight", junk: "x" },
-    model,
-  );
-  assert.deepEqual(normalized.state, {
-    game: 1,
-    commentary: "available",
-    sort: "highlight",
-  });
-  assert.deepEqual(normalized.query, {
-    game: "1",
-    commentary: "available",
-    sort: "highlight",
-  });
-  const invalid = normalizeRallyBrowseQuery(
-    { game: "7", commentary: "maybe", sort: "cheer" },
-    model,
-  );
-  assert.deepEqual(invalid.query, {});
-});
-
-test("browse filtering preserves partial commentary truth and canonical IDs", () => {
-  const filtered = browseRallies(model, {
-    game: null,
-    commentary: "available",
-    sort: "time",
-  });
-  assert.deepEqual(
-    filtered.map((item) => item.id),
-    [2],
-  );
-  assert.equal(
-    filtered.length,
-    model.commentaryAvailability.availableRallyCount,
-  );
-});
-
-test("Highlight ranking never uses Cheer and falls back when capability is missing", () => {
-  assert.deepEqual(
-    browseRallies(model, {
-      game: null,
-      commentary: "all",
-      sort: "highlight",
-    }).map((item) => item.id),
-    [2, 42, 10],
-  );
-  const without = {
-    ...model,
-    capabilities: { ...model.capabilities, highlight: false },
-  };
-  assert.equal(
-    normalizeRallyBrowseQuery({ sort: "highlight" }, without).state.sort,
-    "time",
-  );
-});
-
 test("route identity uses canonical Rally.id and Stroke.eventIndex without nearest fallback", () => {
   assert.equal(resolveRouteRally(model, "42")?.id, 42);
   assert.equal(resolveRouteRally(model, "0"), null);
@@ -161,14 +98,12 @@ test("route identity uses canonical Rally.id and Stroke.eventIndex without neare
   assert.equal(canonicalInteger("-1"), null);
 });
 
-test("Rallies opens the shared Review player at a canonical segment", () => {
-  const browser = readFileSync("src/components/inspector/RallyBrowser.vue", "utf8");
+test("Review opens the shared player at a canonical segment from the route query", () => {
   const inspector = readFileSync(
     "src/components/inspector/RallyInspector.vue",
     "utf8",
   );
   const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(browser, /query: \{ segment: String\(rally\.id\) \}/);
   assert.match(review, /resolveRouteRally\(model\.value, segment\)/);
   assert.match(review, /workspace\.selectStroke\(stroke\)/);
   assert.match(review, /workspace\.selectRally\(rally\)/);

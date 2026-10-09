@@ -27,30 +27,11 @@ test("valid Match selection resolves the exact catalog identity", () => {
   assert.equal(resolved.params.matchId, "yt_u7yDYU4b7CU");
 });
 
-test("Rallies remains a MatchShell child and old detail links redirect into Review", () => {
-  const router = createAppRouter(createMemoryHistory());
-  assert.equal(
-    router.resolve({ name: "match-rallies", params: { matchId: "match:real" } })
-      .fullPath,
-    "/matches/match:real/rallies",
-  );
-  assert.equal(
-    router.resolve({
-      name: "rally-detail",
-      params: { matchId: "match:real", segmentId: 42 },
-      query: { stroke: "671" },
-    }).fullPath,
-    "/matches/match:real/rallies/42?stroke=671",
-  );
+test("the Rallies list and its detail links are gone", () => {
   const matchRoute = routes.find((route) => route.path === "/matches/:matchId");
-  const detailRoute = matchRoute?.children?.find((route) => route.name === "rally-detail");
-  assert.equal(typeof detailRoute?.redirect, "function");
-  const redirect = detailRoute!.redirect as (to: unknown) => unknown;
-  assert.deepEqual(redirect({ params: { matchId: "match:real", segmentId: "42" }, query: { stroke: "671" } }), {
-    name: "match-review",
-    params: { matchId: "match:real" },
-    query: { segment: "42", stroke: "671" },
-  });
+  assert.deepEqual(matchRoute?.children?.map((route) => route.name), ["match-review"]);
+  const router = createAppRouter(createMemoryHistory());
+  assert.equal(router.resolve("/matches/match:real/rallies").matched.length, 0);
 });
 
 test("MatchShell loads one exact MatchModel and fails closed for an invalid id", () => {
@@ -101,8 +82,7 @@ test("browser-style back semantics use real links and no duplicate Match Library
   );
   assert.match(shell, /aria-label="比賽導覽"/);
   assert.match(shell, />\s*回看\s*<\/RouterLink>/);
-  assert.match(shell, />\s*片段列表\s*<\/RouterLink>/);
-  assert.match(shell, /route\.name === 'match-rallies'/);
+  assert.doesNotMatch(shell, /片段列表|match-rallies/);
   assert.match(routePaths, /analysis|tasks|settings/i);
   assert.doesNotMatch(routePaths, /watch|highlights|system/i);
   assert.doesNotMatch(

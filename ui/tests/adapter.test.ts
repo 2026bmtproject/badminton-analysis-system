@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { adapt, manifestSchema, type Input } from "../scripts/adapter";
-import { rankRallies } from "../src/review";
 const manifest = manifestSchema.parse(
   JSON.parse(readFileSync("fixtures/manifest.json", "utf8")),
 );
@@ -17,7 +16,7 @@ function fixtures(): Input {
 function full() {
   return adapt(fixtures(), manifest, "full");
 }
-test("absolute time, full-match indexes, segment mapping and ranking preserve IDs", () => {
+test("absolute time, full-match indexes and segment mapping preserve IDs", () => {
   const m = full();
   const h = m.rallies[1].hits![2];
   assert.equal(h.eventIndex, 7);
@@ -26,10 +25,6 @@ test("absolute time, full-match indexes, segment mapping and ranking preserve ID
   assert.equal(h.time, 14.48);
   assert.equal(h.frame, 362);
   assert.equal(h.player, "球員 A");
-  assert.deepEqual(
-    rankRallies(m.rallies, "highlight").map((r) => r.id),
-    [1, 2, 3, 0],
-  );
   assert.deepEqual(
     m.rallies.map((r) => r.id),
     [0, 1, 2, 3],

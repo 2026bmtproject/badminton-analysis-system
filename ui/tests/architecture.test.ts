@@ -33,7 +33,6 @@ import {
   formatTimelineAxisTime,
   scoreText,
 } from "../src/format";
-import { rankRallies } from "../src/review";
 
 const rally = (id: number, start: number, end: number): RallyModel => ({
   id,
@@ -417,29 +416,6 @@ test("edge labels align inward without changing temporal registration", () => {
   assert.equal(edgeLabelSide(100, 200, 18), "center");
   assert.equal(edgeLabelSide(195, 200, 18), "end");
   assert.equal(midpoint, 5);
-});
-
-test("highlight ranking uses only highlight then chronological identity", () => {
-  const items = [rally(3, 30, 31), rally(1, 10, 11), rally(2, 20, 21)];
-  items[0].highlight = null;
-  items[0].audio = {
-    segmentIndex: 3,
-    confidence: 0.99,
-    intensity: 1,
-    windowCount: 1,
-  };
-  items[1].highlight = null;
-  items[1].audio = {
-    segmentIndex: 1,
-    confidence: 0.01,
-    intensity: 0,
-    windowCount: 1,
-  };
-  items[2].highlight = 0.5;
-  assert.deepEqual(
-    rankRallies(items, "highlight").map((item) => item.id),
-    [2, 1, 3],
-  );
 });
 
 test("runtime parser rejects impossible canonical timeline states", () => {

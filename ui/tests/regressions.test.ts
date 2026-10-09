@@ -726,17 +726,11 @@ test("score labels have a dedicated exact-identity interaction target", () => {
   assert.match(timeline, /scoreLaneRally/);
 });
 
-test("routed Rally Browser removes embedded list bookkeeping from Review", () => {
-  const browser = readFileSync(
-    "src/components/inspector/RallyBrowser.vue",
-    "utf8",
-  );
+test("Review inspector keeps no embedded list bookkeeping", () => {
   const inspector = readFileSync(
     "src/components/inspector/RallyInspector.vue",
     "utf8",
   );
-  assert.match(browser, /normalizeRallyBrowseQuery/);
-  assert.match(browser, /router\.replace/);
   assert.doesNotMatch(inspector, /RallyBrowser/);
   assert.doesNotMatch(inspector, /listScrollTop|returnFocusId/);
 });

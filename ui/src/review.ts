@@ -1,21 +1,4 @@
-import type { CommentaryEventModel, RallyModel } from "./domain/models";
-
-export type RallySort = "time" | "highlight" | "cheer";
-
-export function rankRallies(
-  rallies: RallyModel[],
-  sort: RallySort,
-): RallyModel[] {
-  return [...rallies].sort(
-    sort === "time"
-      ? (a, b) => a.start - b.start || a.id - b.id
-      : (a, b) => {
-          const scoreA = sort === "cheer" ? a.audio?.confidence : a.highlight;
-          const scoreB = sort === "cheer" ? b.audio?.confidence : b.highlight;
-          return (scoreB ?? -1) - (scoreA ?? -1) || a.start - b.start || a.id - b.id;
-        },
-  );
-}
+import type { CommentaryEventModel } from "./domain/models";
 
 export function relatedCommentaryEvents(
   events: CommentaryEventModel[],

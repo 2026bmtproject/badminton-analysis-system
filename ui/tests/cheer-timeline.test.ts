@@ -6,7 +6,6 @@ import { parseMatchModel } from "../src/data/matchParser";
 import { cheerCurvePaths, cheerCurvePoint } from "../src/temporal/cheerCurve";
 import { timelineHoverPreview } from "../src/components/timeline/timelinePreview";
 import { matchViewport, rallyViewport, timeToPercent } from "../src/temporal/timeline";
-import { rankRallies } from "../src/review";
 
 const manifest = manifestSchema.parse(JSON.parse(readFileSync("fixtures/manifest.json", "utf8")));
 function fixtures(): Input {
@@ -15,7 +14,7 @@ function fixtures(): Input {
   ]));
 }
 
-test("window probabilities pass through import while segment scores and highlight ranking stay unchanged", () => {
+test("window probabilities pass through import while segment scores and highlight scores stay unchanged", () => {
   const raw = fixtures();
   raw.audio_signals = {
     ...(raw.audio_signals as object),
@@ -32,8 +31,7 @@ test("window probabilities pass through import while segment scores and highligh
     [12.5, 0.2], [13.5, 0.8], [14.5, 0.3], [23.5, 0.6],
   ]);
   assert.deepEqual(after.rallies.map((rally) => rally.audio), before.rallies.map((rally) => rally.audio));
-  assert.deepEqual(rankRallies(after.rallies, "highlight").map((rally) => rally.id),
-    rankRallies(before.rallies, "highlight").map((rally) => rally.id));
+  assert.deepEqual(after.rallies.map((rally) => rally.highlight), before.rallies.map((rally) => rally.highlight));
   assert.deepEqual(timelineHoverPreview({ kind: "cheer-window", id: 1 }, after.rallies, after.cheerTimeline), {
     title: "00:13",
     lines: ["Cheer probability: 0.80"],

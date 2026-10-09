@@ -31,20 +31,6 @@ export const routes: RouteRecordRaw[] = [
         name: "match-review",
         component: () => import("./pages/ReviewPage.vue"),
       },
-      {
-        path: "rallies",
-        name: "match-rallies",
-        component: () => import("./pages/RalliesPage.vue"),
-      },
-      {
-        path: "rallies/:segmentId",
-        name: "rally-detail",
-        redirect: (to) => ({
-          name: "match-review",
-          params: { matchId: to.params.matchId },
-          query: { segment: to.params.segmentId, stroke: to.query.stroke },
-        }),
-      },
     ],
   },
 ];
