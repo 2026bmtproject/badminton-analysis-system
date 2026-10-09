@@ -39,6 +39,10 @@ export function rallyBreakPreview(item: RallyBreak): TimelineHoverPreview {
   };
 }
 
+function shorten(text: string, limit: number) {
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
 function rallyIndex(rally: RallyModel) {
   return `片段 ${String(rally.id + 1).padStart(3, "0")}`;
 }
@@ -77,6 +81,11 @@ export function timelineHoverPreview(
     const lines = [`${rally.duration.toFixed(2)} 秒`];
     if (rally.hits !== null) lines.push(`${rally.hits.length} 拍`);
     if (rally.score) lines.push(`比分 ${scoreText(rally.score)}`);
+    if (rally.multi && rally.subScores.length)
+      lines.push(`多筆比分 ${rally.subScores.map(scoreText).join(" → ")}`);
+    // Review reasons: a raw recogniser note can run long, so only its start is shown.
+    if (rally.scoreIssue !== undefined) lines.push(`比分無法辨識：${shorten(rally.scoreIssue, 60)}`);
+    if (rally.gameConflict !== undefined) lines.push(rally.gameConflict);
     // The lane itself stays neutral; who took the point is shown only on request.
     const winner = lead ? rallyWinner(lead.model, rally.id) : null;
     if (winner && lead) lines.push(`得分：${playerName(lead.players[winner], winner.toUpperCase())}`);
@@ -109,10 +118,9 @@ export function timelineHoverPreview(
       .find((rally) => rally.id === rallyId)
       ?.commentary.events.find((item) => item.strokeIndex === strokeIndex);
     if (!comment) return null;
-    const shortText = comment.text.length > 72 ? `${comment.text.slice(0, 71)}…` : comment.text;
     return {
       title: "賽評",
-      lines: [formatPreciseTime(comment.timeSec), shortText],
+      lines: [formatPreciseTime(comment.timeSec), shorten(comment.text, 72)],
     };
   }
   const rally = rallies.find((item) => item.id === mark.id);

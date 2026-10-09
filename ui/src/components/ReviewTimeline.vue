@@ -95,9 +95,14 @@ const STROKE_TRACK_BASE_HEIGHT_PX = 28;
 const STROKE_DETAIL_HEIGHT_PX = 32;
 const SIGNAL_LANE_HEIGHT_PX = 72;
 const SIGNAL_LANE_MARGIN_PX = 8;
-/** Rally lane geometry in track pixels: bars grow up from a baseline under the game label row. */
+/**
+ * Rally lane geometry in track pixels, top to bottom: the label row (game
+ * labels, rally numbers), the review-flag row, then bars growing up from the
+ * baseline. Each row keeps to itself, so a flag never sits on a number.
+ */
+const RALLY_FLAG_Y_PX = 17;
 const RALLY_BASELINE_PX = 42;
-const RALLY_BAR_EXTENT_PX = 26;
+const RALLY_BAR_EXTENT_PX = 20;
 const props = withDefaults(
   defineProps<{
     model: MatchModel;
@@ -983,16 +988,27 @@ const timelineStyle = computed(() => ({
                 :y="RALLY_BASELINE_PX - bar.fraction * RALLY_BAR_EXTENT_PX"
                 :height="bar.fraction * RALLY_BAR_EXTENT_PX"
               />
+              <!-- A multi-point segment is cut where its score changed. -->
+              <template v-for="bar in rallyMarks.bars" :key="`splits-${bar.rallyId}`">
+                <line
+                  v-for="x in bar.splits"
+                  :key="x"
+                  class="rally-split"
+                  :x1="x + '%'"
+                  :x2="x + '%'"
+                  :y1="RALLY_BASELINE_PX - bar.fraction * RALLY_BAR_EXTENT_PX"
+                  :y2="RALLY_BASELINE_PX"
+                />
+              </template>
               <svg
-                v-for="item in rallyMarks.intervals"
-                :key="`interval-${item.key}`"
-                class="rally-interval"
-                :x="item.x + '%'"
-                :y="RALLY_BASELINE_PX"
+                v-for="flag in rallyMarks.flags"
+                :key="`flag-${flag.rallyId}`"
+                class="rally-flag"
+                :x="flag.x + '%'"
+                :y="RALLY_FLAG_Y_PX"
                 overflow="visible"
               >
-                <line x1="-2" x2="-2" y1="-9" y2="-2" />
-                <line x1="2" x2="2" y1="-9" y2="-2" />
+                <polygon points="0,-3.5 3.5,2.5 -3.5,2.5" />
               </svg>
             </svg>
             <span
@@ -1002,14 +1018,6 @@ const timelineStyle = computed(() => ({
               :style="{ left: label.x + '%' }"
               aria-hidden="true"
             >{{ label.text }}</span>
-            <template v-for="item in rallyMarks.intervals" :key="`interval-label-${item.key}`">
-              <span
-                v-if="item.text"
-                class="rally-interval-label"
-                :style="{ left: item.x + '%' }"
-                aria-hidden="true"
-              >{{ item.text }}</span>
-            </template>
             <!-- Positioned by a composited transform in track-width units, like the
                  score chips, so the digits glide with the bars instead of snapping. -->
             <span

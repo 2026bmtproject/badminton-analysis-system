@@ -189,19 +189,14 @@
 .rally-bar.rally-bar[data-wide].hovered {
   fill-opacity: 0.3;
 }
-.rally-interval line {
-  stroke: var(--color-text-muted);
+/* Cuts the bar in the lane's own background colour. */
+.rally-split {
+  stroke: var(--color-surface);
   stroke-width: 1.5;
 }
-.rally-interval-label {
-  position: absolute;
-  top: 16px;
-  color: var(--color-text-muted);
-  font-size: 10px;
-  line-height: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  transform: translateX(-50%);
+/* Same triangle for an unreadable score and a disputed game; the tooltip says which. */
+.rally-flag polygon {
+  fill: var(--color-warning);
 }
 .cheer-curve {
   position: absolute;

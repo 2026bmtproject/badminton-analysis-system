@@ -7,7 +7,6 @@ import {
   MIN_BAR_FRACTION,
   breakAt,
   highlightRanks,
-  labelWidthPx,
   rallyBarFraction,
   rallyIndexLabels,
   rallyLaneMarks,
@@ -130,7 +129,7 @@ test("bar height is sqrt of duration against the 95th percentile, floored and ca
 test("lane marks are neutral: bars carry no winner", () => {
   const rallies = [rally(0, [0, 0]), rally(1, [1, 0]), rally(2, [1, 1])];
   const marks = rallyLaneMarks(model(rallies), rallies, { startSec: 0, endSec: 100, durationSec: 100 }, 1000);
-  assert.deepEqual(Object.keys(marks.bars[0]!).sort(), ["fraction", "rallyId", "wide", "width", "x"]);
+  assert.deepEqual(Object.keys(marks.bars[0]!).sort(), ["fraction", "rallyId", "splits", "wide", "width", "x"]);
 });
 
 test("bars keep a visible minimum width, cull outside the viewport and turn to a tint when wide", () => {
@@ -146,17 +145,12 @@ test("bars keep a visible minimum width, cull outside the viewport and turn to a
   assert.equal(at(10), true);
 });
 
-test("only technical intervals are marked, labelled when the gap has room", () => {
-  const rallies = [
-    rally(0, [10, 4], 0, { start: 0 }),
-    rally(1, [11, 4], 0, { start: 90 }),
-    rally(2, [12, 4], 0, { start: 160 }), // 62 s: long, unmarked
-  ];
+test("breaks are never drawn on the lane; hovering the gap names them", () => {
+  const rallies = [rally(0, [10, 4], 0, { start: 0 }), rally(1, [11, 4], 0, { start: 90 })];
   const lane = model(rallies);
-  const view = { startSec: 0, endSec: 200, durationSec: 200 };
-  assert.deepEqual(rallyLaneMarks(lane, rallies, view, 2000).intervals, [{ key: "0", x: 24.5, text: "技術暫停" }]);
-  assert.equal(rallyLaneMarks(lane, rallies, view, 100).intervals[0]?.text, null);
-  assert.ok(labelWidthPx("技術暫停") > labelWidthPx("G1"));
+  assert.equal(lane.breaks[0]?.kind, "interval");
+  const marks = rallyLaneMarks(lane, rallies, { startSec: 0, endSec: 200, durationSec: 200 }, 2000);
+  assert.deepEqual(Object.keys(marks).sort(), ["bars", "flags"]);
 });
 
 test("the rally tooltip names who took the point; the lane never does", () => {
@@ -243,4 +237,42 @@ test("the rally tooltip gives the highlight place, never the score", () => {
   const lines = timelineHoverPreview({ kind: "rally", id: 2 }, scored)?.lines ?? [];
   assert.equal(lines.at(-1), "精華排名 #2 / 3");
   assert.ok(!lines.some((line) => line.includes("0.6")));
+});
+
+test("review flags mark an unreadable score or a disputed game, one triangle each", () => {
+  const rallies = [
+    rally(0, [0, 0]),
+    rally(1, null, 0, { scoreIssue: "parse error: no digits" }),
+    rally(2, [2, 0], 0, { gameConflict: "局數衝突：scores 第 1 局；identity 推導第 2 局" }),
+    rally(3, [3, 0]),
+  ];
+  const marks = rallyLaneMarks(model(rallies), rallies, { startSec: 0, endSec: 120, durationSec: 120 }, 1200);
+  assert.deepEqual(marks.flags.map((flag) => flag.rallyId), [1, 2]);
+  assert.equal(marks.flags[0]!.x, 34 / 120 * 100, "at the Rally centre");
+});
+
+test("a multi-point bar is cut at each score change once it has room", () => {
+  const multi = rally(0, [3, 2], 0, { start: 0, duration: 20, multi: true, subScores: [[3, 2], [3, 3]], splits: [12, 40] });
+  const lane = model([multi]);
+  const at = (width: number) =>
+    rallyLaneMarks(lane, [multi], { startSec: 0, endSec: 100, durationSec: 100 }, width).bars[0]!.splits;
+  assert.deepEqual(at(1000), [12], "a split outside the Rally is dropped");
+  assert.deepEqual(at(50), [], "a 10 px bar has no room for a cut");
+  const single = rally(1, [0, 0], 0, { start: 0, duration: 20, splits: [12] });
+  assert.deepEqual(rallyLaneMarks(model([single]), [single], { startSec: 0, endSec: 100, durationSec: 100 }, 1000).bars[0]!.splits, []);
+});
+
+test("the rally tooltip explains a review flag and lists multi-point scores", () => {
+  const long = "parse error: " + "x".repeat(120);
+  const rallies = [
+    rally(0, null, 0, { scoreIssue: long }),
+    rally(1, [3, 2], 0, { gameConflict: "局數衝突：scores 第 1 局；identity 推導第 2 局", multi: true, subScores: [[3, 2], [3, 3]], splits: [35] }),
+  ];
+  const issue = timelineHoverPreview({ kind: "rally", id: 0 }, rallies)!.lines.at(-1)!;
+  assert.ok(issue.startsWith("比分無法辨識：parse error"));
+  assert.equal(issue.length, "比分無法辨識：".length + 60);
+  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 1 }, rallies)!.lines.slice(-2), [
+    "多筆比分 3:2 → 3:3",
+    "局數衝突：scores 第 1 局；identity 推導第 2 局",
+  ]);
 });

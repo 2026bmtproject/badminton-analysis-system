@@ -140,26 +140,30 @@ export const RALLY_BREAK_LABELS: Record<RallyBreakKind, string> = {
   long: "長間隔",
 };
 
-/** Rough width of a 10px timeline label: CJK glyphs are square, Latin and digits about 0.6 em. */
-export function labelWidthPx(text: string) {
-  let width = 6;
-  for (const char of text) width += char.codePointAt(0)! >= 0x2e80 ? 10 : char === " " ? 3 : 6;
-  return width;
-}
-
 export type RallyLaneMarks = {
-  /** `wide`: a zoomed-in bar that would read as a solid slab, drawn as a tint instead. */
-  bars: { rallyId: number; x: number; width: number; fraction: number; wide: boolean }[];
-  /** Technical intervals only: game breaks already have the game separator, other gaps stay blank. */
-  intervals: { key: string; x: number; text: string | null }[];
+  /**
+   * `wide`: a zoomed-in bar that would read as a solid slab, drawn as a tint instead.
+   * `splits`: where a multi-point segment's score changed, in percent; empty until the bar has room.
+   */
+  bars: { rallyId: number; x: number; width: number; fraction: number; wide: boolean; splits: number[] }[];
+  /** Rallies whose score or game needs review, at the Rally centre. */
+  flags: { rallyId: number; x: number }[];
 };
 
 const MIN_BAR_PX = 1.5;
 const WIDE_BAR_PX = 48;
+/** Below this a split line would just blot out a sliver of bar. */
+const SPLIT_MIN_BAR_PX = 12;
+
+/** A score the scoreboard could not read, or a game the sources disagree on. */
+export function needsReview(rally: RallyModel) {
+  return rally.scoreIssue !== undefined || rally.gameConflict !== undefined;
+}
 
 /**
  * Discrete marks in Timeline percent space. Neutral by design: nothing here
  * says who won a point, so the lane never spoils a match being watched.
+ * Breaks are not drawn either; hovering a gap names it.
  */
 export function rallyLaneMarks(
   model: RallyLaneModel,
@@ -171,26 +175,23 @@ export function rallyLaneMarks(
   const px = (percentValue: number) => (percentValue / 100) * trackWidth;
   const visible = (start: number, end: number) => end >= view.startSec && start <= view.endSec;
   const minBarPercent = (MIN_BAR_PX / Math.max(1, trackWidth)) * 100;
-  const marks: RallyLaneMarks = { bars: [], intervals: [] };
+  const marks: RallyLaneMarks = { bars: [], flags: [] };
   for (const rally of rallies) {
     if (!visible(rally.start, rally.end)) continue;
     const x = percent(rally.start);
+    const barPx = px(percent(rally.end) - x);
     marks.bars.push({
       rallyId: rally.id,
       x,
       width: Math.max(minBarPercent, percent(rally.end) - x),
       fraction: rallyBarFraction(rally.duration, model.durationCap),
-      wide: px(percent(rally.end) - x) > WIDE_BAR_PX,
+      wide: barPx > WIDE_BAR_PX,
+      splits:
+        rally.multi && barPx >= SPLIT_MIN_BAR_PX
+          ? rally.splits.filter((timeSec) => timeSec > rally.start && timeSec < rally.end).map(percent)
+          : [],
     });
-  }
-  for (const item of model.breaks) {
-    if (item.kind !== "interval" || !visible(item.start, item.end)) continue;
-    const label = RALLY_BREAK_LABELS.interval;
-    marks.intervals.push({
-      key: `${item.afterRallyId}`,
-      x: percent((item.start + item.end) / 2),
-      text: labelWidthPx(label) + 4 <= px(percent(item.end) - percent(item.start)) ? label : null,
-    });
+    if (needsReview(rally)) marks.flags.push({ rallyId: rally.id, x: percent((rally.start + rally.end) / 2) });
   }
   return marks;
 }
