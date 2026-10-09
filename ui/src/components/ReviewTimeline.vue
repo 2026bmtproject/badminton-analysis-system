@@ -165,6 +165,11 @@ const inspectionTrackWidth = ref(1);
 const inspectionClientX = ref(0);
 const inspectionClientY = ref(0);
 const hoveredMark = ref<TimelineHoverMark | null>(null);
+/** Only the fullscreen element renders in fullscreen, so the tooltip moves in there with it. */
+const tooltipTarget = ref<HTMLElement | string>("body");
+function syncTooltipTarget() {
+  tooltipTarget.value = document.fullscreenElement instanceof HTMLElement ? document.fullscreenElement : "body";
+}
 const hoverPreview = computed(() =>
   withDoubleClickHint(
     hoveredMark.value?.kind === "break"
@@ -234,10 +239,13 @@ onMounted(() => {
   measureTrackWidth();
   reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   reducedMotionQuery.addEventListener("change", handleReducedMotionChange);
+  syncTooltipTarget();
+  document.addEventListener("fullscreenchange", syncTooltipTarget);
 });
 onBeforeUnmount(() => {
   observer?.disconnect();
   reducedMotionQuery?.removeEventListener("change", handleReducedMotionChange);
+  document.removeEventListener("fullscreenchange", syncTooltipTarget);
   cancelLens();
   stopCenterFollow();
   clearTimeout(followResumeTimer);
@@ -1241,7 +1249,7 @@ const timelineStyle = computed(() => ({
         }}</span>
       </div>
     </div>
-    <Teleport to="body">
+    <Teleport :to="tooltipTarget">
       <div
         v-if="hoverPreview && inspectionTime !== null && !lensActive"
         class="timeline-hover-tooltip"

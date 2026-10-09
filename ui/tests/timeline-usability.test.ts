@@ -80,8 +80,11 @@ test("9. stroke and commentary previews expose real metadata", () => {
   assert.deepEqual(timelineHoverPreview({ kind: "stroke", id: 12 }, [rally]), { title: "第 3 拍", lines: ["00:42.00", "殺球", "a"] });
   assert.match(timelineHoverPreview({ kind: "commentary", id: "4:2" }, [rally])?.lines.join(" ") ?? "", /精準的進攻壓迫/);
 });
-test("10. hover preview is teleported above overlapping windows", () => {
-  assert.match(source("src/components/ReviewTimeline.vue"), /<Teleport to="body">[\s\S]*timeline-hover-tooltip/);
+test("10. hover preview is teleported above overlapping windows, into the fullscreen element when there is one", () => {
+  const timeline = source("src/components/ReviewTimeline.vue");
+  assert.match(timeline, /<Teleport :to="tooltipTarget">[\s\S]*timeline-hover-tooltip/);
+  assert.match(timeline, /document\.fullscreenElement instanceof HTMLElement \? document\.fullscreenElement : "body"/);
+  assert.match(timeline, /addEventListener\("fullscreenchange", syncTooltipTarget\)/);
   assert.match(source("src/styles/timeline.css"), /\.timeline-hover-tooltip\s*\{[\s\S]*z-index: calc\(var\(--z-overlay\) \+ 20\)/);
 });
 test("11. analysis header distinguishes rally and active stroke context", () => {
