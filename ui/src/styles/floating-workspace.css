@@ -286,7 +286,7 @@
 .analysis-tabs button[aria-pressed="true"] { border-bottom-color: var(--line-selected); background: rgb(255 255 255 / 5%); }
 .analysis-window-content > .rally-panel { flex: 1; }
 .analysis-court-view { min-height: 0; overflow: auto; padding: var(--space-3); }
-.analysis-court-view .rally-court-map { min-height: 0; border: 0; }
+.analysis-court-view .rally-court-map { min-height: 0; background: transparent; border: 0; }
 .analysis-court-view .rally-court-map__court { width: auto; max-width: 100%; height: min(43vh, 360px); aspect-ratio: 284 / 524; }
 
 .workspace-window--docked.workspace-window--analysis.workspace-window--collapsed {

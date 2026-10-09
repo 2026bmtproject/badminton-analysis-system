@@ -90,6 +90,9 @@ test("8. transparency changes only the rgba panel backgrounds", () => {
   assert.match(component, /alpha: Math\.min\(MAX_PANEL_ALPHA, Math\.max\(MIN_PANEL_ALPHA, 1 - value\)\)/);
   assert.match(styles, /background: rgb\(13 16 17 \/ var\(--workspace-panel-alpha\)\)/);
   assert.doesNotMatch(styles, /\.workspace-window\s*\{[^}]*opacity:/s);
+  // Panel content keeps no opaque surface of its own, or it would hide the panel's transparency.
+  assert.match(styles, /\.workspace-window__body \.rally-panel\s*\{[^}]*background: transparent;/s);
+  assert.match(styles, /\.analysis-court-view \.rally-court-map\s*\{[^}]*background: transparent;/s);
 });
 
 test("9. settings contains transparency without duplicate movement actions", () => {
