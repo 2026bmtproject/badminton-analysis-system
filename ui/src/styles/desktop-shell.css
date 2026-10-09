@@ -78,13 +78,24 @@ summary:focus-visible, .library-more summary:focus-visible { outline: 2px solid 
 .settings-summary summary { padding: 8px 0; font-weight: 600; }
 .settings-summary .desktop-setup { margin: 14px 0 0; border-radius: 12px; }
 .desktop-content .match-shell { min-height: calc(100vh - 24px); }
+/*
+ * Docked Review fills the viewport as a flex column: the stage takes whatever height the headers leave instead of a
+ * hand-tuned offset. Below the stage's 540px minimum the page scrolls, and so does the stacked layout (max-width: 1100px).
+ */
+@media (min-width: 1101px) {
+  .desktop-content:has(> .match-shell) { display: flex; flex-direction: column; }
+  .desktop-content > .match-shell:has(> .review-page) { display: flex; flex: 1 1 0; flex-direction: column; min-height: auto; }
+  .desktop-content .review-page { display: flex; flex: 1 1 0; flex-direction: column; }
+  .desktop-content .review-main--workspace { display: flex; flex: 1 1 0; flex-direction: column; }
+  .desktop-content .review-workspace-stage { flex: 1 1 0; height: auto; min-height: 540px; max-height: 1100px; }
+}
 .desktop-content .match-shell-header { width: 100%; grid-template-columns: minmax(110px,.4fr) minmax(0,1fr) auto; padding: 9px 24px; background: transparent; }
 .desktop-content .match-shell-identity { text-align: left; }
 .desktop-content .match-shell-identity--review { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .desktop-content .match-shell-identity h1 { font-size: 18px; }
 h1[tabindex="-1"]:focus { outline: none; }
 .desktop-content .review-main--workspace { width: 100%; max-width: none; padding: 14px 20px 20px; }
-.desktop-content .review-workspace-stage { gap: 12px; background: transparent; border: 0; height: clamp(540px, calc(100dvh - 188px), 1100px); }
+.desktop-content .review-workspace-stage { gap: 12px; background: transparent; border: 0; }
 .desktop-content .review-workspace-stage > .player, .desktop-content .workspace-window--docked { overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-panel); box-shadow: var(--shadow-panel); }
 .desktop-content .workspace-window--docked.workspace-window--analysis, .desktop-content .workspace-window--docked.workspace-window--timeline { border: 1px solid var(--color-border); }
 .desktop-content .review-workspace-stage .video-wrap { background: #030405; }

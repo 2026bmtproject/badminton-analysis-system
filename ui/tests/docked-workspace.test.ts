@@ -152,3 +152,9 @@ test("15. responsive layout stacks before docks can crush Video", () => {
   assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) var\(--analysis-dock-width/);
   assert.doesNotMatch(styles, /min-width: 680px/);
 });
+
+test("16. the docked stage fills the height the headers leave, without a hand-tuned viewport offset", () => {
+  const shell = source("src/styles/desktop-shell.css");
+  assert.doesNotMatch(shell, /review-workspace-stage[^}]*100dvh/);
+  assert.match(shell, /@media \(min-width: 1101px\) \{[\s\S]*\.desktop-content \.review-workspace-stage \{ flex: 1 1 0; height: auto; min-height: 540px; max-height: 1100px; \}/);
+});
