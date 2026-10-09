@@ -166,8 +166,8 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
       <p v-if="task.error" class="error" role="alert">{{ task.error }}<span v-if="task.exitCode !== null">（exit {{ task.exitCode }}）</span></p>
       <button type="button" :aria-expanded="showLogs" @click="showLogs = !showLogs; if (showLogs) moreLogs()">{{ showLogs ? "收合詳細記錄" : "查看詳細記錄" }}</button>
       <div v-if="showLogs" class="pipeline-logs"><pre>{{ lines.join('\n') }}</pre><button type="button" @click="moreLogs">載入更多</button></div>
-      <p v-if="task.status === 'succeeded'">分析已完成。{{ publishDone ? "回看資料已更新。" : "回看資料可重新整理。" }}</p>
-      <button v-if="task.status === 'succeeded'" type="button" :disabled="publishing" @click="publish">{{ publishing ? "更新中…" : "重新整理回看資料" }}</button>
+      <p v-if="task.status === 'succeeded'">分析已完成。{{ publishDone ? "回看資料已更新。" : "可重新匯入分析結果以更新回看。" }}</p>
+      <button v-if="task.status === 'succeeded'" type="button" :disabled="publishing" @click="publish">{{ publishing ? "匯入中…" : "重新匯入分析結果" }}</button>
       <p v-if="task.status === 'failed' || task.status === 'interrupted'">可重新查看計畫並建立新任務重試。</p>
     </section>
     <p v-if="publishError" class="error" role="alert">回看更新失敗：{{ publishError }}。原有回看資料仍可使用。</p>
