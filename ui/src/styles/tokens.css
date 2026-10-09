@@ -48,6 +48,9 @@
   --color-rally: #566168;
   --color-rally-hover: #707c83;
   --color-score: #d3d7d8;
+  /* Scoreboard rows A and B; validated as a CVD-safe pair on the dark surface. */
+  --color-player-a: #4f93cf;
+  --color-player-b: #cf6f5e;
   --color-stroke: #858f94;
   --color-playhead: #f2f3f0;
   --color-media-progress: #f3efe4;

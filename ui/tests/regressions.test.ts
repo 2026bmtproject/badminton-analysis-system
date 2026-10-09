@@ -312,16 +312,28 @@ test("rally fit retains window curve but hides segment highlight marks", () => {
   assert.doesNotMatch(signalHeader, /fit === 'rally'/);
 });
 
-test("score anchors remain tied to their source segment observation", () => {
+test("score lead lane draws non-text marks in SVG so scrolling never pixel-snaps them", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  assert.match(timeline, /:style="\{ left: position\(rally\.end\) \+ '%' \}"/);
-  assert.match(timeline, /class="score-marker__target"[\s\S]*:aria-label=/);
+  const styles = readFileSync("src/styles/timeline.css", "utf8");
+  assert.doesNotMatch(timeline, /<span[^>]*class="lead-(?:focus|separator|uncertain)/);
+  assert.match(timeline, /<svg\s+v-for="change in leadMarks\.changes"/);
+  assert.doesNotMatch(timeline, /leadMarks\.points/, "game points live in the hover text, not as marks");
+  assert.doesNotMatch(styles, /\.lead-mark[^{]*i/);
+  // Chips carry a 1px divider; only a self-composited transform moves it by subpixels.
+  assert.match(timeline, /class="score-state timeline-score-state lead-chip"[\s\S]{0,80}:style="\{ transform: `translateX\(calc\(\$\{chip\.x\}cqw - 50%\)\)` \}"/);
+  assert.match(styles, /\.lead-chip \{[^}]*will-change: transform;/s);
+  assert.doesNotMatch(timeline, /rotate\(45\)/, "no match point diamond");
+});
+
+test("score lead lane plots segment observations without deriving transitions", () => {
+  const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
+  const lead = readFileSync("src/temporal/scoreLead.ts", "utf8");
+  assert.match(timeline, /const leadModel = computed\(\(\) => scoreLeadModel\(props\.model\.rallies\)\)/);
+  assert.match(timeline, /class="lead-mark lead-mark--change"[\s\S]*:aria-label=/);
   assert.doesNotMatch(timeline, /比分事件|比分轉換/);
-  assert.match(timeline, /v-for="rally in scoreRallies"/);
-  assert.match(timeline, /v-if="showScoreLabel\(rally\.id\) && rally\.score"/);
-  assert.match(timeline, /candidate\.id === props\.selectedId/);
-  assert.match(timeline, /candidate\.id === props\.activeId/);
-  assert.doesNotMatch(timeline, /scoreLabelStride/);
+  // A step starts at its own Rally: the observation is the pre-Rally score.
+  assert.match(lead, /start: rally\.start,/);
+  assert.doesNotMatch(lead, /winnerFromTransition|連得/);
 });
 
 test("temporal map owns an opaque analytical surface", () => {
@@ -412,9 +424,9 @@ test("primary scores use the instrument divider while timeline semantics stay un
   }
   assert.match(inspector, /class="analysis-context-header"/);
   assert.match(inspector, /analysisContextSummary/);
-  assert.match(timeline, /class="score-state timeline-score-state"/);
+  assert.match(timeline, /class="score-state timeline-score-state lead-chip"/);
   assert.match(timeline, /class="score-state-divider" \/>/);
-  assert.match(timeline, /class="score-marker__target"[\s\S]*data-timeline-kind="score"/);
+  assert.match(timeline, /class="lead-mark lead-mark--change"[\s\S]*data-timeline-kind="score"/);
   assert.match(app, /workspace\.currentScore\.value/);
   assert.doesNotMatch(app, /replace\(\/\\s\*:\\s\*\//);
 });
@@ -497,10 +509,8 @@ test("temporal signature remains shape-led and preserves semantic hierarchy", ()
     timeline,
     /\.rally-block::before\s*\{[^}]*background:\s*transparent;[^}]*border-top:\s*2px solid var\(--color-rally\);[^}]*border-right:\s*1px solid var\(--color-rally\);[^}]*border-left:\s*1px solid var\(--color-rally\);/s,
   );
-  assert.match(
-    timeline,
-    /\.score-marker::after\s*\{[^}]*width:\s*1px;[^}]*height:\s*22px;/s,
-  );
+  assert.match(timeline, /\.lead-chart__line,\s*\.lead-chart__gap\s*\{[^}]*stroke:\s*var\(--color-score\);/s);
+  assert.match(timeline, /\.lead-chart__area\s*\{[^}]*fill:\s*var\(--color-player-a\);/s);
   assert.match(
     timeline,
     /\.stroke-tick\s*\{[^}]*width:\s*1px;[^}]*height:\s*12px;/s,
@@ -560,8 +570,7 @@ test("temporal coherence adds registration without changing temporal ownership",
   assert.match(timeline, /hoveredMark = ref/);
   assert.match(timeline, /resolveHoveredMark/);
   assert.match(timeline, /nearestTemporalMark/);
-  assert.match(timeline, /:style="\{ left: position\(rally\.end\) \+ '%' \}"/);
-  assert.match(timeline, /:data-side="scoreLabelSide\(rally\)"/);
+  assert.match(timeline, /<rect class="lead-focus" :data-state="band\.state" :x="band\.left"/);
   assert.match(
     timelineStyles,
     /\.timeline-inspection > span\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/s,
@@ -716,7 +725,7 @@ test("player resets source presentation while timeline owns arbitrary seek", () 
 
 test("score labels have a dedicated exact-identity interaction target", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  assert.match(timeline, /@click\.stop="selectScoreMarker\(rally\.id\)"/);
+  assert.match(timeline, /@click\.stop="selectScoreMarker\(change\.rallyId\)"/);
   assert.match(timeline, /exactMarkFromTarget/);
   assert.match(timeline, /scoreLaneRally/);
 });

@@ -1,5 +1,6 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
+import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
 
 export type TimelineHoverMark = {
   kind: "rally" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window" | "highlight";
@@ -8,10 +9,34 @@ export type TimelineHoverMark = {
 
 export type TimelineHoverPreview = { title: string; lines: string[] };
 
+export type LeadPreviewContext = { model: LeadModel; players: { a: string; b: string } };
+
+function rallyIndex(rally: RallyModel) {
+  return `片段 ${String(rally.id + 1).padStart(3, "0")}`;
+}
+
+function leadPreview(rally: RallyModel, lead: LeadPreviewContext): TimelineHoverPreview | null {
+  const entry = leadEntryAt(lead.model, rally.start);
+  if (!entry || entry.rally.id !== rally.id) return null;
+  const name = (side: "a" | "b") => playerName(lead.players[side], side.toUpperCase());
+  if (!("score" in entry)) {
+    return { title: "比分未觀測", lines: [formatPreciseTime(rally.start), rallyIndex(rally)] };
+  }
+  const lines = [
+    entry.lead === 0 ? "平手" : `${name(entry.lead > 0 ? "a" : "b")} 領先 ${Math.abs(entry.lead)}`,
+  ];
+  for (const point of entry.points) lines.push(`${name(point.side)} ${point.match ? "賽點" : "局點"}`);
+  if (entry.leadChange) lines.push(`領先易主：${name(entry.leadChange)} 反超`);
+  lines.push(`第 ${entry.game + 1} 局 · ${rallyIndex(rally)}`);
+  if (entry.uncertain) lines.push("局數待確認");
+  return { title: `比分 ${scoreText(entry.score)}`, lines };
+}
+
 export function timelineHoverPreview(
   mark: TimelineHoverMark | null,
   rallies: RallyModel[],
   cheerWindows: CheerWindowModel[] = [],
+  lead?: LeadPreviewContext,
 ): TimelineHoverPreview | null {
   if (!mark) return null;
   if (mark.kind === "cheer-window") {
@@ -28,6 +53,7 @@ export function timelineHoverPreview(
   }
   if (mark.kind === "score") {
     const rally = rallies.find((item) => item.id === mark.id);
+    if (rally && lead) return leadPreview(rally, lead);
     if (!rally?.score) return null;
     return {
       title: `比分 ${scoreText(rally.score)}`,

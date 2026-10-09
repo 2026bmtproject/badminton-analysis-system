@@ -30,6 +30,15 @@ import {
   visibleRallies,
 } from "../temporal/timeline";
 import { cheerCurvePaths } from "../temporal/cheerCurve";
+import {
+  leadChartMarks,
+  leadDomain,
+  leadEntryAt,
+  leadGamePaths,
+  leadGridlines,
+  leadY,
+  scoreLeadModel,
+} from "../temporal/scoreLead";
 import type { TimelineFit, TimelineViewport } from "../temporal/timeline";
 import TimelineLane from "./timeline/TimelineLane.vue";
 import type { TimelineMode } from "../state/workspaceLayout";
@@ -68,7 +77,6 @@ type TrackKey =
 const LENS_DURATION_MS = 220;
 /** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
 const FOLLOW_RESUME_DELAY_MS = 2000;
-const SCORE_LABEL_MIN_GAP_PX = 132;
 const SEMANTIC_LABEL_TARGET_WIDTH_PX = 84;
 const INSPECTION_EDGE_PADDING_PX = 64;
 const SEMANTIC_REVEAL_START_MULTIPLIER = 4;
@@ -147,7 +155,10 @@ const inspectionClientX = ref(0);
 const inspectionClientY = ref(0);
 const hoveredMark = ref<TimelineHoverMark | null>(null);
 const hoverPreview = computed(() =>
-  timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline),
+  timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
+    model: leadModel.value,
+    players: props.model.players,
+  }),
 );
 const hoverTooltipSide = computed(() =>
   typeof window === "undefined"
@@ -307,36 +318,47 @@ const commentaryEvents = computed(() =>
     })),
   ),
 );
-const scoreRallies = computed(() =>
-  rallies.value.filter((rally) => rally.score !== null),
+/** Built from every Rally, not the visible ones, so the scale stays match-wide while zooming. */
+const leadModel = computed(() => scoreLeadModel(props.model.rallies));
+const leadDomainValue = computed(() => leadDomain(leadModel.value.maxAbsLead));
+const leadPaths = computed(() =>
+  leadModel.value.games.map((game) =>
+    leadGamePaths(game, renderViewport.value, leadDomainValue.value),
+  ),
 );
-const scoreLabelIds = computed(() => {
-  if (fit.value === "rally" && lensProgress.value >= 0.98) {
-    return new Set(scoreRallies.value.map((rally) => rally.id));
-  }
-
-  const candidates = scoreRallies.value.map((rally) => ({
-    id: rally.id,
-    x: (position(rally.end) / 100) * trackWidth.value,
-  }));
-  const chosen: typeof candidates = [];
-  const fits = (candidate: (typeof candidates)[number]) =>
-    chosen.every(
-      (item) => Math.abs(item.x - candidate.x) >= SCORE_LABEL_MIN_GAP_PX,
-    );
-  const add = (candidate?: (typeof candidates)[number]) => {
-    if (candidate && !chosen.some((item) => item.id === candidate.id)) {
-      if (chosen.length === 0 || fits(candidate)) chosen.push(candidate);
-    }
+const leadMarks = computed(() =>
+  leadChartMarks(
+    leadModel.value,
+    renderViewport.value,
+    leadDomainValue.value,
+    trackWidth.value,
+  ),
+);
+const leadGrid = computed(() =>
+  leadGridlines(leadDomainValue.value).flatMap((lead) => [
+    leadY(lead, leadDomainValue.value),
+    leadY(-lead, leadDomainValue.value),
+  ]),
+);
+const leadFocusBands = computed(() => {
+  const bands: { state: "selected" | "active" | "hovered"; left: number; width: number }[] = [];
+  const add = (state: (typeof bands)[number]["state"], rallyId: number | null | undefined) => {
+    const rally = props.model.rallies.find((item) => item.id === rallyId);
+    const entry = rally ? leadEntryAt(leadModel.value, rally.start) : null;
+    if (!entry || entry.rally.id !== rallyId) return;
+    const left = position(entry.start);
+    bands.push({ state, left, width: Math.max(0, position(entry.end) - left) });
   };
-
-  add(candidates.find((candidate) => candidate.id === props.selectedId));
-  add(candidates.find((candidate) => candidate.id === props.activeId));
-  for (const candidate of candidates) add(candidate);
-  add(candidates.at(-1));
-
-  return new Set(chosen.map((candidate) => candidate.id));
+  add("selected", props.selectedId);
+  if (props.scoreContextId !== props.selectedId) add("active", props.scoreContextId);
+  const hovered = hoveredMark.value?.kind === "score" ? Number(hoveredMark.value.id) : null;
+  if (hovered !== props.selectedId && hovered !== props.scoreContextId) add("hovered", hovered);
+  return bands;
 });
+const leadDescription = computed(
+  () =>
+    `領先折線圖：中線為平手，往上為 ${playerName(props.model.players.a, "A")} 領先，往下為 ${playerName(props.model.players.b, "B")} 領先`,
+);
 const strokeDetailStride = computed(() => {
   if (!showSemanticStrokes.value) return Number.POSITIVE_INFINITY;
   const availableLabels = Math.max(
@@ -593,10 +615,10 @@ function resolveHoveredMark(
     return rally ? { kind, id: rally.id } : null;
   }
   if (kind === "score") {
-    const rally = nearestTemporalMark(
-      scoreRallies.value,
+    const rally = scoreLaneRally(
+      leadModel.value,
+      null,
       timeSec,
-      (item) => item.end,
       renderViewport.value,
       width,
     );
@@ -656,7 +678,7 @@ function exactMarkFromTarget(target: Element): TimelineHoverMark | null {
   const kind = marker.dataset.timelineKind;
   const id = marker.dataset.timelineId;
   if (kind === "score" && id !== undefined) {
-    const rally = exactScoreRally(scoreRallies.value, Number(id));
+    const rally = exactScoreRally(leadModel.value, Number(id));
     return rally ? { kind, id: rally.id } : null;
   }
   return null;
@@ -782,7 +804,7 @@ function clickTimeline(event: MouseEvent) {
   }
   if (kind === "score") {
     const rally = scoreLaneRally(
-      scoreRallies.value,
+      leadModel.value,
       null,
       timeSec,
       renderViewport.value,
@@ -863,11 +885,11 @@ function endScrub(event: PointerEvent) {
   if (surface.value?.hasPointerCapture(event.pointerId)) surface.value.releasePointerCapture(event.pointerId);
 }
 function selectScoreMarker(rallyId: number) {
-  const rally = exactScoreRally(scoreRallies.value, rallyId);
+  const rally = exactScoreRally(leadModel.value, rallyId);
   if (rally) emit("rally", rally);
 }
-function showScoreLabel(id: number) {
-  return scoreLabelIds.value.has(id);
+function scoreMarkHovered(rallyId: number) {
+  return hoveredMark.value?.kind === "score" && hoveredMark.value.id === rallyId;
 }
 function showStrokeDetail(index: number) {
   return index % strokeDetailStride.value === 0;
@@ -879,15 +901,6 @@ function strokeDetailSide(timeSec: number) {
     : percent > 100 - SEMANTIC_LABEL_EDGE_PERCENT
       ? "end"
       : "center";
-}
-function scoreLabelSide(rally: RallyModel) {
-  const anchorX = (position(rally.end) / 100) * trackWidth.value;
-  const scoreText = rally.score ? `${rally.score[0]}${rally.score[1]}` : "";
-  const estimatedLabelWidth = Math.max(30, scoreText.length * 7 + 8);
-  const requiredInset = estimatedLabelWidth / 2 + 4;
-  if (anchorX < requiredInset) return "start";
-  if (trackWidth.value - anchorX < requiredInset) return "end";
-  return "center";
 }
 const timelineStyle = computed(() => ({
   "--lens-detail-progress": lensProgress.value,
@@ -979,42 +992,90 @@ const timelineStyle = computed(() => ({
           <TimelineLane
             v-if="modeShows('score') && capability('score')"
             kind="score"
-            label="比分"
-            description="片段比分觀察軌道"
+            :description="leadDescription"
           >
-            <span
-              v-for="rally in scoreRallies"
-              :key="`score-${rally.id}`"
-              class="score-marker"
-              :class="{
-                selected: selectedId === rally.id,
-                  active: scoreContextId === rally.id,
-                hovered:
-                  hoveredMark?.kind === 'score' && hoveredMark.id === rally.id,
-              }"
-              :style="{ left: position(rally.end) + '%' }"
-              :data-rally-id="rally.id"
-            >
-              <button
-                v-if="showScoreLabel(rally.id) && rally.score"
-                type="button"
-                class="score-marker__target"
-                data-timeline-kind="score"
-                :data-timeline-id="rally.id"
-                :aria-label="`片段 ${String(rally.id + 1).padStart(3, '0')}，比分觀察 ${rally.score[0]}:${rally.score[1]}`"
-                @click.stop="selectScoreMarker(rally.id)"
+            <template #label>
+              <span class="lead-legend">
+                <span class="lead-legend__side" data-side="a" :title="playerName(model.players.a, 'A')"><i aria-hidden="true" />A</span>
+                <span class="lead-legend__title">領先</span>
+                <span class="lead-legend__side" data-side="b" :title="playerName(model.players.b, 'B')"><i aria-hidden="true" />B</span>
+              </span>
+            </template>
+            <!-- Everything that is not text is drawn in SVG: HTML boxes snap to whole
+                 pixels and would crawl against the line while playback scrolls. -->
+            <svg class="lead-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <template v-for="band in leadFocusBands" :key="`focus-${band.state}`">
+                <rect class="lead-focus" :data-state="band.state" :x="band.left" y="0" :width="band.width" height="100" />
+                <line v-if="band.state !== 'hovered'" class="lead-focus-edge" :data-state="band.state" :x1="band.left" :x2="band.left" y1="0" y2="100" />
+                <line v-if="band.state === 'selected'" class="lead-focus-edge" data-state="selected" :x1="band.left + band.width" :x2="band.left + band.width" y1="0" y2="100" />
+              </template>
+              <line v-for="separator in leadMarks.separators" :key="`separator-${separator.game}`" class="lead-separator" :x1="separator.x" :x2="separator.x" y1="0" y2="100" />
+              <line v-for="y in leadGrid" :key="`grid-${y}`" class="lead-chart__grid" x1="0" x2="100" :y1="y" :y2="y" />
+              <line class="lead-chart__zero" x1="0" x2="100" y1="50" y2="50" />
+              <template v-for="paths in leadPaths" :key="`lead-${paths.game}`">
+                <path v-if="paths.areaA" class="lead-chart__area" data-side="a" :d="paths.areaA" />
+                <path v-if="paths.areaB" class="lead-chart__area" data-side="b" :d="paths.areaB" />
+                <path v-if="paths.dashed" class="lead-chart__gap" :d="paths.dashed" />
+                <path v-if="paths.line" class="lead-chart__line" :d="paths.line" />
+              </template>
+            </svg>
+            <svg class="lead-marks" aria-hidden="true">
+              <circle v-for="mark in leadMarks.uncertain" :key="`uncertain-${mark.rallyId}`" class="lead-uncertain" :cx="mark.x + '%'" :cy="mark.y + '%'" r="3.5" />
+              <svg
+                v-for="change in leadMarks.changes"
+                :key="`change-${change.rallyId}`"
+                class="lead-change"
+                :class="{ hovered: scoreMarkHovered(change.rallyId) }"
+                :data-side="change.side"
+                :x="change.x + '%'"
+                y="50%"
+                overflow="visible"
               >
-                <span
-                  class="score-state timeline-score-state"
-                  :data-side="scoreLabelSide(rally)"
-                  aria-hidden="true"
-                >
-                  <span>{{ rally.score[0] }}</span>
-                  <span class="score-state-divider" />
-                  <span>{{ rally.score[1] }}</span>
-                </span>
-              </button>
+                <circle r="4" />
+              </svg>
+            </svg>
+            <span
+              v-for="label in leadMarks.labels"
+              :key="`game-${label.game}`"
+              class="lead-game-label"
+              :style="{ left: label.x + '%' }"
+              aria-hidden="true"
+            >{{ label.text }}</span>
+            <!-- Positioned by its own composited transform in track-width units: a
+                 1px divider placed with `left` snaps to whole pixels and flickers
+                 against the digits, which glide by subpixels. -->
+            <span
+              v-for="chip in leadMarks.chips"
+              :key="`chip-${chip.rallyId}`"
+              class="score-state timeline-score-state lead-chip"
+              :data-half="chip.half"
+              :style="{ transform: `translateX(calc(${chip.x}cqw - 50%))` }"
+              aria-hidden="true"
+            >
+              <span>{{ chip.score[0] }}</span>
+              <span class="score-state-divider" />
+              <span>{{ chip.score[1] }}</span>
             </span>
+            <span
+              v-for="peak in leadMarks.peaks"
+              :key="`peak-${peak.rallyId}`"
+              class="lead-peak"
+              :data-direction="peak.direction"
+              :data-align="peak.align"
+              :style="{ left: peak.x + '%', top: peak.y + '%' }"
+              aria-hidden="true"
+            >{{ peak.text }}</span>
+            <button
+              v-for="change in leadMarks.changes"
+              :key="`change-${change.rallyId}`"
+              type="button"
+              class="lead-mark lead-mark--change"
+              data-timeline-kind="score"
+              :data-timeline-id="change.rallyId"
+              :style="{ left: change.x + '%' }"
+              :aria-label="`片段 ${String(change.rallyId + 1).padStart(3, '0')}，領先易主，${playerName(model.players[change.side], change.side.toUpperCase())} 反超`"
+              @click.stop="selectScoreMarker(change.rallyId)"
+            />
           </TimelineLane>
         </div>
       </section>
