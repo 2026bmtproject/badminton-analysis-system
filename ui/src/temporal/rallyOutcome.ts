@@ -63,15 +63,6 @@ export function rallyOutcomes(rallies: RallyModel[], lead: LeadModel): RallyOutc
     .map((rally) => known.get(rally.id) ?? { rally, game: null, winner: null });
 }
 
-/** The winner of one Rally, resolving only the game that holds it. */
-export function rallyWinner(lead: LeadModel, rallyId: number): RallyWinner {
-  for (const game of lead.games) {
-    if (![...game.steps, ...game.gaps].some((entry) => entry.rally.id === rallyId)) continue;
-    return gameOutcomes(game).find((outcome) => outcome.rally.id === rallyId)?.winner ?? null;
-  }
-  return null;
-}
-
 function quantile(values: number[], q: number) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);

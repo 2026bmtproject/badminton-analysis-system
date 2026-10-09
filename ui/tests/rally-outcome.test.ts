@@ -12,7 +12,6 @@ import {
   rallyLaneMarks,
   rallyLaneModel,
   rallyOutcomes,
-  rallyWinner,
 } from "../src/temporal/rallyOutcome";
 import { rallyBreakPreview, timelineHoverPreview } from "../src/components/timeline/timelinePreview";
 
@@ -83,16 +82,6 @@ test("a multi-point segment stays unresolved", () => {
   );
 });
 
-test("rallyWinner resolves one Rally the same way as the full pass", () => {
-  const rallies = [rally(0, [5, 3]), rally(1, [0, 0], 1), rally(2, [0, 1], 1), rally(3, [1, 1], 1)];
-  const lead = scoreLeadModel(rallies);
-  assert.deepEqual(
-    rallies.map((item) => rallyWinner(lead, item.id)),
-    rallyOutcomes(rallies, lead).map((outcome) => outcome.winner),
-  );
-  assert.equal(rallyWinner(lead, 99), null);
-});
-
 test("breaks: a new game, the 10→11 interval and other long gaps", () => {
   const rallies = [
     rally(0, [9, 10], 0, { start: 0 }),
@@ -153,12 +142,12 @@ test("breaks are never drawn on the lane; hovering the gap names them", () => {
   assert.deepEqual(Object.keys(marks).sort(), ["bars", "flags"]);
 });
 
-test("the rally tooltip names who took the point; the lane never does", () => {
+test("the rally tooltip never says who took the point", () => {
   const rallies = [rally(0, [0, 0]), rally(1, [0, 1]), rally(2, [1, 1])];
   const lead = { model: scoreLeadModel(rallies), players: { a: "甲（記分板列）", b: "乙" } };
-  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 0 }, rallies, [], lead)?.lines, ["8.00 秒", "比分 0:0", "得分：乙"]);
-  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 1 }, rallies, [], lead)?.lines.at(-1), "得分：甲");
-  assert.ok(!timelineHoverPreview({ kind: "rally", id: 2 }, rallies, [], lead)?.lines.some((line) => line.startsWith("得分")));
+  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 0 }, rallies, [], lead)?.lines, ["8.00 秒", "比分 0:0"]);
+  for (const item of rallies)
+    assert.ok(!timelineHoverPreview({ kind: "rally", id: item.id }, rallies, [], lead)?.lines.some((line) => line.startsWith("得分")));
 });
 
 test("the sample match: every technical interval and game break is found", () => {

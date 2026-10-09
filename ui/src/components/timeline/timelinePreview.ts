@@ -1,7 +1,7 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
-import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
+import { formatPreciseTime, playerName, scoreText } from "../../format";
 import { cheerScoreMoments, type CheerPeak } from "../../temporal/cheerCurve";
-import { RALLY_BREAK_LABELS, highlightRanks, rallyWinner, type RallyBreak } from "../../temporal/rallyOutcome";
+import { RALLY_BREAK_LABELS, highlightRanks, type RallyBreak } from "../../temporal/rallyOutcome";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
 import {
   STROKE_FAMILY_LABELS,
@@ -85,7 +85,6 @@ export function timelineHoverPreview(
     // The raw window value, not the smoothed one the lane draws.
     const lines = [`歡呼機率 ${window.score.toFixed(2)}`];
     const rally = rallies.find((item) => item.id === window.segmentIndex);
-    if (rally) lines.push(rallyIndex(rally));
     const peak = cheerPeaks.find((item) => item.segmentIndex === window.segmentIndex);
     if (peak) lines.push(`歡呼高峰 #${peak.rank} · 持續 ${Math.round(peak.seconds)} 秒`);
     // Read against the score: what this point was played at, and what it did.
@@ -95,27 +94,23 @@ export function timelineHoverPreview(
       for (const point of moments.points) lines.push(`${name(point.side)} ${point.match ? "賽點" : "局點"}`);
       if (moments.overtake) lines.push(`${name(moments.overtake)} 反超`);
     }
-    return { title: formatTime(window.time), lines };
+    return { title: "", lines };
   }
   if (mark.kind === "rally") {
     const rally = rallies.find((item) => item.id === mark.id);
     if (!rally) return null;
     const lines = [`${rally.duration.toFixed(2)} 秒`];
-    if (rally.hits !== null) lines.push(`${rally.hits.length} 拍`);
     if (rally.score) lines.push(`比分 ${scoreText(rally.score)}`);
     if (rally.multi && rally.subScores.length)
       lines.push(`多筆比分 ${rally.subScores.map(scoreText).join(" → ")}`);
     // Review reasons: a raw recogniser note can run long, so only its start is shown.
     if (rally.scoreIssue !== undefined) lines.push(`比分無法辨識：${shorten(rally.scoreIssue, 60)}`);
     if (rally.gameConflict !== undefined) lines.push(rally.gameConflict);
-    // The lane itself stays neutral; who took the point is shown only on request.
-    const winner = lead ? rallyWinner(lead.model, rally.id) : null;
-    if (winner && lead) lines.push(`得分：${playerName(lead.players[winner], winner.toUpperCase())}`);
     // A ranking score, not a probability: only the place is meaningful.
     const ranks = highlightRanks(rallies);
     const rank = ranks.get(rally.id);
     if (rank !== undefined) lines.push(`精華排名 #${rank} / ${ranks.size}`);
-    return { title: `片段 ${String(rally.id + 1).padStart(3, "0")}`, lines };
+    return { title: "", lines };
   }
   if (mark.kind === "score") {
     const rally = rallies.find((item) => item.id === mark.id);
@@ -143,7 +138,7 @@ export function timelineHoverPreview(
     // Most aggressive first, as the bar stacks them from the top; unknown shots last.
     const order: StrokeFamily[] = ["attack", "net", "transition", "serve", "unknown"];
     return {
-      title: rallyIndex(rally),
+      title: "",
       lines: [
         `${rally.hits.length} 拍`,
         ...order.flatMap((family) => (counts[family] ? [`${STROKE_FAMILY_LABELS[family]} ${counts[family]}`] : [])),

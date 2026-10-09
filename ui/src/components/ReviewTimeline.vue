@@ -430,7 +430,7 @@ const rallyIndices = computed(() =>
         leadMarks.value.labels,
       ),
 );
-const rallyDescription = "回合節奏：每個片段一根長條，高度代表回合時長；滑過片段可查看得分方";
+const rallyDescription = "回合節奏：每個片段一根長條，高度代表回合時長";
 const leadDescription = computed(
   () =>
     `領先折線圖：中線為平手，往上為 ${playerName(props.model.players.a, "A")} 領先，往下為 ${playerName(props.model.players.b, "B")} 領先`,

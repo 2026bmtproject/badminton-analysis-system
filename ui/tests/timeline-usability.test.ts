@@ -75,7 +75,7 @@ test("7. switching timeline mode does not reset the temporal viewport", () => {
   assert.doesNotMatch(timeline, /watch\([^)]*timelineMode[\s\S]{0,220}renderViewport/);
 });
 test("8. rally hover preview uses canonical duration, strokes, score and highlight place", () => {
-  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 4 }, [rally]), { title: "片段 005", lines: ["6.00 秒", "1 拍", "比分 8:7", "精華排名 #1 / 1"] });
+  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 4 }, [rally]), { title: "", lines: ["6.00 秒", "比分 8:7", "精華排名 #1 / 1"] });
 });
 test("9. stroke and commentary previews expose real metadata", () => {
   assert.deepEqual(timelineHoverPreview({ kind: "stroke", id: 12 }, [rally]), { title: "第 3 拍", lines: ["00:42.00", "殺球", "a"] });

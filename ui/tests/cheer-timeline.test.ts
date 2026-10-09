@@ -43,8 +43,8 @@ test("window probabilities pass through import while segment scores and highligh
   assert.deepEqual(after.rallies.map((rally) => rally.audio), before.rallies.map((rally) => rally.audio));
   assert.deepEqual(after.rallies.map((rally) => rally.highlight), before.rallies.map((rally) => rally.highlight));
   assert.deepEqual(timelineHoverPreview({ kind: "cheer-window", id: 1 }, after.rallies, after.cheerTimeline), {
-    title: "00:13",
-    lines: ["歡呼機率 0.80", "片段 002"],
+    title: "",
+    lines: ["歡呼機率 0.80"],
   });
 });
 
@@ -179,11 +179,11 @@ test("tooltip reads the raw window against the score: peak place, game point and
   const peaks = cheerPeaks(cheerRuns(windows));
   assert.deepEqual(
     timelineHoverPreview({ kind: "cheer-window", id: 0 }, rallies, windows, players, peaks),
-    { title: "00:31", lines: ["歡呼機率 0.20", "片段 002", "歡呼高峰 #1 · 持續 3 秒", "乙 局點"] },
+    { title: "", lines: ["歡呼機率 0.20", "歡呼高峰 #1 · 持續 3 秒", "乙 局點"] },
   );
   assert.deepEqual(
     timelineHoverPreview({ kind: "cheer-window", id: 4 }, rallies, windows, players, peaks)?.lines,
-    ["歡呼機率 0.40", "片段 003", "甲 反超"],
+    ["歡呼機率 0.40", "甲 反超"],
   );
 });
 

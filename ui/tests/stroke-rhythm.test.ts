@@ -161,7 +161,7 @@ test("labels are glyphs on the hitter's side of the net line; an unknown side ge
 test("hovering a composition bar summarises its Rally, most aggressive family first", () => {
   const strokes = [hit(1, { type: "發球" }), hit(2, { type: "小球" }), hit(3, { type: "殺球" }), hit(4, { type: "小球" })];
   const preview = timelineHoverPreview({ kind: "stroke-rally", id: 4 }, [rally(4, 0, strokes)]);
-  assert.deepEqual(preview, { title: "片段 005", lines: ["4 拍", "進攻 1", "網前 2", "發球 1"] });
+  assert.deepEqual(preview, { title: "", lines: ["4 拍", "進攻 1", "網前 2", "發球 1"] });
 });
 
 test("stroke hover names an unmeasured position but not a low-confidence call", () => {
