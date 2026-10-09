@@ -19,11 +19,13 @@ const props = withDefaults(defineProps<{
   passive?: boolean;
   /** Fullscreen floats the window over the video; otherwise it is docked in the workspace grid. */
   fullscreen?: boolean;
-  /** Moves the header below the body as a single toolbar, e.g. the fullscreen timeline that also hosts the player controls. */
+  /** Slims the header into a single toolbar of uniform controls, e.g. the timeline that also hosts the player controls. */
+  toolbar?: boolean;
+  /** Moves the toolbar below the body, e.g. the fullscreen timeline floating along the screen edge. */
   toolbarBottom?: boolean;
   dockSide?: AnalysisDockSide;
   dockSize?: number;
-}>(), { passive: false, fullscreen: false, toolbarBottom: false, dockSide: "right", dockSize: 0 });
+}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSide: "right", dockSize: 0 });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
@@ -253,7 +255,8 @@ async function toggleCollapsed() {
 }
 function handleHeaderClick(event: MouseEvent) {
   if (suppressHeaderClick) { suppressHeaderClick = false; return; }
-  if (!props.panel.collapsed || (event.target as Element).closest("button,select,input,label,a")) return;
+  // A collapsed docked toolbar keeps its slot (the player controls); a click there must not expand the window.
+  if (!props.panel.collapsed || (event.target as Element).closest("button,select,input,label,a,.workspace-window__header-slot")) return;
   toggleCollapsed();
 }
 function handleResize() {
@@ -276,7 +279,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, `workspace-window--dock-${dockSide}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
+  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, `workspace-window--dock-${dockSide}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
     <div v-if="!fullscreen && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
     <button v-if="analysisEdgeCollapsed" type="button" class="workspace-window__edge-tab" aria-label="展開分析" title="展開分析" @click="toggleCollapsed">
       <AppIcon :name="dockSide === 'left' ? 'chevron-right' : 'chevron-left'" :size="18" />

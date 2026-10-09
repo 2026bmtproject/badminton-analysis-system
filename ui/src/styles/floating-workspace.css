@@ -50,21 +50,27 @@
   background: rgb(8 10 11 / 96%);
 }
 /*
- * A bottom toolbar replaces the header: one 36px row (FULLSCREEN_TOOLBAR_HEIGHT_PX) of uniform 28px
- * controls, laid out like a video player — mode │ play, time … volume, speed, fullscreen │ window actions.
- * The right inset clears the window resize grip.
+ * A toolbar replaces the header: one 36px row (TIMELINE_TOOLBAR_HEIGHT_PX) of uniform 28px controls, laid
+ * out like a video player — mode │ play, time … volume, speed, fullscreen │ window actions. Docked, it sits
+ * on top, right under the video; a bottom toolbar floats along the screen edge, its right inset clearing
+ * the window resize grip.
  */
-.workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header { order: 2; min-height: 36px; gap: var(--space-2); padding: 0 28px 0 var(--space-2); border-top: 1px solid var(--color-border); border-bottom: 0; }
-.workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header > strong,
-.workspace-window--toolbar-bottom .workspace-window__mode-label { display: none; }
-.workspace-window--toolbar-bottom .workspace-window__header :is(button, select, .workspace-popover__trigger) { height: 28px; min-height: 28px; }
-.workspace-window--toolbar-bottom .workspace-window__header select { padding: 0 var(--space-2); font-size: var(--type-meta); background: transparent; border-color: var(--color-border); }
+.workspace-window--toolbar .workspace-window__header { min-height: 36px; gap: var(--space-2); padding: 0 var(--space-2); }
+.workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header { order: 2; padding-right: 28px; border-top: 1px solid var(--color-border); border-bottom: 0; }
+.workspace-window--toolbar:not(.workspace-window--capsule) .workspace-window__header > strong,
+.workspace-window--toolbar .workspace-window__mode-label { display: none; }
+.workspace-window--toolbar .workspace-window__header :is(button, select, .workspace-popover__trigger) { height: 28px; min-height: 28px; }
+.workspace-window--toolbar .workspace-window__header select { padding: 0 var(--space-2); font-size: var(--type-meta); background: transparent; border-color: var(--color-border); }
 /* A transparent select hands its native popup the default light background; keep the options dark. */
-.workspace-window--toolbar-bottom .workspace-window__header option { color: var(--color-text); background: var(--color-surface-raised); }
-.workspace-window--toolbar-bottom .workspace-window__actions :is(button, .workspace-popover__trigger) { width: 28px; min-width: 28px; padding: 0; }
-.workspace-window--toolbar-bottom .workspace-window__actions::before,
+.workspace-window--toolbar .workspace-window__header option { color: var(--color-text); background: var(--color-surface-raised); }
+.workspace-window--toolbar .workspace-window__actions :is(button, .workspace-popover__trigger) { width: 28px; min-width: 28px; padding: 0; }
+.workspace-window--toolbar .workspace-window__actions::before,
 .workspace-window__player-controls::before { width: 1px; height: 18px; flex: 0 0 auto; align-self: center; background: var(--color-border-strong); content: ""; }
-.workspace-window--toolbar-bottom .workspace-window__actions::before { margin-right: var(--space-1); }
+.workspace-window--toolbar .workspace-window__actions::before { margin-right: var(--space-1); }
+/* A collapsed docked toolbar keeps the player controls; only the timeline's mode select goes with the lanes. */
+.workspace-window--docked.workspace-window--toolbar.workspace-window--collapsed .workspace-window__header-slot { display: flex; }
+.workspace-window--docked.workspace-window--toolbar.workspace-window--collapsed .workspace-window__header-slot > :not(.workspace-window__player-controls) { display: none; }
+.workspace-window--docked.workspace-window--toolbar.workspace-window--collapsed .workspace-window__player-controls::before { display: none; }
 .workspace-window__player-controls { display: flex; min-width: 0; flex: 1; gap: var(--space-2); }
 .workspace-window__player-controls .controls { display: flex; min-width: 0; flex: 1; align-items: center; padding: 0; background: transparent; border-top: 0; }
 .workspace-window__player-controls .control-row { flex: 1; min-width: 0; gap: var(--space-1); }
@@ -231,10 +237,11 @@
 }
 .workspace-window--analysis .workspace-window__dock-resize { top: 0; bottom: 0; left: -5px; width: 10px; cursor: ew-resize; }
 .workspace-window--analysis.workspace-window--dock-left .workspace-window__dock-resize { right: -5px; left: auto; }
-.workspace-window--timeline .workspace-window__dock-resize { top: -5px; right: 0; left: 0; height: 10px; cursor: ns-resize; }
+/* The strip ends above the toolbar's 28px controls, which start 4px below the top edge. */
+.workspace-window--timeline .workspace-window__dock-resize { top: -6px; right: 0; left: 0; height: 10px; cursor: ns-resize; }
 .workspace-window__dock-resize::after { position: absolute; background: var(--line-strong); content: ""; opacity: 0.28; transition: opacity var(--motion-fast) var(--motion-ease); }
 .workspace-window--analysis .workspace-window__dock-resize::after { top: 0; bottom: 0; left: 4px; width: 1px; }
-.workspace-window--timeline .workspace-window__dock-resize::after { top: 4px; right: 0; left: 0; height: 1px; }
+.workspace-window--timeline .workspace-window__dock-resize::after { top: 5px; right: 0; left: 0; height: 1px; }
 .workspace-window__dock-resize:hover::after { opacity: 0.72; }
 .workspace-window--resizing .workspace-window__dock-resize::after { opacity: 1; }
 .workspace-window__resize-grip::after {
@@ -317,7 +324,6 @@
   border-left: 0;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .workspace-window__header { min-height: 34px; padding-block: 1px; }
 
 @container (max-width: 420px) {
   .workspace-window__mode-label { display: none; }

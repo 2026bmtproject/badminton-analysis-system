@@ -10,10 +10,10 @@ export const PANEL_MIN_HEIGHT_PX = 96;
 export const PANEL_MAX_WIDTH_RATIO = 0.96;
 export const PANEL_MAX_HEIGHT_RATIO = 0.92;
 export const PANEL_HEADER_HEIGHT_PX = 42;
-/** The fullscreen timeline's single bottom toolbar (mode, player controls, window actions) replaces its header. */
-export const FULLSCREEN_TOOLBAR_HEIGHT_PX = 36;
-/** Timeline lanes have fixed pixel heights, so the floating timeline keeps the dock's lane space under a slimmer toolbar. */
-export const FULLSCREEN_TIMELINE_HEIGHT_PX = TIMELINE_FIT_HEIGHT_PX - PANEL_HEADER_HEIGHT_PX + FULLSCREEN_TOOLBAR_HEIGHT_PX;
+/** The timeline's header is a single toolbar (mode, player controls, window actions), docked on top or floating at the bottom. */
+export const TIMELINE_TOOLBAR_HEIGHT_PX = 36;
+/** Both presentations share the toolbar, so the floating timeline keeps the dock's fitted height and lane space. */
+export const FULLSCREEN_TIMELINE_HEIGHT_PX = TIMELINE_FIT_HEIGHT_PX;
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));

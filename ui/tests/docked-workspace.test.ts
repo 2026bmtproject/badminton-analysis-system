@@ -53,14 +53,23 @@ test("5. collapsed Timeline shrinks to its header with a single expand control",
   assert.equal((windowComponent.match(/@click="toggleCollapsed"/g) ?? []).length, 2, "header button plus the docked Analysis edge tab");
 });
 
-test("5b. fullscreen Timeline merges mode, player controls and window actions into one bottom toolbar", () => {
-  assert.match(review, /:toolbar-bottom="fullscreen"/);
-  assert.match(review, /<template #header>[\s\S]*<div v-if="fullscreen && !match\.layoutOnly" ref="playerControlsHost"[\s\S]*<\/template>/);
-  assert.match(review, /:controls-target="fullscreen \? playerControlsHost : null"/);
+test("5b. Timeline merges mode, player controls and window actions into one toolbar, at the bottom in fullscreen", () => {
+  assert.match(review, / toolbar :toolbar-bottom="fullscreen"/);
+  assert.match(review, /<template #header>[\s\S]*<div v-if="controlsInTimeline" ref="playerControlsHost"[\s\S]*<\/template>/);
+  assert.match(review, /:controls-target="controlsInTimeline \? playerControlsHost : null"/);
+  assert.match(review, /const controlsInTimeline = computed\(\(\) => !match\.value\.layoutOnly && \(fullscreen\.value \|\| viewportWidth\.value > 1_100\)\)/, "the stacked layout puts Analysis between video and timeline, so the player keeps its bar");
+  assert.match(styles, /\.workspace-window--toolbar \.workspace-window__header \{ min-height: 36px;/);
   assert.match(styles, /\.workspace-window--toolbar-bottom:not\(\.workspace-window--collapsed\) \.workspace-window__header \{ order: 2;/);
   assert.doesNotMatch(windowComponent, /collapsible|\$slots\.footer/);
   assert.match(source("src/components/ReviewPlayer.vue"), /<Teleport :to="controlsTarget \?\? 'body'" :disabled="!controlsTarget">/);
   assert.doesNotMatch(source("src/styles/desktop-shell.css"), /:fullscreen \.controls/);
+});
+
+test("5d. a collapsed docked Timeline keeps the player controls in its toolbar", () => {
+  assert.match(styles, /\.workspace-window--docked\.workspace-window--toolbar\.workspace-window--collapsed \.workspace-window__header-slot \{ display: flex; \}/);
+  assert.match(styles, /\.workspace-window--docked\.workspace-window--toolbar\.workspace-window--collapsed \.workspace-window__header-slot > :not\(\.workspace-window__player-controls\) \{ display: none; \}/);
+  assert.match(windowComponent, /closest\("button,select,input,label,a,\.workspace-window__header-slot"\)/, "clicking the controls must not expand the collapsed timeline");
+  assert.match(styles, /\.workspace-window--timeline \.workspace-window__dock-resize \{ top: -6px;[^}]*height: 10px;/, "the dock resize strip clears the 28px toolbar controls");
 });
 
 test("5c. a collapsed floating window becomes a movable capsule", () => {

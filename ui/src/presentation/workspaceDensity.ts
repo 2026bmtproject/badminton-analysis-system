@@ -13,8 +13,8 @@ export type AdaptivePanelSizes = {
   timelineHeight: number;
 };
 
-/** Window height (header + body) that fits every timeline lane without scrolling or blank space. */
-export const TIMELINE_FIT_HEIGHT_PX = 160;
+/** Window height (36px toolbar + body) that fits every timeline lane without scrolling or blank space. */
+export const TIMELINE_FIT_HEIGHT_PX = 154;
 
 /** Share of the axis over which an edge label eases from centred to edge-aligned. */
 const TICK_EDGE_ALIGN_PERCENT = 7;
@@ -26,7 +26,7 @@ const NICE_INTERVALS_SEC = [
 ] as const;
 
 export function resolveTimelineDensity(width: number, height: number): PanelDensity {
-  // 110px holds the tallest lane (cheer curve, zoomed stroke labels) at full density inside the default 160px window.
+  // 110px holds the tallest lane (cheer curve, zoomed stroke labels) at full density inside the default 154px window.
   if (width < 720 || height < 110) return "compact";
   return "full";
 }

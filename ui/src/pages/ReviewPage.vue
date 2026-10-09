@@ -33,7 +33,7 @@ const activeWindow = ref<WorkspacePanelId>("analysis");
 const playing = workspace.playing;
 const player = ref<InstanceType<typeof ReviewPlayer> | null>(null);
 const stage = ref<HTMLElement | null>(null);
-/** Fullscreen hosts the player controls in the floating timeline's toolbar, leaving the screen edge clear. */
+/** The timeline's toolbar hosts the player controls, so the video and the timeline share one control bar. */
 const playerControlsHost = ref<HTMLElement | null>(null);
 const fullscreen = ref(false);
 const fullscreenUiHidden = ref(false);
@@ -46,6 +46,12 @@ const match = computed(() => {
   if (!model.value) throw new Error("Review requires a loaded MatchModel");
   return model.value;
 });
+/**
+ * The docked timeline sits right under the video, so its toolbar takes the player controls. Below 1100px the
+ * workspace stacks (floating-workspace.css) and Analysis comes between them, so the player keeps its own bar;
+ * fullscreen always floats the timeline toolbar over the video.
+ */
+const controlsInTimeline = computed(() => !match.value.layoutOnly && (fullscreen.value || viewportWidth.value > 1_100));
 const activeId = computed(() => workspace.activeRally.value?.id ?? null);
 const currentLabel = computed(() => activeId.value === null ? "比賽空檔" : `片段 ${String(activeId.value + 1).padStart(3, "0")}`);
 const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "選手 A"), b: playerName(match.value.players.b, "選手 B") }));
@@ -260,14 +266,14 @@ onBeforeUnmount(() => {
     </header>
     <main class="review-main review-main--workspace">
       <section ref="stage" class="review-workspace-stage" :class="[`review-workspace-stage--analysis-${layout.analysisSide}`, { 'review-workspace-stage--analysis-collapsed': analysisDockCollapsed, 'review-workspace-stage--timeline-collapsed': timelineDockCollapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }]" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
-        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="fullscreen ? playerControlsHost : null" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
+        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
-        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
+        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
             <label class="timeline-mode-selector" @wheel="modeWheel"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
-            <div v-if="fullscreen && !match.layoutOnly" ref="playerControlsHost" class="workspace-window__player-controls" />
+            <div v-if="controlsInTimeline" ref="playerControlsHost" class="workspace-window__player-controls" />
           </template>
           <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" />
         </WorkspaceWindow>

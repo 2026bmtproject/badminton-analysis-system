@@ -21,10 +21,10 @@ test("Timeline size only chooses full or compact", () => {
 });
 
 test("adaptive defaults prioritize video on constrained desktop viewports", () => {
-  assert.deepEqual(adaptiveDefaultPanelSizes(1920, 1080), { analysisWidth: 340, timelineHeight: 160 });
-  assert.deepEqual(adaptiveDefaultPanelSizes(1440, 900), { analysisWidth: 340, timelineHeight: 160 });
-  assert.deepEqual(adaptiveDefaultPanelSizes(1366, 768), { analysisWidth: 260, timelineHeight: 160 });
-  assert.deepEqual(adaptiveDefaultPanelSizes(1280, 720), { analysisWidth: 260, timelineHeight: 160 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1920, 1080), { analysisWidth: 340, timelineHeight: 154 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1440, 900), { analysisWidth: 340, timelineHeight: 154 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1366, 768), { analysisWidth: 260, timelineHeight: 154 });
+  assert.deepEqual(adaptiveDefaultPanelSizes(1280, 720), { analysisWidth: 260, timelineHeight: 154 });
 });
 
 test("pixel-aware ticks reduce count while retaining valid ordered ranges", () => {
