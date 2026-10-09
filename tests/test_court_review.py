@@ -90,7 +90,7 @@ def test_legacy_preview_reuses_composite_without_detector(tmp_path, monkeypatch)
     result = load_court_review(match)
     assert result["legacyPreview"] is True
     assert result["coordinateUnknown"] is True
-    assert result["corners"] == [[0., 0.], [100., 0.], [0., 100.], [100., 100.]]
+    assert np.asarray(result["corners"]) == pytest.approx(np.asarray([[30., 25.], [70., 25.], [15., 85.], [85., 85.]]))
     assert result["image"].startswith("data:image/png;base64,")
 
 

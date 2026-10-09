@@ -102,13 +102,17 @@ def is_detection_valid(pts: Optional[list], frame_shape) -> bool:
 
 
 def get_default_corners(frame_shape) -> np.ndarray:
-    """Fallback corners at the image corners, for manual marking (4x2 float32)."""
+    """Fallback corners for manual marking (4x2 float32).
+
+    A broadcast-shaped trapezoid well inside the frame, so every handle starts
+    fully visible and grabbable instead of sitting on the image edge.
+    """
     h, w = frame_shape[:2]
     return np.float32([
-        [0.0, 0.0],            # TL
-        [float(w), 0.0],       # TR
-        [0.0, float(h)],       # BL
-        [float(w), float(h)],  # BR
+        [0.30 * w, 0.25 * h],  # TL
+        [0.70 * w, 0.25 * h],  # TR
+        [0.15 * w, 0.85 * h],  # BL
+        [0.85 * w, 0.85 * h],  # BR
     ])
 
 
