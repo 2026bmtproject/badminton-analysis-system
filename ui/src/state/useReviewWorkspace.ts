@@ -5,11 +5,17 @@ import type {
   RallyModel,
   StrokeModel,
 } from "../domain/models";
-import { resolveActiveMatchContext } from "../temporal/activeContext";
+import {
+  rallyAtOrBefore,
+  resolveActiveMatchContext,
+} from "../temporal/activeContext";
 
 export { activeRallyAt } from "../temporal/activeContext";
 
 export type PlayerController = { seek: (timeSec: number) => void };
+
+/** A seek that reports within this distance of its target has landed, even if it snapped outside the Rally. */
+const LANDING_TOLERANCE_SEC = 0.5;
 
 export function useReviewWorkspace<T extends PlayerController>(
   model: Ref<MatchModel | null>,
@@ -18,6 +24,7 @@ export function useReviewWorkspace<T extends PlayerController>(
   const currentTimeSec = ref(0);
   const selectedRallyIndex = ref<number | null>(null);
   const selectedStrokeIndex = ref<number | null>(null);
+  const playing = ref(false);
 
   const activeContext = computed(() =>
     resolveActiveMatchContext(model.value, currentTimeSec.value),
@@ -39,15 +46,72 @@ export function useReviewWorkspace<T extends PlayerController>(
       ) ?? null,
   );
 
+  /** A selection whose seek has not reached its Rally yet; the playhead is still elsewhere. */
+  let selectionLanding = false;
+  let landingTimeSec = 0;
+  /** Rally that owns the playhead: the one playing, or the last one played during a gap. */
+  let lastOwnerId: number | null = null;
   watch(
     model,
     () => {
       currentTimeSec.value = 0;
+      selectionLanding = false;
+      lastOwnerId = null;
       clearSelection();
       player.value?.seek(0);
     },
     { flush: "sync" },
   );
+
+  const ownerRally = computed(() =>
+    model.value && !model.value.layoutOnly
+      ? rallyAtOrBefore(model.value.rallies, currentTimeSec.value)
+      : null,
+  );
+
+  function followOwner() {
+    const owner = ownerRally.value?.id ?? null;
+    if (owner === null || selectedRallyIndex.value === null || owner === selectedRallyIndex.value) return;
+    selectedRallyIndex.value = owner;
+    selectedStrokeIndex.value = null;
+  }
+
+  // While playing, the selection follows the Rally that owns the playhead, so
+  // it never lingers on a Rally already left behind, including after a seek
+  // into a far gap. A paused scrub never re-targets it (that would re-zoom a
+  // Rally lens mid-drag); pressing play catches up. A selection whose seek is
+  // still landing is never mistaken for being left behind.
+  watch(
+    currentTimeSec,
+    (timeSec) => {
+      const owner = ownerRally.value?.id ?? null;
+      const ownerChanged = owner !== lastOwnerId;
+      lastOwnerId = owner;
+      if (selectionLanding) {
+        if (owner === selectedRallyIndex.value || Math.abs(timeSec - landingTimeSec) <= LANDING_TOLERANCE_SEC)
+          selectionLanding = false;
+        return;
+      }
+      if (ownerChanged && playing.value) followOwner();
+    },
+    { flush: "sync" },
+  );
+  watch(
+    playing,
+    (isPlaying) => {
+      if (isPlaying && !selectionLanding) followOwner();
+    },
+    { flush: "sync" },
+  );
+
+  function markSelected(rallyId: number | null, timeSec = 0) {
+    selectedRallyIndex.value = rallyId;
+    landingTimeSec = timeSec;
+    selectionLanding =
+      rallyId !== null &&
+      ownerRally.value?.id !== rallyId &&
+      Math.abs(currentTimeSec.value - timeSec) > LANDING_TOLERANCE_SEC;
+  }
 
   function seek(timeSec: number) {
     if (!Number.isFinite(timeSec) || model.value?.layoutOnly) return;
@@ -64,25 +128,27 @@ export function useReviewWorkspace<T extends PlayerController>(
   }
 
   function selectRallyAt(rally: RallyModel, timeSec: number) {
-    selectedRallyIndex.value = rally.id;
+    markSelected(rally.id, timeSec);
     selectedStrokeIndex.value = null;
     seek(timeSec);
   }
 
   function selectStroke(stroke: StrokeModel) {
-    selectedRallyIndex.value =
+    markSelected(
       model.value?.rallies.find((rally) =>
         rally.hits?.some((item) => item.eventIndex === stroke.eventIndex),
-      )?.id ?? selectedRallyIndex.value;
+      )?.id ?? selectedRallyIndex.value,
+      stroke.time,
+    );
     selectedStrokeIndex.value = stroke.eventIndex;
     seek(stroke.time);
   }
 
   function selectCommentary(comment: CommentaryEventModel, rally: RallyModel) {
-    selectedRallyIndex.value = rally.id;
     const stroke = rally.hits?.find(
       (item) => item.eventIndex === comment.strokeIndex,
     );
+    markSelected(rally.id, stroke?.time ?? comment.timeSec);
     if (stroke) {
       selectedStrokeIndex.value = stroke.eventIndex;
       seek(stroke.time);
@@ -97,7 +163,7 @@ export function useReviewWorkspace<T extends PlayerController>(
   }
 
   function clearSelection() {
-    selectedRallyIndex.value = null;
+    markSelected(null);
     selectedStrokeIndex.value = null;
   }
 
@@ -142,23 +208,30 @@ export function useReviewWorkspace<T extends PlayerController>(
     if (!rallies?.length || model.value?.layoutOnly) return false;
     event.preventDefault();
     const direction = event.code === "BracketLeft" ? -1 : 1;
-    const anchor = selectedRallyIndex.value ?? activeRally.value?.id ?? null;
-    const currentIndex =
-      anchor === null
-        ? direction > 0
-          ? -1
-          : rallies.length
-        : rallies.findIndex((rally) => rally.id === anchor);
-    const nextIndex = Math.max(
-      0,
-      Math.min(rallies.length - 1, currentIndex + direction),
-    );
+    const owner = ownerRally.value;
+    const ownerIndex = owner ? rallies.findIndex((rally) => rally.id === owner.id) : -1;
+    const selectedIndex = rallies.findIndex((rally) => rally.id === selectedRallyIndex.value);
+    // Step from the selection while it is current or its seek is still
+    // landing; once the playhead has moved on, step from the playhead. In the
+    // gap after Rally k, `[` returns to k and `]` goes to k + 1.
+    const selectionCurrent =
+      selectedIndex >= 0 && (selectionLanding || owner?.id === selectedRallyIndex.value);
+    const insideOwner = owner !== null && currentTimeSec.value < owner.end;
+    const target = selectionCurrent
+      ? selectedIndex + direction
+      : direction > 0
+        ? ownerIndex + 1
+        : insideOwner
+          ? ownerIndex - 1
+          : ownerIndex;
+    const nextIndex = Math.max(0, Math.min(rallies.length - 1, target));
     selectRally(rallies[nextIndex]);
     return true;
   }
 
   return {
     currentTimeSec,
+    playing,
     selectedRallyIndex,
     selectedStrokeIndex,
     activeRally,

@@ -8,7 +8,7 @@ export type ActiveMatchContext = {
 };
 
 /** Resolve the last rally whose start is not after time using the sorted match index. */
-function rallyAtOrBefore(rallies: RallyModel[], timeSec: number) {
+export function rallyAtOrBefore(rallies: RallyModel[], timeSec: number) {
   let low = 0;
   let high = rallies.length - 1;
   let candidate: RallyModel | null = null;

@@ -146,6 +146,100 @@ test("2. playback leaves an explicitly selected old stroke behind without stale 
   assert.equal(workspace.activeStroke.value?.eventIndex, 20);
 });
 
+test("2a. playing on from a selected rally carries the selection into the next one", () => {
+  const { workspace } = workspaceHarness();
+  workspace.selectRally(firstRally);
+  workspace.updateTime(10);
+  workspace.playing.value = true;
+  workspace.updateTime(13);
+  assert.equal(workspace.selectedRallyIndex.value, 0, "a gap keeps the selection");
+  workspace.updateTime(14.75);
+  assert.equal(workspace.selectedRallyIndex.value, 1);
+  assert.equal(workspace.selectedStrokeIndex.value, null);
+});
+
+test("2b. a selection whose seek has not landed is never overwritten by playback", () => {
+  const { workspace } = workspaceHarness();
+  workspace.playing.value = true;
+  workspace.updateTime(10.5);
+  workspace.selectRally(secondRally);
+  // The player reports a frame from the old rally before the seek lands.
+  workspace.updateTime(11);
+  assert.equal(workspace.selectedRallyIndex.value, 1);
+});
+
+function bracket(code: "BracketLeft" | "BracketRight") {
+  return { code, shiftKey: false, preventDefault() {} } as unknown as KeyboardEvent;
+}
+
+test("2c. brackets step from the playhead once a paused scrub leaves the selection behind", () => {
+  const { workspace, seeks } = workspaceHarness();
+  workspace.selectRally(secondRally);
+  workspace.updateTime(14);
+  workspace.updateTime(10.5);
+  assert.equal(workspace.selectedRallyIndex.value, 1, "a paused scrub never re-targets the selection");
+  workspace.handleKeyboard(bracket("BracketRight"));
+  assert.equal(workspace.selectedRallyIndex.value, 1);
+  assert.equal(seeks.at(-1), 14, "] from the playhead rally 0 goes to rally 1, not past it");
+});
+
+test("2d. rapid bracket presses step from the landing selection, not the stale playhead", () => {
+  const seeks: number[] = [];
+  const workspace = useReviewWorkspace(
+    ref<MatchModel | null>({ ...model, rallies: [firstRally, adjacentRally, secondRally] }),
+    ref({ seek: (timeSec: number) => seeks.push(timeSec) }),
+  );
+  workspace.updateTime(10.5);
+  workspace.handleKeyboard(bracket("BracketRight"));
+  workspace.handleKeyboard(bracket("BracketRight"));
+  assert.equal(workspace.selectedRallyIndex.value, 1);
+  assert.deepEqual(seeks, [12, 14]);
+});
+
+test("2e. a seek into a far gap while playing moves the selection to the rally that gap follows", () => {
+  const { workspace } = workspaceHarness();
+  workspace.selectRally(secondRally);
+  workspace.updateTime(14);
+  workspace.playing.value = true;
+  workspace.updateTime(12.5);
+  assert.equal(workspace.selectedRallyIndex.value, 0, "the gap after rally 0 belongs to rally 0");
+});
+
+test("2f. pressing play after a paused scrub catches the selection up at once", () => {
+  const { workspace } = workspaceHarness();
+  workspace.selectRally(secondRally);
+  workspace.updateTime(14);
+  workspace.updateTime(12.5);
+  assert.equal(workspace.selectedRallyIndex.value, 1);
+  workspace.playing.value = true;
+  assert.equal(workspace.selectedRallyIndex.value, 0);
+});
+
+test("2g. brackets in a gap return to the rally just played or step to the next one", () => {
+  const { workspace, seeks } = workspaceHarness();
+  workspace.selectRally(secondRally);
+  workspace.updateTime(14);
+  workspace.updateTime(12.5);
+  workspace.handleKeyboard(bracket("BracketLeft"));
+  assert.equal(workspace.selectedRallyIndex.value, 0);
+  assert.equal(seeks.at(-1), 10);
+  workspace.clearSelection();
+  workspace.updateTime(12.5);
+  workspace.handleKeyboard(bracket("BracketRight"));
+  assert.equal(workspace.selectedRallyIndex.value, 1);
+});
+
+test("2h. a seek that snaps just outside its rally still counts as landed", () => {
+  const { workspace } = workspaceHarness();
+  workspace.updateTime(16);
+  workspace.selectRally(firstRally);
+  workspace.updateTime(9.98);
+  workspace.updateTime(15);
+  workspace.playing.value = true;
+  workspace.updateTime(15.5);
+  assert.equal(workspace.selectedRallyIndex.value, 1, "the selection is not stuck waiting to land");
+});
+
 test("3. half-open intervals assign an exact shared boundary to the new rally", () => {
   assert.equal(activeRallyAt([firstRally, adjacentRally], 11.999)?.id, 0);
   assert.equal(activeRallyAt([firstRally, adjacentRally], 12)?.id, 2);
