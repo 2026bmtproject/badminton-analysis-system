@@ -251,18 +251,21 @@ test("player preserves source aspect ratio and long analytical text can wrap", (
   assert.match(inspector, /\.hit-player\s*\{[^}]*overflow-wrap:\s*anywhere/s);
 });
 
-test("cheer lane draws source window curve without segment score dots", () => {
+test("cheer lane draws a mirrored window wave with a threshold, without segment score dots", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const styles = readFileSync("src/styles/timeline.css", "utf8");
   const signalSection = timeline.slice(
     timeline.indexOf('class="timeline-band timeline-band--signals"'),
     timeline.indexOf('class="timeline-playhead"'),
   );
-  assert.match(signalSection, /<svg v-if="cheerPaths\.length" class="cheer-curve"/);
+  assert.match(signalSection, /<template v-if="cheerRunList\.length">/);
   assert.match(signalSection, /v-for="\(path, index\) in cheerPaths"/);
+  // Solid past the threshold, faint below it, with the threshold drawn.
+  assert.match(signalSection, /:data-level="path\.strong \? 'strong' : 'weak'"/);
+  assert.match(signalSection, /class="cheer-threshold"/);
   assert.match(signalSection, /無窗口歡呼資料/);
   assert.doesNotMatch(signalSection, /item\.audio|cheer-block/);
-  assert.match(styles, /\.cheer-curve path\s*\{[^}]*vector-effect:\s*non-scaling-stroke/s);
+  assert.match(styles, /\.cheer-threshold\s*\{[^}]*stroke-dasharray/s);
 });
 
 test("highlight has no lane of its own; its place lives in the rally tooltip", () => {
@@ -494,7 +497,7 @@ test("temporal signature remains shape-led and preserves semantic hierarchy", ()
   assert.match(timeline, /\.stroke-bar\s*\{[^}]*fill:\s*var\(--shot\);/s);
   assert.doesNotMatch(timeline, /\.stroke-[^{]*\{[^}]*--color-player-/s);
   assert.doesNotMatch(readFileSync("src/styles/tokens.css", "utf8"), /--color-shot-[a-z]+:\s*var\(--color-player-/);
-  assert.match(timeline, /\.cheer-curve path\s*\{[^}]*stroke:\s*var\(--color-cheer\)/s);
+  assert.match(timeline, /\.cheer-wave\s*\{[^}]*fill:\s*var\(--color-cheer\)/s);
   assert.match(
     timeline,
     /\.timeline-playhead\s*\{[^}]*border-left:\s*2px solid var\(--color-playhead\);/s,

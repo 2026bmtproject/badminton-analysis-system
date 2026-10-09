@@ -66,13 +66,10 @@
 }
 .timeline-band--signals {
   background: transparent;
-  height: var(--lens-signal-height, 72px);
+  height: var(--lens-signal-height, 80px);
   margin-bottom: var(--lens-signal-margin, var(--space-2));
   overflow: clip;
   opacity: var(--lens-overview-opacity, 1);
-}
-.timeline-band--signals .timeline-lane-track {
-  opacity: 0.72;
 }
 .timeline-lane {
   display: grid;
@@ -132,11 +129,13 @@
   container-type: inline-size;
 }
 .timeline-lane--cheer {
-  min-height: var(--control-compact);
+  min-height: 72px;
 }
 .timeline-lane--cheer .timeline-lane-track {
-  height: var(--control-compact);
+  height: 64px;
   background: transparent;
+  /* Lets peak labels position themselves in track-width units (cqw). */
+  container-type: inline-size;
 }
 .rally-index {
   position: absolute;
@@ -208,13 +207,34 @@
   overflow: hidden;
   pointer-events: none;
 }
-.cheer-curve path {
-  fill: none;
-  stroke: var(--color-cheer);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
+/* Faint while the crowd is below the threshold, solid past it. */
+.cheer-wave {
+  fill: var(--color-cheer);
+  fill-opacity: 0.3;
+  stroke: none;
+}
+.cheer-wave[data-level="strong"] {
+  fill-opacity: 0.9;
+}
+.cheer-mid {
+  stroke: var(--line-structure);
+  stroke-width: 1;
+}
+.cheer-threshold {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.cheer-peak {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: transform;
 }
 .cheer-curve-empty {
   position: absolute;

@@ -1,5 +1,6 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
+import { cheerScoreMoments, type CheerPeak } from "../../temporal/cheerCurve";
 import { RALLY_BREAK_LABELS, highlightRanks, rallyWinner, type RallyBreak } from "../../temporal/rallyOutcome";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
 import {
@@ -75,11 +76,26 @@ export function timelineHoverPreview(
   rallies: RallyModel[],
   cheerWindows: CheerWindowModel[] = [],
   lead?: LeadPreviewContext,
+  cheerPeaks: CheerPeak[] = [],
 ): TimelineHoverPreview | null {
   if (!mark) return null;
   if (mark.kind === "cheer-window") {
     const window = cheerWindows[Number(mark.id)];
-    return window ? { title: formatTime(window.time), lines: [`Cheer probability: ${window.score.toFixed(2)}`] } : null;
+    if (!window) return null;
+    // The raw window value, not the smoothed one the lane draws.
+    const lines = [`歡呼機率 ${window.score.toFixed(2)}`];
+    const rally = rallies.find((item) => item.id === window.segmentIndex);
+    if (rally) lines.push(rallyIndex(rally));
+    const peak = cheerPeaks.find((item) => item.segmentIndex === window.segmentIndex);
+    if (peak) lines.push(`歡呼高峰 #${peak.rank} · 持續 ${Math.round(peak.seconds)} 秒`);
+    // Read against the score: what this point was played at, and what it did.
+    if (rally && lead) {
+      const name = (side: "a" | "b") => playerName(lead.players[side], side.toUpperCase());
+      const moments = cheerScoreMoments(lead.model, rally.id);
+      for (const point of moments.points) lines.push(`${name(point.side)} ${point.match ? "賽點" : "局點"}`);
+      if (moments.overtake) lines.push(`${name(moments.overtake)} 反超`);
+    }
+    return { title: formatTime(window.time), lines };
   }
   if (mark.kind === "rally") {
     const rally = rallies.find((item) => item.id === mark.id);

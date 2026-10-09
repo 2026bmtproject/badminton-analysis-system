@@ -28,7 +28,13 @@ import {
   timeToPercent,
   visibleRallies,
 } from "../temporal/timeline";
-import { cheerCurvePaths } from "../temporal/cheerCurve";
+import {
+  CHEER_THRESHOLD,
+  cheerPeakLabels,
+  cheerPeaks,
+  cheerRuns,
+  cheerWavePaths,
+} from "../temporal/cheerCurve";
 import { strokeLaneMarks, strokeSpacingSec } from "../temporal/strokeRhythm";
 import {
   breakAt,
@@ -87,7 +93,7 @@ const LENS_DURATION_MS = 220;
 /** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
 const FOLLOW_RESUME_DELAY_MS = 2000;
 const INSPECTION_EDGE_PADDING_PX = 64;
-const SIGNAL_LANE_HEIGHT_PX = 72;
+const SIGNAL_LANE_HEIGHT_PX = 80;
 const SIGNAL_LANE_MARGIN_PX = 8;
 /**
  * Rally lane geometry in track pixels, top to bottom: the label row (game
@@ -107,6 +113,13 @@ const STROKE_NET_Y_PX = 44;
 const STROKE_SWING_PX = 18;
 const STROKE_BAR_BASELINE_PX = 62;
 const STROKE_BAR_EXTENT_PX = 48;
+/**
+ * Cheer lane geometry in track pixels: the label row (peak places now, game
+ * labels share it later) above a wave mirrored about CHEER_MID_Y_PX.
+ */
+const CHEER_TRACK_HEIGHT_PX = 64;
+const CHEER_MID_Y_PX = 38;
+const CHEER_AMP_PX = 22;
 const props = withDefaults(
   defineProps<{
     model: MatchModel;
@@ -181,7 +194,7 @@ const hoverPreview = computed(() =>
       : timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
           model: leadModel.value,
           players: props.model.players,
-        }),
+        }, cheerPeakList.value),
     inspectionTime.value === null
       ? null
       : doubleClickHint(fit.value, activeRallyAt(props.model.rallies, inspectionTime.value)),
@@ -433,9 +446,22 @@ const strokeDescription =
 const showCheerCurveLane = computed(() =>
   modeShows("cheer") && capability("cheer"),
 );
+/** Smoothed once per match; only the projection follows the viewport. */
+const cheerRunList = computed(() => cheerRuns(props.model.cheerTimeline ?? []));
+const cheerPeakList = computed(() => cheerPeaks(cheerRunList.value));
 const cheerPaths = computed(() =>
-  cheerCurvePaths(props.model.cheerTimeline ?? [], renderViewport.value),
+  cheerWavePaths(cheerRunList.value, renderViewport.value, { mid: CHEER_MID_Y_PX, amp: CHEER_AMP_PX }),
 );
+const cheerPeakMarks = computed(() =>
+  cheerPeakLabels(cheerPeakList.value, renderViewport.value, trackWidth.value),
+);
+/** Threshold lines either side of the mid line, in track pixels. */
+const cheerThresholdY = [
+  CHEER_MID_Y_PX - CHEER_THRESHOLD * CHEER_AMP_PX,
+  CHEER_MID_Y_PX + CHEER_THRESHOLD * CHEER_AMP_PX,
+] as const;
+const cheerDescription =
+  "現場氣氛：上下對稱的歡呼波形，越寬越可能在歡呼，超出虛線的部分代表歡呼；標出持續最久的前 5 次歡呼";
 const position = (timeSec: number) =>
   timeToPercent(timeSec, renderViewport.value);
 const playheadFraction = computed(() =>
@@ -1225,11 +1251,35 @@ const timelineStyle = computed(() => ({
             v-if="showCheerCurveLane"
             kind="cheer"
             label="歡呼"
-            description="歡呼機率時間曲線"
+            :description="cheerDescription"
           >
-            <svg v-if="cheerPaths.length" class="cheer-curve" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <path v-for="(path, index) in cheerPaths" :key="`${path.segmentIndex}-${index}`" :d="path.d" />
-            </svg>
+            <template v-if="cheerRunList.length">
+              <!-- Percent x through a stretched viewBox whose y units are track pixels:
+                   filled areas have no stroke to distort. Solid wherever the crowd is
+                   past the threshold, faint elsewhere. -->
+              <svg class="cheer-curve" :viewBox="`0 0 100 ${CHEER_TRACK_HEIGHT_PX}`" preserveAspectRatio="none" aria-hidden="true">
+                <path
+                  v-for="(path, index) in cheerPaths"
+                  :key="`${path.segmentIndex}-${index}`"
+                  class="cheer-wave"
+                  :data-level="path.strong ? 'strong' : 'weak'"
+                  :d="path.d"
+                />
+              </svg>
+              <!-- Unstretched, so the dashes keep their length at any zoom. -->
+              <svg class="cheer-curve" aria-hidden="true">
+                <line class="cheer-mid" x1="0" x2="100%" :y1="CHEER_MID_Y_PX" :y2="CHEER_MID_Y_PX" />
+                <line v-for="y in cheerThresholdY" :key="y" class="cheer-threshold" x1="0" x2="100%" :y1="y" :y2="y" />
+              </svg>
+              <!-- Glides on a composited transform in track-width units, like the rally numbers. -->
+              <span
+                v-for="label in cheerPeakMarks"
+                :key="`peak-${label.rank}`"
+                class="cheer-peak"
+                :style="{ transform: `translateX(calc(${label.x}cqw - 50%))` }"
+                aria-hidden="true"
+              >{{ label.text }}</span>
+            </template>
             <span v-else class="cheer-curve-empty">無窗口歡呼資料</span>
           </TimelineLane>
         </div>
