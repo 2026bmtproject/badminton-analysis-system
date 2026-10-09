@@ -67,27 +67,7 @@ watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
 
 <template>
   <div class="app-shell match-shell">
-    <header class="match-shell-header">
-      <RouterLink class="match-back-link" :to="{ name: 'matches' }">
-        ← 比賽庫
-      </RouterLink>
-      <div class="match-shell-identity" :class="{ 'match-shell-identity--review': route.name === 'match-review' }">
-        <h1 ref="heading" tabindex="-1">
-          {{ displayTitle }}
-        </h1>
-      </div>
-      <nav aria-label="比賽導覽">
-        <RouterLink
-          class="match-route-link"
-          :to="{
-            name: 'match-review',
-            params: { matchId: routeMatchId() ?? '' },
-          }"
-        >
-          回看
-        </RouterLink>
-      </nav>
-    </header>
+    <h1 ref="heading" class="sr-only" tabindex="-1">{{ displayTitle }}</h1>
 
     <p v-if="loading" class="sr-only" role="status">載入比賽資料…</p>
     <main v-if="loading" class="shell-state" aria-hidden="true">

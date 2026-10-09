@@ -80,9 +80,7 @@ test("browser-style back semantics use real links and no duplicate Match Library
     shell,
     /<RouterLink class="match-back-link" :to="\{ name: 'matches' \}">/,
   );
-  assert.match(shell, /aria-label="比賽導覽"/);
-  assert.match(shell, />\s*回看\s*<\/RouterLink>/);
-  assert.doesNotMatch(shell, /片段列表|match-rallies/);
+  assert.doesNotMatch(shell, /match-shell-header|比賽導覽|片段列表|match-rallies/, "the desktop nav already leads back to the Match Library");
   assert.match(routePaths, /analysis|tasks|settings/i);
   assert.doesNotMatch(routePaths, /watch|highlights|system/i);
   assert.doesNotMatch(
