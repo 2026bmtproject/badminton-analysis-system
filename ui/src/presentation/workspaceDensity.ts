@@ -1,4 +1,4 @@
-export type PanelDensity = "full" | "compact" | "rail";
+export type PanelDensity = "full" | "compact";
 
 export type TimelineTick = {
   timeSec: number;
@@ -25,18 +25,13 @@ const NICE_INTERVALS_SEC = [
   1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1_800, 3_600,
 ] as const;
 
-export function resolveTimelineDensity(
-  width: number,
-  height: number,
-  forcedRail = false,
-): PanelDensity {
-  if (forcedRail) return "rail";
+export function resolveTimelineDensity(width: number, height: number): PanelDensity {
   // 110px holds the tallest lane (cheer curve, zoomed stroke labels) at full density inside the default 160px window.
   if (width < 720 || height < 110) return "compact";
   return "full";
 }
 
-export function resolveAnalysisDensity(width: number): Exclude<PanelDensity, "rail"> {
+export function resolveAnalysisDensity(width: number): PanelDensity {
   if (width < 310) return "compact";
   return "full";
 }
@@ -71,7 +66,7 @@ export function timelineTicks(
   matchDurationSec?: number,
 ): TimelineTick[] {
   const duration = Math.max(0, endSec - startSec);
-  if (density === "rail" || duration <= 0 || availableWidth <= 0) return [];
+  if (duration <= 0 || availableWidth <= 0) return [];
 
   const minimumSpacing = density === "compact" ? 112 : 88;
   const maximumCount = Math.max(2, Math.floor(availableWidth / minimumSpacing));

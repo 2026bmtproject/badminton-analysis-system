@@ -1,21 +1,15 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import type { StrokeModel } from "../domain/models";
 import { usePlayer } from "../composables/usePlayer";
-import { formatPreciseTime, formatTime, playerName } from "../format";
+import { formatTime } from "../format";
 import type { PlayerShortcutAction } from "../interaction/playerShortcuts";
 import AppIcon from "./ui/AppIcon.vue";
-type PlayerContext = {
-  label: string;
-  score: string | null;
-  meta: string;
-};
 const props = withDefaults(defineProps<{
   src: string;
-  context: PlayerContext;
-  activeStroke: StrokeModel | null;
   fullscreen?: boolean;
-}>(), { fullscreen: false });
+  /** Element that hosts the controls instead of the player, e.g. the floating fullscreen timeline. */
+  controlsTarget?: HTMLElement | null;
+}>(), { fullscreen: false, controlsTarget: null });
 const emit = defineEmits<{ time: [value: number]; playing: [value: boolean]; fullscreenToggle: [] }>();
 const video = ref<HTMLVideoElement | null>(null);
 const mediaAspectRatio = ref("16 / 9");
@@ -139,70 +133,52 @@ defineExpose({ seek, pause, handleShortcut, currentTime });
         @volumechange="syncMute"
         @error="failed(media($event))"
       ></video>
-      <div
-        v-if="state.paused && activeStroke"
-        class="evidence-hud"
-        aria-live="polite"
-      >
-        <strong
-          >#{{ String(activeStroke.ordinal).padStart(2, "0") }} ·
-          {{ formatPreciseTime(activeStroke.time) }}</strong
-        >
-        <span
-          >{{ activeStroke.type ?? "球種未提供" }} ·
-          {{ playerName(activeStroke.player) }}</span
-        >
-      </div>
     </div>
-    <div class="controls">
-      <div class="control-row">
-        <button
-          class="play-button"
-          :aria-label="state.paused ? '播放' : '暫停'"
-          @click="toggle"
-        >
-          <AppIcon :name="state.paused ? 'play' : 'pause'" :size="20" /></button
-        ><span class="time-readout"
-          >{{ formatTime(state.time) }}
-          <span
-            >/ {{ state.ready ? formatTime(state.duration) : "載入中" }}</span
-          ></span
-        ><span class="now-playing" aria-live="polite"
-          ><strong>{{ context.label }}</strong
-          ><small
-            ><template v-if="context.score">{{ context.score }} · </template
-            >{{ context.meta }}</small
-          ></span
-        ><button
-          class="player-icon-button"
-          type="button"
-          :aria-label="muted ? '取消靜音' : '靜音'"
-          @click="toggleMute"
-        >
-          <AppIcon :name="muted ? 'volume-muted' : 'volume'" /></button
-        ><button
-          class="player-icon-button"
-          type="button"
-          :aria-label="fullscreen ? '離開全螢幕' : '全螢幕'"
-          @click="emit('fullscreenToggle')"
-        >
-          <AppIcon
-            :name="fullscreen ? 'fullscreen-exit' : 'fullscreen'"
-          /></button
-        ><label
-          >速度
-          <select
-            aria-label="播放速度"
-            :value="state.rate"
-            @change="changeRate"
+    <Teleport :to="controlsTarget ?? 'body'" :disabled="!controlsTarget">
+      <div class="controls">
+        <div class="control-row">
+          <button
+            class="play-button"
+            :aria-label="state.paused ? '播放' : '暫停'"
+            @click="toggle"
           >
-            <option v-for="rate in playbackRates" :key="rate" :value="rate">
-              {{ rate }}×
-            </option>
-          </select></label
-        >
+            <AppIcon :name="state.paused ? 'play' : 'pause'" :size="20" /></button
+          ><span class="time-readout"
+            >{{ formatTime(state.time) }}
+            <span
+              >/ {{ state.ready ? formatTime(state.duration) : "載入中" }}</span
+            ></span
+          ><button
+            class="player-icon-button"
+            type="button"
+            :aria-label="muted ? '取消靜音' : '靜音'"
+            @click="toggleMute"
+          >
+            <AppIcon :name="muted ? 'volume-muted' : 'volume'" /></button
+          ><button
+            class="player-icon-button player-icon-button--fullscreen"
+            type="button"
+            :aria-label="fullscreen ? '離開全螢幕' : '全螢幕'"
+            @click="emit('fullscreenToggle')"
+          >
+            <AppIcon
+              :name="fullscreen ? 'fullscreen-exit' : 'fullscreen'"
+            /></button
+          ><label
+            ><span class="control-label">速度</span>
+            <select
+              aria-label="播放速度"
+              :value="state.rate"
+              @change="changeRate"
+            >
+              <option v-for="rate in playbackRates" :key="rate" :value="rate">
+                {{ rate }}×
+              </option>
+            </select></label
+          >
+        </div>
       </div>
-    </div>
+    </Teleport>
     <p v-if="state.error" class="error" role="alert">{{ state.error }}</p>
   </section>
 </template>

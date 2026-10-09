@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { AnalysisDockSide, PanelLayout, WorkspacePanelId } from "../../state/workspaceLayout";
 import {
   constrainPanel,
   fullscreenSnapCandidate,
+  type CollapsedSize,
   movePanel,
   resizePanel,
   type WorkspaceBounds,
@@ -18,9 +19,11 @@ const props = withDefaults(defineProps<{
   active: boolean;
   passive?: boolean;
   fullscreen?: boolean;
+  /** Moves the header below the body as a single toolbar, e.g. the fullscreen timeline that also hosts the player controls. */
+  toolbarBottom?: boolean;
   dockSide?: AnalysisDockSide;
   dockSize?: number;
-}>(), { passive: false, fullscreen: false, dockSide: "right", dockSize: 0 });
+}>(), { passive: false, fullscreen: false, toolbarBottom: false, dockSide: "right", dockSize: 0 });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
@@ -48,7 +51,11 @@ let gesture: {
   startY: number;
   panel: PanelLayout;
   bounds: WorkspaceBounds;
+  capsule?: CollapsedSize;
+  moved: boolean;
 } | null = null;
+/** A capsule header both drags and expands; the click that ends a drag must not expand it. */
+let suppressHeaderClick = false;
 
 const visiblePanel = computed(() => draft.value ?? props.panel);
 const analysisEdgeCollapsed = computed(
@@ -57,10 +64,17 @@ const analysisEdgeCollapsed = computed(
     props.panel.presentation === "docked" &&
     props.panel.collapsed,
 );
+/** A collapsed floating window shrinks to a movable capsule instead of a full-width strip. */
+const capsule = computed(() => props.panel.presentation === "detached" && props.panel.collapsed);
+const collapseIcon = computed(() => {
+  if (props.panel.collapsed) return "chevron-up";
+  if (props.panelId === "analysis" && props.panel.presentation === "docked") return props.dockSide === "left" ? "chevron-left" : "chevron-right";
+  return "chevron-down";
+});
 const style = computed(() => props.panel.presentation === "detached" ? ({
   left: `${visiblePanel.value.x * 100}%`,
   top: `${visiblePanel.value.y * 100}%`,
-  width: `${visiblePanel.value.width * 100}%`,
+  width: capsule.value ? "auto" : `${visiblePanel.value.width * 100}%`,
   height: visiblePanel.value.collapsed ? "auto" : `${visiblePanel.value.height * 100}%`,
   "--workspace-panel-alpha": visiblePanel.value.alpha,
   zIndex: props.active ? 32 : 31,
@@ -70,6 +84,10 @@ watch([operation, menuOpen], () => emit("interaction", Boolean(operation.value |
 function containerSize() {
   const parent = root.value?.parentElement;
   return { width: Math.max(1, parent?.clientWidth ?? 1), height: Math.max(1, parent?.clientHeight ?? 1) };
+}
+function capsuleSize(): CollapsedSize | undefined {
+  if (!capsule.value || !root.value) return undefined;
+  return { width: root.value.offsetWidth, height: root.value.offsetHeight };
 }
 function update(change: Partial<PanelLayout>) {
   emit("change", { ...props.panel, ...change });
@@ -172,20 +190,20 @@ function startDrag(event: PointerEvent) {
     startY: event.clientY,
     panel: { ...props.panel },
     bounds: containerSize(),
+    capsule: capsuleSize(),
+    moved: false,
   };
   operation.value = "drag";
-  if (props.fullscreen) emit("snapDrag", { dragging: true, near: false });
+  if (snapsToHome()) emit("snapDrag", { dragging: true, near: false });
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 }
 function drag(event: PointerEvent) {
   if (!gesture || operation.value !== "drag" || event.pointerId !== gesture.pointerId) return;
-  draft.value = movePanel(
-    gesture.panel,
-    event.clientX - gesture.startX,
-    event.clientY - gesture.startY,
-    gesture.bounds,
-  );
-  if (props.fullscreen && draft.value) emit("snapDrag", {
+  const deltaX = event.clientX - gesture.startX;
+  const deltaY = event.clientY - gesture.startY;
+  if (Math.hypot(deltaX, deltaY) > 3) gesture.moved = true;
+  draft.value = movePanel(gesture.panel, deltaX, deltaY, gesture.bounds, gesture.capsule);
+  if (snapsToHome() && draft.value) emit("snapDrag", {
     dragging: true,
     near: fullscreenSnapCandidate(props.panelId, draft.value, gesture.bounds) !== null,
   });
@@ -200,6 +218,7 @@ function startResize(event: PointerEvent) {
     startY: event.clientY,
     panel: { ...props.panel },
     bounds: containerSize(),
+    moved: false,
   };
   operation.value = "resize";
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -215,10 +234,12 @@ function resize(event: PointerEvent) {
 }
 function endGesture(event: PointerEvent) {
   if (!gesture || event.pointerId !== gesture.pointerId) return;
-  const finalPanel = draft.value && operation.value === "drag" && props.fullscreen
+  const snapping = operation.value === "drag" && snapsToHome();
+  const finalPanel = draft.value && snapping
     ? fullscreenSnapCandidate(props.panelId, draft.value, gesture.bounds) ?? draft.value
     : draft.value;
-  if (operation.value === "drag" && props.fullscreen) emit("snapDrag", { dragging: false, near: false });
+  if (snapping) emit("snapDrag", { dragging: false, near: false });
+  if (operation.value === "drag" && gesture.moved) suppressHeaderClick = true;
   gesture = null;
   operation.value = null;
   draft.value = null;
@@ -230,17 +251,30 @@ function constrain() {
   // Fullscreen transitions can briefly report a zero-sized parent. Do not
   // persist a position clamped against that transient measurement.
   if (!root.value.parentElement || root.value.parentElement.clientWidth < 220 || root.value.parentElement.clientHeight < 96) return;
-  const next = constrainPanel(props.panel, containerSize());
+  const next = constrainPanel(props.panel, containerSize(), capsuleSize());
   if (JSON.stringify(next) !== JSON.stringify(props.panel)) emit("change", next);
 }
-function toggleCollapsed() {
-  const next = constrainPanel(
-    { ...props.panel, collapsed: !props.panel.collapsed },
-    containerSize(),
-  );
-  emit("change", next);
+/** Fullscreen windows snap back to their home spot; a capsule moves freely. */
+function snapsToHome() {
+  return props.fullscreen && !props.panel.collapsed;
+}
+async function toggleCollapsed() {
+  const bounds = containerSize();
+  const collapsing = !props.panel.collapsed;
+  // A bottom toolbar stays where the user clicked it: collapse and expand keep the bottom edge in place.
+  const bottom = props.toolbarBottom && props.panel.presentation === "detached" && root.value
+    ? (root.value.offsetTop + root.value.offsetHeight) / bounds.height
+    : null;
+  const next = { ...props.panel, collapsed: collapsing };
+  if (bottom !== null && !collapsing) next.y = bottom - props.panel.height;
+  emit("change", constrainPanel(next, bounds));
+  if (bottom === null || !collapsing) return;
+  await nextTick();
+  const size = capsuleSize();
+  if (size) emit("change", constrainPanel({ ...props.panel, y: bottom - size.height / bounds.height }, bounds, size));
 }
 function handleHeaderClick(event: MouseEvent) {
+  if (suppressHeaderClick) { suppressHeaderClick = false; return; }
   if (!props.panel.collapsed || (event.target as Element).closest("button,select,input,label,a")) return;
   toggleCollapsed();
 }
@@ -265,7 +299,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="root" class="workspace-window" :class="[`workspace-window--${panel.presentation}`, `workspace-window--${panelId}`, `workspace-window--dock-${dockSide}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="panel.presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
+  <section ref="root" class="workspace-window" :class="[`workspace-window--${panel.presentation}`, `workspace-window--${panelId}`, `workspace-window--dock-${dockSide}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="panel.presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
     <div v-if="panel.presentation === 'docked' && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
     <button v-if="analysisEdgeCollapsed" type="button" class="workspace-window__edge-tab" aria-label="展開分析" title="展開分析" @click="toggleCollapsed">
       <AppIcon :name="dockSide === 'left' ? 'chevron-right' : 'chevron-left'" :size="18" />
@@ -275,7 +309,7 @@ onBeforeUnmount(() => {
       <strong>{{ title }}</strong>
       <div class="workspace-window__header-slot"><slot name="header" /></div>
       <div class="workspace-window__actions">
-        <WorkspacePopover ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
+        <WorkspacePopover v-if="!capsule" ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
           <template #trigger><AppIcon name="sliders" :size="17" /></template>
           <label>背景透明度<input aria-label="背景透明度" type="range" min="0.01" max="0.22" step="0.01" :value="Number((1 - panel.alpha).toFixed(2))" @input="update({ alpha: 1 - Number(($event.target as HTMLInputElement).value) })" /></label>
           <button v-if="fullscreen && panel.presentation === 'detached'" type="button" role="menuitem" @click="closeMenu(); emit('restore')">回復全螢幕預設位置</button>
@@ -286,10 +320,10 @@ onBeforeUnmount(() => {
             <button v-if="panelId === 'analysis'" type="button" role="menuitem" @click="dockAnalysis('right')">停靠右側</button>
           </template>
         </WorkspacePopover>
-        <button type="button" :aria-label="panel.collapsed ? `展開${title}` : `收合${title}`" @click="toggleCollapsed">{{ panel.collapsed ? "＋" : "—" }}</button>
+        <button type="button" class="workspace-window__collapse" :aria-label="panel.collapsed ? `展開${title}` : `收合${title}`" :title="panel.collapsed ? `展開${title}` : `收合${title}`" @click="toggleCollapsed"><AppIcon :name="collapseIcon" :size="17" /></button>
       </div>
     </header>
-    <div v-if="!panel.collapsed || (panel.presentation === 'docked' && panelId === 'timeline')" class="workspace-window__body"><slot /></div>
+    <div v-show="!panel.collapsed" class="workspace-window__body"><slot /></div>
     <div v-if="!panel.collapsed && panel.presentation === 'detached'" class="workspace-window__resize-grip" aria-hidden="true" @pointerdown.stop="startResize" @pointermove="resize" @pointerup="endGesture" @pointercancel="endGesture" />
   </section>
 </template>

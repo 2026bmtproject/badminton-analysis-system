@@ -45,15 +45,23 @@ test("normal and fullscreen floating settings persist independently", () => {
   assert.deepEqual(parseWorkspaceLayout(JSON.stringify(v2)).fullscreenPanels, defaultWorkspaceLayout().fullscreenPanels);
 });
 
-test("untouched legacy fullscreen timeline adopts the shorter default; moved ones are kept", () => {
-  const legacy = defaultWorkspaceLayout();
-  legacy.fullscreenPanels.timeline = { ...legacy.fullscreenPanels.timeline, x: 0.1, y: 0.66, height: 0.25 };
-  const migrated = parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline;
-  assert.equal(migrated.y, defaultWorkspaceLayout().fullscreenPanels.timeline.y);
-  assert.equal(migrated.height, defaultWorkspaceLayout().fullscreenPanels.timeline.height);
-  assert.equal(migrated.x, 0.1);
-  legacy.fullscreenPanels.timeline.y = 0.5;
-  assert.equal(parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline.height, 0.25);
+test("unresized legacy fullscreen timelines adopt the current default height; moved ones keep their spot", () => {
+  const home = defaultWorkspaceLayout().fullscreenPanels.timeline;
+  for (const spot of [{ y: 0.66, height: 0.25 }, { y: 0.72, height: 0.19 }]) {
+    const legacy = defaultWorkspaceLayout();
+    legacy.fullscreenPanels.timeline = { ...legacy.fullscreenPanels.timeline, x: 0.1, ...spot };
+    const migrated = parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline;
+    assert.equal(migrated.y, home.y);
+    assert.equal(migrated.height, home.height);
+    assert.equal(migrated.x, 0.1);
+    legacy.fullscreenPanels.timeline.y = 0.5;
+    const moved = parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline;
+    assert.equal(moved.y, 0.5);
+    assert.equal(moved.height, home.height);
+  }
+  const resized = defaultWorkspaceLayout();
+  resized.fullscreenPanels.timeline.height = 0.3;
+  assert.equal(parseWorkspaceLayout(JSON.stringify(resized)).fullscreenPanels.timeline.height, 0.3);
 });
 
 test("untouched fullscreen timeline fits a fixed pixel height above its default bottom edge", () => {

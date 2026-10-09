@@ -63,6 +63,17 @@ test("6. collapse and expand preserve the user-defined expanded dimensions", () 
   assert.equal(expanded.height, resized.height);
 });
 
+test("6b. a collapsed capsule is clamped by its own size and re-clamped on expand", () => {
+  const panel = { ...defaultWorkspaceLayout().fullscreenPanels.analysis, collapsed: true };
+  const capsule = { width: 120, height: 36 };
+  const moved = movePanel(panel, 2400, 2400, bounds, capsule);
+  assert.equal(moved.x, 1 - capsule.width / bounds.width);
+  assert.equal(moved.y, 1 - capsule.height / bounds.height);
+  const expanded = constrainPanel({ ...moved, collapsed: false }, bounds);
+  assert.equal(expanded.x, 1 - expanded.width);
+  assert.equal(expanded.y, 1 - expanded.height);
+});
+
 test("7. smaller workspace constrains dimensions and keeps the header reachable", () => {
   const panel = { ...defaultWorkspaceLayout().panels.analysis, x: 0.9, y: 0.9, width: 0.9, height: 0.9 };
   const constrained = constrainPanel(panel, { width: 920, height: 500 });

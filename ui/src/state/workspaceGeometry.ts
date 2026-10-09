@@ -2,6 +2,8 @@ import { TIMELINE_FIT_HEIGHT_PX } from "../presentation/workspaceDensity";
 import { defaultWorkspaceLayout, type PanelLayout, type WorkspacePanelId } from "./workspaceLayout";
 
 export type WorkspaceBounds = { width: number; height: number };
+/** Rendered pixel size of a collapsed panel, which can be far smaller than its expanded footprint. */
+export type CollapsedSize = { width: number; height: number };
 
 export const PANEL_MIN_WIDTH_PX = 220;
 export const PANEL_MIN_HEIGHT_PX = 96;
@@ -9,8 +11,10 @@ export const PANEL_MAX_WIDTH_RATIO = 0.96;
 export const PANEL_MAX_HEIGHT_RATIO = 0.92;
 export const PANEL_HEADER_HEIGHT_PX = 42;
 export const FULLSCREEN_SNAP_DISTANCE_PX = 72;
-/** Timeline lanes have fixed pixel heights, so the floating timeline uses the same fitted height as the dock. */
-export const FULLSCREEN_TIMELINE_HEIGHT_PX = TIMELINE_FIT_HEIGHT_PX;
+/** The fullscreen timeline's single bottom toolbar (mode, player controls, window actions) replaces its header. */
+export const FULLSCREEN_TOOLBAR_HEIGHT_PX = 36;
+/** Timeline lanes have fixed pixel heights, so the floating timeline keeps the dock's lane space under a slimmer toolbar. */
+export const FULLSCREEN_TIMELINE_HEIGHT_PX = TIMELINE_FIT_HEIGHT_PX - PANEL_HEADER_HEIGHT_PX + FULLSCREEN_TOOLBAR_HEIGHT_PX;
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
@@ -25,19 +29,29 @@ function normalizedConstraints(bounds: WorkspaceBounds) {
   };
 }
 
+/**
+ * Keeps a panel inside the workspace. A collapsed panel is clamped by its own
+ * rendered size when known, so a capsule can reach the edges its expanded
+ * window could not; expanding re-clamps by the stored size.
+ */
 export function constrainPanel(
   panel: PanelLayout,
   bounds: WorkspaceBounds,
+  collapsedSize?: CollapsedSize,
 ): PanelLayout {
   const limits = normalizedConstraints(bounds);
   const width = clamp(panel.width, limits.minWidth, PANEL_MAX_WIDTH_RATIO);
   const height = clamp(panel.height, limits.minHeight, PANEL_MAX_HEIGHT_RATIO);
-  const visibleHeight = panel.collapsed ? limits.collapsedHeight : height;
+  const capsule = panel.collapsed ? collapsedSize : undefined;
+  const visibleWidth = capsule ? Math.min(1, capsule.width / Math.max(1, bounds.width)) : width;
+  const visibleHeight = capsule
+    ? Math.min(1, capsule.height / Math.max(1, bounds.height))
+    : panel.collapsed ? limits.collapsedHeight : height;
   return {
     ...panel,
     width,
     height,
-    x: clamp(panel.x, 0, Math.max(0, 1 - width)),
+    x: clamp(panel.x, 0, Math.max(0, 1 - visibleWidth)),
     y: clamp(panel.y, 0, Math.max(0, 1 - visibleHeight)),
   };
 }
@@ -47,6 +61,7 @@ export function movePanel(
   deltaX: number,
   deltaY: number,
   bounds: WorkspaceBounds,
+  collapsedSize?: CollapsedSize,
 ) {
   return constrainPanel(
     {
@@ -55,6 +70,7 @@ export function movePanel(
       y: panel.y + deltaY / Math.max(1, bounds.height),
     },
     bounds,
+    collapsedSize,
   );
 }
 

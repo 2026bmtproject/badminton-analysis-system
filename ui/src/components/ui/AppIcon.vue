@@ -6,6 +6,8 @@ defineProps<{
     | "arrow-left"
     | "chevron-left"
     | "chevron-right"
+    | "chevron-up"
+    | "chevron-down"
     | "volume"
     | "volume-muted"
     | "fullscreen"
@@ -51,6 +53,8 @@ defineProps<{
     </template>
     <path v-else-if="name === 'chevron-left'" d="m15 18-6-6 6-6" />
     <path v-else-if="name === 'chevron-right'" d="m9 18 6-6-6-6" />
+    <path v-else-if="name === 'chevron-up'" d="m18 15-6-6-6 6" />
+    <path v-else-if="name === 'chevron-down'" d="m6 9 6 6 6-6" />
     <template v-else-if="name === 'volume' || name === 'volume-muted'">
       <path d="M11 5 6 9H3v6h3l5 4Z" />
       <path

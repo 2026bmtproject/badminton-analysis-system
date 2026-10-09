@@ -11,15 +11,13 @@ import { placeWorkspacePopover } from "../src/presentation/workspacePopover";
 
 const source = (path: string) => readFileSync(path, "utf8");
 
-test("Timeline size only chooses full or compact; explicit collapse chooses rail", () => {
+test("Timeline size only chooses full or compact", () => {
   assert.equal(resolveTimelineDensity(900, 230), "full");
   assert.equal(resolveTimelineDensity(900, 116), "full");
   assert.equal(resolveTimelineDensity(900, 100), "compact");
   assert.equal(resolveTimelineDensity(620, 170), "compact");
   assert.equal(resolveTimelineDensity(330, 170), "compact");
   assert.equal(resolveTimelineDensity(900, 90), "compact");
-  assert.equal(resolveTimelineDensity(900, 230, true), "rail");
-  assert.equal(resolveTimelineDensity(330, 90, true), "rail");
 });
 
 test("adaptive defaults prioritize video on constrained desktop viewports", () => {
@@ -36,7 +34,6 @@ test("pixel-aware ticks reduce count while retaining valid ordered ranges", () =
   assert.ok(narrow.length >= 2);
   assert.ok(wide.every((tick, index) => index === 0 || tick.timeSec > wide[index - 1]!.timeSec));
   assert.ok(wide.every((tick) => tick.percent >= 0 && tick.percent <= 100));
-  assert.deepEqual(timelineTicks(0, 600, 1_000, "rail"), []);
 });
 
 test("scrolling ticks move their labels continuously and fade where the view cuts the match", () => {

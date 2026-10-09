@@ -8,10 +8,9 @@ import WorkspaceWindow from "../components/workspace/WorkspaceWindow.vue";
 import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
 import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
 import type { EvidenceModel } from "../domain/models";
-import { formatTime, playerName, scoreText } from "../format";
+import { playerName, scoreText } from "../format";
 import { playerShortcutAction } from "../interaction/playerShortcuts";
 import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
-import { hitStatus } from "../review";
 import { useMatchContext } from "../state/matchContext";
 import {
   constrainAnalysisDockWidth,
@@ -35,6 +34,8 @@ const activeWindow = ref<WorkspacePanelId>("analysis");
 const playing = workspace.playing;
 const player = ref<InstanceType<typeof ReviewPlayer> | null>(null);
 const stage = ref<HTMLElement | null>(null);
+/** Fullscreen hosts the player controls in the floating timeline's toolbar, leaving the screen edge clear. */
+const playerControlsHost = ref<HTMLElement | null>(null);
 const fullscreen = ref(false);
 const fullscreenUiHidden = ref(false);
 const panelInteracting = ref<Record<WorkspacePanelId, boolean>>({ timeline: false, analysis: false });
@@ -58,14 +59,6 @@ const commentaryAvailabilityLabel = computed(() => {
   if (availability.coverage === "none") return "未提供";
   if (availability.coverage === "complete") return `全部 ${availability.totalRallyCount} 個片段均有賽評`;
   return `部分提供（${availability.availableRallyCount}/${availability.totalRallyCount} 個片段）`;
-});
-const playerContext = computed(() => {
-  const rally = workspace.activeRally.value;
-  return rally ? {
-    label: `片段 ${String(rally.id + 1).padStart(3, "0")}`,
-    score: headerScore.value,
-    meta: `${formatTime(rally.start)}–${formatTime(rally.end)} · ${hitStatus(match.value.states.events?.status, rally.hits?.length ?? null)}`,
-  } : { label: "比賽空檔", score: headerScore.value, meta: formatTime(workspace.currentTimeSec.value) };
 });
 const timelineModes = computed(() => availableTimelineModes(match.value.capabilities));
 const selectedTimelineLabel = computed(() => timelineModes.value.find((item) => item.id === layout.timelineMode)?.label ?? "片段");
@@ -169,9 +162,6 @@ function setAnalysisSide(side: AnalysisDockSide) {
 function setDockSize(id: WorkspacePanelId, value: number) {
   if (id === "analysis") layout.analysisDockWidth = constrainAnalysisDockWidth(value);
   else layout.timelineDockHeight = constrainTimelineDockHeight(value);
-}
-function expandTimeline() {
-  storedPanels().timeline.collapsed = false;
 }
 function clearIdleTimer() {
   if (idleTimer !== undefined) window.clearTimeout(idleTimer);
@@ -290,17 +280,18 @@ onBeforeUnmount(() => {
     </header>
     <main class="review-main review-main--workspace">
       <section ref="stage" class="review-workspace-stage" :class="[`review-workspace-stage--analysis-${layout.analysisSide}`, { 'review-workspace-stage--analysis-detached': panels.analysis.presentation === 'detached', 'review-workspace-stage--timeline-detached': panels.timeline.presentation === 'detached', 'review-workspace-stage--analysis-collapsed': panels.analysis.presentation === 'docked' && panels.analysis.collapsed, 'review-workspace-stage--timeline-collapsed': panels.timeline.presentation === 'docked' && panels.timeline.collapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }]" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
-        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :context="playerContext" :active-stroke="workspace.activeStroke.value" :fullscreen="fullscreen" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
+        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="fullscreen ? playerControlsHost : null" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
         <div v-if="fullscreen && snapDragging" class="fullscreen-snap-guide" :class="{ 'fullscreen-snap-guide--near': snapNear }" :style="snapGuideStyle" aria-hidden="true"><span>{{ snapNear ? "放開吸附預設位置" : "拖近此處可吸附" }}</span></div>
 
-        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @presentation="setPresentation('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @snap-drag="updateSnapDrag('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
+        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @presentation="setPresentation('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @snap-drag="updateSnapDrag('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
             <label class="timeline-mode-selector" @wheel="modeWheel"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
+            <div v-if="fullscreen && !match.layoutOnly" ref="playerControlsHost" class="workspace-window__player-controls" />
           </template>
-          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="panels.timeline.presentation === 'docked' && panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @expand="expandTimeline" />
+          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" />
         </WorkspaceWindow>
 
         <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @presentation="setPresentation('analysis', $event)" @dock-side="setAnalysisSide" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @snap-drag="updateSnapDrag('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">

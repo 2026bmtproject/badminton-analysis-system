@@ -101,14 +101,12 @@ const props = withDefaults(
     activeStrokeIndex?: number | null;
     scoreContextId?: number | null;
     timelineMode?: TimelineMode | "all";
-    compactRail?: boolean;
   }>(),
   {
     timelineMode: "all",
     playing: false,
     activeStrokeIndex: null,
     scoreContextId: null,
-    compactRail: false,
   },
 );
 const emit = defineEmits<{
@@ -118,13 +116,10 @@ const emit = defineEmits<{
   rallyAt: [rally: RallyModel, timeSec: number];
   seek: [timeSec: number];
   inspect: [timeSec: number | null];
-  expand: [];
 }>();
-const density = ref<PanelDensity>(props.compactRail ? "rail" : "full");
+const density = ref<PanelDensity>("full");
 const modeShows = (track: TrackKey) =>
-  props.compactRail
-    ? track === "rally"
-    : props.timelineMode === "all" || props.timelineMode === track;
+  props.timelineMode === "all" || props.timelineMode === track;
 const fit = ref<TimelineFit | "custom">("match");
 const renderViewport = ref<TimelineViewport>(
   fitViewport("match", props.model.duration, null),
@@ -203,7 +198,6 @@ function measureDensity() {
   density.value = resolveTimelineDensity(
     element.clientWidth,
     element.clientHeight,
-    props.compactRail,
   );
 }
 onMounted(() => {
@@ -278,13 +272,6 @@ watch(
     lensProgress.value = 0;
     clearInspection();
   },
-);
-watch(
-  () => props.compactRail,
-  () => void nextTick(() => {
-    measureDensity();
-    measureTrackWidth();
-  }),
 );
 watch(
   () => props.model,
@@ -583,7 +570,7 @@ function panTimeline(event: WheelEvent) {
   scheduleInspectionRestore();
 }
 async function toggleFitOnDoubleClick(event: MouseEvent) {
-  if (props.compactRail || lensActive.value) return;
+  if (lensActive.value) return;
   const track = surface.value?.querySelector<HTMLElement>(".timeline-lane-track");
   if (!track) return;
   const bounds = track.getBoundingClientRect();
@@ -774,10 +761,6 @@ function inspectPointer(event: PointerEvent) {
 function clickTimeline(event: MouseEvent) {
   if (suppressScrubClick) { suppressScrubClick = false; return; }
   if (lensActive.value) return;
-  if (props.compactRail) {
-    emit("expand");
-    return;
-  }
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (target.closest("button,input,select,summary,a")) return;
@@ -863,7 +846,7 @@ function scrubTime(clientX: number, track: HTMLElement) {
 }
 function beginScrub(event: PointerEvent) {
   holdFollowForPointer();
-  if (event.button !== 0 || props.compactRail || lensActive.value || !(event.target instanceof Element)) return;
+  if (event.button !== 0 || lensActive.value || !(event.target instanceof Element)) return;
   if (event.target.closest("button,input,select,summary,a")) return;
   const track = event.target.closest<HTMLElement>(".timeline-lane-track");
   if (!track || !surface.value) return;
@@ -932,7 +915,6 @@ const timelineStyle = computed(() => ({
     :data-viewport-start="renderViewport.startSec"
     :data-viewport-end="renderViewport.endSec"
     :data-zoom-level="zoomLevel.toFixed(3)"
-    :data-compact-rail="compactRail"
     :data-density="density"
     :aria-busy="lensActive"
     :style="timelineStyle"
@@ -950,7 +932,6 @@ const timelineStyle = computed(() => ({
       @dblclick="toggleFitOnDoubleClick"
       @wheel="panTimeline"
     >
-      <button v-if="compactRail" type="button" class="timeline-rail-expand" @click.stop="emit('expand')">展開時間軸</button>
       <section v-if="modeShows('rally') || modeShows('score')" class="timeline-band timeline-band--match" aria-label="比賽">
         <header class="timeline-band-label">
           <strong>比賽</strong>
@@ -1222,7 +1203,7 @@ const timelineStyle = computed(() => ({
           formatPreciseTime(inspectionTime)
         }}</span>
       </div>
-      <div v-if="!compactRail" class="time-axis">
+      <div class="time-axis">
         <span v-for="tick in axisTicks" :key="tick.timeSec" :style="{ left: tick.percent + '%', transform: `translateX(${tick.shift}%)`, opacity: tick.opacity }">{{
           formatTimelineAxisTime(tick.timeSec, renderViewport.durationSec)
         }}</span>

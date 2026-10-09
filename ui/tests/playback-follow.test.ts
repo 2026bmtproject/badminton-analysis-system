@@ -255,7 +255,6 @@ test("4. real gaps clear rally, stroke, court and segment score observations", (
 
 test("5. all active consumers are wired to the same authoritative context", () => {
   const page = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(page, /:active-stroke="workspace\.activeStroke\.value"/);
   assert.match(page, /@time="workspace\.updateTime"/);
   assert.match(page, /:active-id="activeId"/);
   assert.match(page, /:active-stroke-index="workspace\.activeStroke\.value\?\.eventIndex \?\? null"/);

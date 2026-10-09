@@ -386,8 +386,6 @@ test("timeline labels, inspector provenance and workspace guidance use finished 
   assert.match(detail, /局數來源：/);
   assert.match(detail, /rally\.game !== null && rally\.gameSource/);
   assert.match(detail, /gameSourceLabel\(rally\.gameSource\)/);
-  assert.match(app, /formatTime\(rally\.start\)/);
-  assert.match(app, /formatTime\(rally\.end\)/);
 });
 
 test("instrument typography bundles only the compact measurement face", () => {
@@ -535,7 +533,7 @@ test("signature interaction uses one guarded shortcut path and lane delegation",
   assert.match(app, /window\.addEventListener\("keydown", keyboard\)/);
   assert.doesNotMatch(composable, /addEventListener\("keydown"/);
   assert.match(player, /@click="toggle"/);
-  assert.match(player, /<\/div>\s*<div class="controls">/);
+  assert.match(player, /<\/div>\s*<Teleport [^>]*>\s*<div class="controls">/);
   assert.doesNotMatch(player, /progress-rally-window|progress-stroke-tick/);
   assert.match(timeline, /@pointerdown="beginScrub"/);
   assert.match(timeline, /moveScrub\(\$event\)/);
@@ -671,13 +669,12 @@ test("Match Bar and player context never fall back to stale selection", () => {
     app,
     /const activeId = computed\(\(\) => workspace\.activeRally\.value\?\.id \?\? null\);/,
   );
-  assert.match(app, /const rally = workspace\.activeRally\.value;/);
+  assert.match(app, /const currentLabel = computed\(\(\) => activeId\.value === null \? "比賽空檔"/);
   assert.match(app, /workspace\.currentScore\.value/);
   assert.doesNotMatch(
     app,
     /activeRally\.value \?\? workspace\.selectedRally\.value/,
   );
-  assert.match(app, /label: "比賽空檔"/);
 });
 
 test("timeline has no header row: no track filter, fit toggle, summary, or return button", () => {
@@ -754,7 +751,8 @@ test("exact Stroke evidence uses one precise formatter", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   assert.match(detail, /formatPreciseTime\(selectedStroke\.time\)/);
   assert.match(detail, /formatPreciseTimeParts\(stroke\.time\)\.fraction/);
-  assert.match(player, /formatPreciseTime\(activeStroke\.time\)/);
+  // The player carries no stroke HUD or segment summary; stroke evidence lives in the inspector.
+  assert.doesNotMatch(player, /evidence-hud|now-playing|activeStroke/);
   // Timeline stroke labels carry only type and player; exact time lives in the inspector and hover preview.
   assert.doesNotMatch(timeline, /formatPreciseTime\(stroke\.time\)/);
   assert.doesNotMatch(timeline, /stroke-marker-index/);

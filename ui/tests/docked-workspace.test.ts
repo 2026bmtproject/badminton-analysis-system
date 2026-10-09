@@ -45,10 +45,28 @@ test("4. collapsed Analysis releases its dock width and preserves stored size", 
   assert.doesNotMatch(windowComponent.slice(windowComponent.indexOf("function toggleCollapsed"), windowComponent.indexOf("function handleResize")), /dockSize/);
 });
 
-test("5. collapsed Timeline remains a compact real-data Match Rail", () => {
-  assert.match(styles, /review-workspace-stage--timeline-collapsed[^}]*64px/);
-  assert.match(review, /:compact-rail="panels\.timeline\.presentation === 'docked' && panels\.timeline\.collapsed"/);
-  assert.match(source("src/components/ReviewTimeline.vue"), /props\.compactRail\s*\? track === "rally"/);
+test("5. collapsed Timeline shrinks to its header with a single expand control", () => {
+  assert.match(styles, /review-workspace-stage--timeline-collapsed\s*\{[^}]*grid-template-rows:\s*minmax\(320px, 1fr\) auto/);
+  assert.doesNotMatch(review, /compact-rail|expandTimeline/);
+  assert.doesNotMatch(source("src/components/ReviewTimeline.vue"), /compactRail|timeline-rail-expand|emit\("expand"\)/);
+  assert.match(windowComponent, /<div v-show="!panel\.collapsed" class="workspace-window__body">/);
+  assert.equal((windowComponent.match(/@click="toggleCollapsed"/g) ?? []).length, 2, "header button plus the docked Analysis edge tab");
+});
+
+test("5b. fullscreen Timeline merges mode, player controls and window actions into one bottom toolbar", () => {
+  assert.match(review, /:toolbar-bottom="fullscreen"/);
+  assert.match(review, /<template #header>[\s\S]*<div v-if="fullscreen && !match\.layoutOnly" ref="playerControlsHost"[\s\S]*<\/template>/);
+  assert.match(review, /:controls-target="fullscreen \? playerControlsHost : null"/);
+  assert.match(styles, /\.workspace-window--toolbar-bottom:not\(\.workspace-window--collapsed\) \.workspace-window__header \{ order: 2;/);
+  assert.doesNotMatch(windowComponent, /collapsible|\$slots\.footer/);
+  assert.match(source("src/components/ReviewPlayer.vue"), /<Teleport :to="controlsTarget \?\? 'body'" :disabled="!controlsTarget">/);
+  assert.doesNotMatch(source("src/styles/desktop-shell.css"), /:fullscreen \.controls/);
+});
+
+test("5c. a collapsed floating window becomes a movable capsule", () => {
+  assert.match(windowComponent, /const capsule = computed\(\(\) => props\.panel\.presentation === "detached" && props\.panel\.collapsed\)/);
+  assert.match(windowComponent, /width: capsule\.value \? "auto"/);
+  assert.match(styles, /\.workspace-window--capsule \{[^}]*border-radius: 999px/);
 });
 
 test("6. Analysis detach reuses the shared draggable and resizable window", () => {

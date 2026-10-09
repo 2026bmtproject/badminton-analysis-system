@@ -40,8 +40,16 @@ const detachedDefaults: Record<WorkspacePanelId, Omit<PanelLayout, "presentation
   analysis: { x: 0.735, y: 0.035, width: 0.24, height: 0.57, collapsed: false, alpha: 0.94 },
 };
 
-/** Earlier releases floated a 25%-tall fullscreen timeline; layouts still at that spot adopt the current default. */
-const LEGACY_FULLSCREEN_TIMELINE = { y: 0.66, height: 0.25 };
+/**
+ * Earlier fullscreen timeline defaults. An unresized legacy timeline adopts the
+ * current default height, and one still at its legacy spot adopts the current
+ * default position, which sits lower now that no player bar spans the screen edge.
+ */
+const LEGACY_FULLSCREEN_TIMELINES = [
+  { y: 0.66, height: 0.25 },
+  { y: 0.72, height: 0.19 },
+  { y: 0.74, height: 0.23 },
+];
 
 const modes: TimelineMode[] = ["rally", "stroke", "score", "commentary", "cheer"];
 const views: AnalysisView[] = ["analysis", "court"];
@@ -88,7 +96,7 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
       analysis: { ...detachedDefaults.analysis, presentation: "docked" },
     },
     fullscreenPanels: {
-      timeline: { x: 0.025, y: 0.72, width: 0.69, height: 0.19, collapsed: false, alpha: 0.94, presentation: "detached" },
+      timeline: { x: 0.025, y: 0.78, width: 0.69, height: 0.19, collapsed: false, alpha: 0.94, presentation: "detached" },
       analysis: { ...detachedDefaults.analysis, presentation: "detached" },
     },
   })) as WorkspaceLayout;
@@ -106,8 +114,10 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       presentation: migratedFromFloatingV1 ? "detached" : "docked",
     });
     const fullscreenTimeline = sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline);
-    if (fullscreenTimeline.y === LEGACY_FULLSCREEN_TIMELINE.y && fullscreenTimeline.height === LEGACY_FULLSCREEN_TIMELINE.height) {
-      fullscreenTimeline.y = fallback.fullscreenPanels.timeline.y;
+    const legacy = LEGACY_FULLSCREEN_TIMELINES.find((spot) => spot.height === fullscreenTimeline.height && spot.y === fullscreenTimeline.y)
+      ?? LEGACY_FULLSCREEN_TIMELINES.find((spot) => spot.height === fullscreenTimeline.height);
+    if (legacy) {
+      if (fullscreenTimeline.y === legacy.y) fullscreenTimeline.y = fallback.fullscreenPanels.timeline.y;
       fullscreenTimeline.height = fallback.fullscreenPanels.timeline.height;
     }
     return {

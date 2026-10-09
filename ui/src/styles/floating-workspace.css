@@ -25,7 +25,8 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "player" "timeline";
 }
-.review-workspace-stage--timeline-collapsed { --timeline-dock-height: 64px !important; }
+/* A collapsed timeline keeps only its header, so the dock row shrinks to fit it. */
+.review-workspace-stage--timeline-collapsed { grid-template-rows: minmax(320px, 1fr) auto; }
 .review-workspace-stage--analysis-detached { grid-template-columns: minmax(0, 1fr); grid-template-areas: "player" "timeline"; }
 .review-workspace-stage--timeline-detached { grid-template-rows: minmax(360px, 1fr); grid-template-areas: "player analysis"; }
 .review-workspace-stage--analysis-left.review-workspace-stage--timeline-detached { grid-template-areas: "analysis player"; }
@@ -57,6 +58,30 @@
   z-index: var(--z-sticky);
   background: rgb(8 10 11 / 96%);
 }
+/*
+ * A bottom toolbar replaces the header: one 36px row (FULLSCREEN_TOOLBAR_HEIGHT_PX) of uniform 28px
+ * controls, laid out like a video player — mode │ play, time … volume, speed, fullscreen │ window actions.
+ * The right inset clears the window resize grip.
+ */
+.workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header { order: 2; min-height: 36px; gap: var(--space-2); padding: 0 28px 0 var(--space-2); border-top: 1px solid var(--color-border); border-bottom: 0; }
+.workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header > strong,
+.workspace-window--toolbar-bottom .workspace-window__mode-label { display: none; }
+.workspace-window--toolbar-bottom .workspace-window__header :is(button, select, .workspace-popover__trigger) { height: 28px; min-height: 28px; }
+.workspace-window--toolbar-bottom .workspace-window__header select { padding: 0 var(--space-2); font-size: var(--type-meta); background: transparent; border-color: var(--color-border); }
+/* A transparent select hands its native popup the default light background; keep the options dark. */
+.workspace-window--toolbar-bottom .workspace-window__header option { color: var(--color-text); background: var(--color-surface-raised); }
+.workspace-window--toolbar-bottom .workspace-window__actions :is(button, .workspace-popover__trigger) { width: 28px; min-width: 28px; padding: 0; }
+.workspace-window--toolbar-bottom .workspace-window__actions::before,
+.workspace-window__player-controls::before { width: 1px; height: 18px; flex: 0 0 auto; align-self: center; background: var(--color-border-strong); content: ""; }
+.workspace-window--toolbar-bottom .workspace-window__actions::before { margin-right: var(--space-1); }
+.workspace-window__player-controls { display: flex; min-width: 0; flex: 1; gap: var(--space-2); }
+.workspace-window__player-controls .controls { display: flex; min-width: 0; flex: 1; align-items: center; padding: 0; background: transparent; border-top: 0; }
+.workspace-window__player-controls .control-row { flex: 1; min-width: 0; gap: var(--space-1); }
+.workspace-window__player-controls :is(.play-button, .player-icon-button) { width: 28px; padding: 0; }
+.workspace-window__player-controls .play-button { margin-right: var(--space-1); background: var(--color-surface-soft); border: 0; }
+.workspace-window__player-controls .time-readout { font-size: var(--type-meta); }
+.workspace-window__player-controls .control-label { display: none; }
+.workspace-window__player-controls .player-icon-button--fullscreen { order: 1; }
 .workspace-window {
   --workspace-panel-alpha: 0.94;
   position: absolute;
@@ -134,6 +159,11 @@
 .workspace-window__header button,
 .workspace-window__header summary { cursor: pointer; }
 .workspace-window--collapsed .workspace-window__header { border-bottom: 0; }
+.workspace-window--collapsed .workspace-window__header-slot { display: none; }
+.workspace-window--collapsed .workspace-window__actions { margin-left: auto; }
+/* Size containment would collapse a content-sized capsule to zero width. */
+.workspace-window--capsule { min-width: 0; border-radius: 999px; container-type: normal; }
+.workspace-window--capsule .workspace-window__header { min-height: 36px; gap: var(--space-2); padding: 2px 2px 2px var(--space-3); border-radius: 999px; }
 .workspace-window__header > strong {
   min-width: 0;
   overflow: hidden;
@@ -296,16 +326,7 @@
   border-left: 0;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .workspace-window__header { min-height: 30px; }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .workspace-window__header-slot { display: none; }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .workspace-window__body { overflow: hidden; }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .intelligence-timeline { padding: 0 var(--space-2); }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .timeline-band { margin: 0; border: 0; }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .timeline-band-label,
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .time-axis { display: none; }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .timeline-band { grid-template-columns: minmax(0, 1fr); }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .timeline-lane--rally { min-height: 30px; }
-.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .timeline-lane--rally .timeline-lane-track { height: 28px; }
+.workspace-window--docked.workspace-window--timeline.workspace-window--collapsed .workspace-window__header { min-height: 34px; padding-block: 1px; }
 
 @container (max-width: 420px) {
   .workspace-window__mode-label { display: none; }
