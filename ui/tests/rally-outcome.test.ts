@@ -6,6 +6,7 @@ import { scoreLeadModel } from "../src/temporal/scoreLead";
 import {
   MIN_BAR_FRACTION,
   breakAt,
+  highlightRanks,
   labelWidthPx,
   rallyBarFraction,
   rallyIndexLabels,
@@ -230,4 +231,16 @@ test("a selected Rally out of view waits at the nearer edge with an arrow", () =
   assert.ok(Math.abs(gap[0]!.x - 2.2) < 1e-9);
   assert.deepEqual(labels(80).map(({ text, pinned }) => [text, pinned]), [["001 ›", "end"]]);
   assert.deepEqual(labels(98).map(({ text, pinned }) => [text, pinned]), [["001", null]]);
+});
+
+test("highlight places run best first, ties share a place, unscored rallies are unranked", () => {
+  const scored = [0.4, 0.9, null, 0.6, 0.6].map((highlight, id) => rally(id, [id, 0], 0, { highlight }));
+  assert.deepEqual([...highlightRanks(scored)].sort((a, b) => a[0] - b[0]), [[0, 4], [1, 1], [3, 2], [4, 2]]);
+});
+
+test("the rally tooltip gives the highlight place, never the score", () => {
+  const scored = [0.4, 0.9, 0.6].map((highlight, id) => rally(id, [id, 0], 0, { highlight }));
+  const lines = timelineHoverPreview({ kind: "rally", id: 2 }, scored)?.lines ?? [];
+  assert.equal(lines.at(-1), "精華排名 #2 / 3");
+  assert.ok(!lines.some((line) => line.includes("0.6")));
 });

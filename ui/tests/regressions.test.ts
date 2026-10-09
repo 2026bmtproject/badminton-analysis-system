@@ -265,32 +265,19 @@ test("cheer lane draws source window curve without segment score dots", () => {
   assert.match(styles, /\.cheer-curve path\s*\{[^}]*vector-effect:\s*non-scaling-stroke/s);
 });
 
-test("full-match highlight is non-interactive overview encoding", () => {
+test("highlight has no lane of its own; its place lives in the rally tooltip", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const styles = readFileSync("src/styles/timeline.css", "utf8");
-  const signalSection = timeline.slice(
-    timeline.indexOf('class="timeline-band timeline-band--signals"'),
-    timeline.indexOf('class="timeline-playhead"'),
-  );
-  assert.match(
-    signalSection,
-    /v-for="rally in rallies\.filter\(\(item\) => item\.highlight !== null\)"/,
-  );
-  assert.equal(
-    (
-      signalSection.match(
-        /left: position\(\(rally\.start \+ rally\.end\) \/ 2\) \+ '%'/g,
-      ) ?? []
-    ).length,
-    1,
-  );
-  assert.doesNotMatch(signalSection, /rally\.duration|width:/);
-  assert.match(styles, /\.highlight-block::after\s*\{[^}]*width:\s*11px/s);
-  assert.equal((signalSection.match(/aria-hidden="true"/g) ?? []).length, 2);
-  assert.doesNotMatch(styles, /\.signal-block:(?:hover|focus-visible)/);
+  const preview = readFileSync("src/components/timeline/timelinePreview.ts", "utf8");
+  // The lane only ever rendered in the test-only "all" mode, so no one could see it.
+  assert.doesNotMatch(timeline, /kind="highlight"|modeShows\('highlight'\)|highlight-block/);
+  assert.doesNotMatch(styles, /\.highlight-block|\.signal-block/);
+  // A ranking score, never a probability: the tooltip names the place, not the value.
+  assert.match(preview, /精華排名 #\$\{rank\}/);
+  assert.doesNotMatch(preview, /highlight\.toFixed/);
 });
 
-test("rally fit retains window curve but hides segment highlight marks", () => {
+test("rally fit retains the window curve", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
   const signalStart = timeline.lastIndexOf(
     "<section",
@@ -300,14 +287,9 @@ test("rally fit retains window curve but hides segment highlight marks", () => {
     signalStart,
     timeline.indexOf('class="timeline-band timeline-band--signals"'),
   );
-  assert.match(signalHeader, /showOverviewSignals/);
-  assert.match(
-    timeline,
-    /const showOverviewSignals = computed\([\s\S]*fit\.value === "match" \|\| lensActive\.value/,
-  );
+  assert.match(signalHeader, /v-if="showCheerCurveLane"/);
   assert.match(timeline, /showCheerCurveLane\.value \? 1 : 1 - lensProgress\.value/);
   assert.match(timeline, /v-if="showCheerCurveLane"/);
-  assert.match(timeline, /v-if="showOverviewSignals && modeShows\('highlight'\)/);
   assert.doesNotMatch(signalHeader, /fit === 'rally'/);
 });
 
@@ -513,10 +495,6 @@ test("temporal signature remains shape-led and preserves semantic hierarchy", ()
     /\.stroke-tick\s*\{[^}]*width:\s*1px;[^}]*height:\s*12px;/s,
   );
   assert.match(timeline, /\.cheer-curve path\s*\{[^}]*stroke:\s*var\(--color-cheer\)/s);
-  assert.match(
-    timeline,
-    /\.highlight-block::after\s*\{[^}]*width:\s*11px;[^}]*height:\s*2px;[^}]*rotate\(-20deg\)/s,
-  );
   assert.match(
     timeline,
     /\.timeline-playhead\s*\{[^}]*border-left:\s*2px solid var\(--color-playhead\);/s,

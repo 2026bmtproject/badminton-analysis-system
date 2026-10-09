@@ -81,7 +81,6 @@ type TrackKey =
   | "score"
   | "stroke"
   | "cheer"
-  | "highlight"
   | "commentary";
 const LENS_DURATION_MS = 220;
 /** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
@@ -416,9 +415,6 @@ const semanticRevealProgress = computed(() => {
   );
 });
 const showSemanticStrokes = computed(() => semanticRevealProgress.value > 0);
-const showOverviewSignals = computed(
-  () => fit.value === "match" || lensActive.value || fit.value === "custom",
-);
 const showCheerCurveLane = computed(() =>
   modeShows("cheer") && capability("cheer"),
 );
@@ -440,7 +436,6 @@ const capability = (track: TrackKey) =>
     score: props.model.capabilities.score,
     stroke: props.model.capabilities.stroke,
     cheer: props.model.capabilities.cheer,
-    highlight: props.model.capabilities.highlight,
     commentary: props.model.capabilities.commentary,
   })[track];
 function authoritativeViewport(next: TimelineFit) {
@@ -680,17 +675,6 @@ function resolveHoveredMark(
     });
     return nearestIndex < 0 ? null : { kind: "cheer-window" as const, id: nearestIndex };
   }
-  if (kind === "highlight") {
-    const candidates = rallies.value.filter((item) => item.highlight !== null);
-    const rally = nearestTemporalMark(
-      candidates,
-      timeSec,
-      (item) => (item.start + item.end) / 2,
-      renderViewport.value,
-      width,
-    );
-    return rally ? { kind, id: rally.id } : null;
-  }
   if (kind === "commentary") {
     const item = nearestTemporalMark(
       commentaryEvents.value,
@@ -865,25 +849,6 @@ function clickTimeline(event: MouseEvent) {
   }
   if (kind === "cheer") {
     emit("seek", timeSec);
-    return;
-  }
-  if (kind === "highlight") {
-    const candidates = rallies.value.filter((item) => item.highlight !== null);
-    const markerId =
-      target.closest<HTMLElement>(".signal-block")?.dataset.rallyId;
-    const rally =
-      markerId === undefined
-        ? nearestTemporalMark(
-            candidates,
-            timeSec,
-            (item) => (item.start + item.end) / 2,
-            renderViewport.value,
-            track.clientWidth,
-          )
-        : candidates.find((item) => item.id === Number(markerId));
-    if (rally) {
-      emit("rally", rally);
-    } else emit("seek", timeSec);
     return;
   }
   emit("seek", timeSec);
@@ -1225,10 +1190,7 @@ const timelineStyle = computed(() => ({
       </section>
 
       <section
-        v-if="
-          showCheerCurveLane ||
-          (showOverviewSignals && modeShows('highlight') && capability('highlight'))
-        "
+        v-if="showCheerCurveLane"
         class="timeline-band timeline-band--signals"
         aria-label="訊號"
       >
@@ -1246,31 +1208,6 @@ const timelineStyle = computed(() => ({
               <path v-for="(path, index) in cheerPaths" :key="`${path.segmentIndex}-${index}`" :d="path.d" />
             </svg>
             <span v-else class="cheer-curve-empty">無窗口歡呼資料</span>
-          </TimelineLane>
-          <TimelineLane
-            v-if="showOverviewSignals && modeShows('highlight') && capability('highlight')"
-            kind="highlight"
-            label="精華"
-            description="片段精華屬性軌道"
-          >
-            <span
-              v-for="rally in rallies.filter((item) => item.highlight !== null)"
-              :key="`highlight-${rally.id}`"
-              class="signal-block highlight-block"
-              :class="{
-                selected: selectedId === rally.id,
-                active: activeId === rally.id,
-                hovered:
-                  hoveredMark?.kind === 'highlight' &&
-                  hoveredMark.id === rally.id,
-              }"
-              :data-rally-id="rally.id"
-              :style="{
-                left: position((rally.start + rally.end) / 2) + '%',
-                '--signal-opacity': 0.22 + (rally.highlight ?? 0) * 0.78,
-              }"
-              aria-hidden="true"
-            />
           </TimelineLane>
         </div>
       </section>

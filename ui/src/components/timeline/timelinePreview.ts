@@ -1,13 +1,13 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
-import { RALLY_BREAK_LABELS, rallyWinner, type RallyBreak } from "../../temporal/rallyOutcome";
+import { RALLY_BREAK_LABELS, highlightRanks, rallyWinner, type RallyBreak } from "../../temporal/rallyOutcome";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
 import type { TimelineFit } from "../../temporal/timeline";
 import { doubleClickFit } from "../../temporal/timelineNavigation";
 
 export type TimelineHoverMark = {
   /** `break` ids the Rally a break follows. */
-  kind: "rally" | "break" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window" | "highlight";
+  kind: "rally" | "break" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window";
   id: number | string;
 };
 
@@ -80,6 +80,10 @@ export function timelineHoverPreview(
     // The lane itself stays neutral; who took the point is shown only on request.
     const winner = lead ? rallyWinner(lead.model, rally.id) : null;
     if (winner && lead) lines.push(`得分：${playerName(lead.players[winner], winner.toUpperCase())}`);
+    // A ranking score, not a probability: only the place is meaningful.
+    const ranks = highlightRanks(rallies);
+    const rank = ranks.get(rally.id);
+    if (rank !== undefined) lines.push(`精華排名 #${rank} / ${ranks.size}`);
     return { title: `片段 ${String(rally.id + 1).padStart(3, "0")}`, lines };
   }
   if (mark.kind === "score") {
@@ -117,12 +121,6 @@ export function timelineHoverPreview(
     return {
       title: "歡呼訊號",
       lines: [`片段 ${String(rally.id + 1).padStart(3, "0")}`, `信號 ${rally.audio.confidence.toFixed(2)}`],
-    };
-  }
-  if (mark.kind === "highlight" && rally.highlight !== null) {
-    return {
-      title: "精華分數",
-      lines: [`片段 ${String(rally.id + 1).padStart(3, "0")}`, rally.highlight.toFixed(3)],
     };
   }
   return null;

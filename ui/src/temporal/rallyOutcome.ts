@@ -114,6 +114,22 @@ export function rallyBarFraction(duration: number, cap: number) {
   return Math.min(1, Math.max(MIN_BAR_FRACTION, Math.sqrt(Math.max(0, duration) / cap)));
 }
 
+/**
+ * Highlight places, best first; equal scores share a place (1, 2, 2, 4).
+ * Rallies without a highlight score are left unranked.
+ */
+export function highlightRanks(rallies: RallyModel[]): Map<number, number> {
+  const scored = rallies
+    .filter((rally): rally is RallyModel & { highlight: number } => rally.highlight !== null)
+    .sort((a, b) => b.highlight - a.highlight || a.id - b.id);
+  const ranks = new Map<number, number>();
+  scored.forEach((rally, index) => {
+    const previous = scored[index - 1];
+    ranks.set(rally.id, previous && previous.highlight === rally.highlight ? ranks.get(previous.id)! : index + 1);
+  });
+  return ranks;
+}
+
 export function breakAt(model: RallyLaneModel, timeSec: number) {
   return model.breaks.find((item) => timeSec >= item.start && timeSec < item.end) ?? null;
 }
