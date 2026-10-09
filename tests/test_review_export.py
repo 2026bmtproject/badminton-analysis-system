@@ -39,7 +39,8 @@ def write_stage(match: Path, stage: str, payload: dict, inputs: dict[str, str] |
     return output
 
 
-def fixture_match(tmp_path: Path) -> Path:
+def fixture_match(tmp_path: Path, adjust=None) -> Path:
+    """Write the UI fixtures as a completed match; ``adjust(stage, payload)`` edits one first."""
     match = tmp_path / "fixture_match"
     (match / "input").mkdir(parents=True)
     (match / "input" / "match.mp4").write_bytes(b"fixture")
@@ -51,6 +52,8 @@ def fixture_match(tmp_path: Path) -> Path:
                 {"segment_index": 1, "start_sec": 11, "end_sec": 14, "cheer_probability": .2},
                 {"segment_index": 1, "start_sec": 12, "end_sec": 15, "cheer_probability": .8},
             ]
+        if adjust:
+            adjust(stage, payload)
         inputs = {dep: fingerprint(paths[dep]) for dep in
                   [*PIPELINE[stage].dependencies, *PIPELINE[stage].optional_dependencies]
                   if dep in paths}
@@ -94,6 +97,22 @@ def test_export_joins_absolute_timeline_scores_audio_and_commentary(tmp_path: Pa
     assert model["rallies"][1]["commentary"]["source"] == "on-demand"
     assert model["rallies"][3]["commentary"]["status"] == "unsupported"
     assert model["source"]["matchId"] == "fixture_match"
+
+
+def test_hit_on_a_rounded_rally_boundary_stays_inside_its_rally(tmp_path: Path):
+    # Segmentation stores seconds rounded to the millisecond (1.9605 here) while
+    # the frame is exact: frame 49 / 25 fps = 1.96 s lies just before the rally.
+    def adjust(stage: str, payload: dict) -> None:
+        if stage == "match_segmentation":
+            payload["segments"][0].update(start_frame=49, start_sec=1.9605, duration_sec=9 - 1.9605)
+        if stage == "event_detection":
+            payload["events"][0]["frame"] = 49
+
+    model = export_review(fixture_match(tmp_path, adjust),
+                          ExportOptions(duration=44, video_url="/local-video/fixture_match"))
+    rally = model["rallies"][0]
+    assert rally["hits"][0]["frame"] == 49
+    assert rally["start"] <= rally["hits"][0]["time"] <= rally["end"]
 
 
 def test_optional_missing_invalid_stale_and_unknown_are_distinct(tmp_path: Path):

@@ -114,10 +114,13 @@ export async function exportReview(context: string | LocalRuntime, id: string, v
     });
     return parseMatchModel(await json(output));
   } catch (error) {
-    const detail = error instanceof Error && "stderr" in error
-      ? String((error as Error & { stderr?: string }).stderr ?? error.message).trim()
-      : error instanceof Error ? error.message : "Python exporter failed";
-    throw new Error(`回看資料匯出失敗：${detail}`);
+    // A schema rejection prints as a JSON issue dump; name the first broken field instead.
+    const detail = error instanceof z.ZodError
+      ? `分析結果資料不一致（${error.issues[0]?.path.join(".")}：${error.issues[0]?.message}）`
+      : error instanceof Error && "stderr" in error
+        ? String((error as Error & { stderr?: string }).stderr ?? error.message).trim()
+        : error instanceof Error ? error.message : "Python exporter failed";
+    throw new Error(`匯入結果失敗：${detail}`);
   } finally {
     await rm(output, { force: true });
   }

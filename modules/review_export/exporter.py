@@ -399,8 +399,13 @@ def export_review(match_path: str | Path, options: ExportOptions | None = None) 
                 player = players[identity_row] if identity_row else (
                     "畫面上方" if stroke and stroke.get("player") == "top" else
                     "畫面下方" if stroke and stroke.get("player") == "bottom" else "未知球員")
+                # Segment seconds are rounded to the millisecond while the frame is
+                # exact, so a hit on a boundary frame can sit a fraction of a
+                # millisecond outside its rally. The frame already decided which
+                # rally it belongs to; keep its time inside that rally.
+                time = min(max(event["frame"] / fps, segment["start_sec"]), segment["end_sec"])
                 hits.append({"eventIndex": event_index, "strokeIndex": event_index,
-                    "frame": event["frame"], "time": event["frame"] / fps,
+                    "frame": event["frame"], "time": time,
                     "ordinal": len(hits) + 1, "player": player,
                     "type": stroke["stroke_type"] if stroke else None,
                     "confidence": stroke["confidence"] if stroke else None,
