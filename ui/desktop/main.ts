@@ -123,8 +123,10 @@ else {
     ipcMain.handle("desktop:choose-matches", async event => { verifySender(event); return choose("matches"); });
     ipcMain.handle("desktop:choose-backend", async event => { verifySender(event); return choose("backend"); });
     ipcMain.handle("desktop:choose-uv", async event => { verifySender(event); return choose("uv"); });
+    // The default menu has nothing the app needs, but its accelerators (reload,
+    // devtools, zoom) still work while it is hidden; Alt shows it.
     window = new BrowserWindow({ width: 1280, height: 850, minWidth: 720, minHeight: 560,
-      title: "Badminton Review", webPreferences: { preload: join(appRoot, "desktop", "preload.cjs"),
+      title: "Badminton Review", autoHideMenuBar: true, webPreferences: { preload: join(appRoot, "desktop", "preload.cjs"),
         contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false } });
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     window.webContents.on("will-navigate", (event, url) => {
