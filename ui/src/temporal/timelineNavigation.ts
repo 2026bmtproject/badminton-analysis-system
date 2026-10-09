@@ -73,14 +73,14 @@ export function doubleClickFit<T>(
 
 /**
  * The rally a double-click would focus, shown as a band under the pointer.
- * Hidden inside a focused rally, mid-lens and while playback holds the
- * playhead centred, where content slides under a still pointer.
+ * Hidden inside a focused rally and mid-lens. While playback holds the
+ * playhead centred it stays, following whatever rally slides under the pointer.
  */
 export function hoverBandRally<T extends Pick<RallyModel, "start" | "end">>(
   rallies: readonly T[],
   timeSec: number | null,
-  view: { fit: TimelineFit | "custom"; lensActive: boolean; centerFollowing: boolean },
+  view: { fit: TimelineFit | "custom"; lensActive: boolean },
 ): T | null {
-  if (timeSec === null || view.fit === "rally" || view.lensActive || view.centerFollowing) return null;
+  if (timeSec === null || view.fit === "rally" || view.lensActive) return null;
   return activeRallyAt(rallies, timeSec);
 }

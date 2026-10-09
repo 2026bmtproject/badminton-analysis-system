@@ -130,14 +130,13 @@ test("17. the hint is appended to a preview, or stands alone where the mode has 
 });
 test("18. the hover band follows the rally under the pointer only while it can be focused", () => {
   const rallies = [{ start: 0, end: 8 }, { start: 10, end: 18 }];
-  const idle = { fit: "match" as const, lensActive: false, centerFollowing: false };
+  const idle = { fit: "match" as const, lensActive: false };
   assert.equal(hoverBandRally(rallies, 12, idle), rallies[1]);
   assert.equal(hoverBandRally(rallies, 12, { ...idle, fit: "custom" }), rallies[1]);
   assert.equal(hoverBandRally(rallies, 9, idle), null, "a gap has no band");
   assert.equal(hoverBandRally(rallies, null, idle), null);
   assert.equal(hoverBandRally(rallies, 12, { ...idle, fit: "rally" }), null);
   assert.equal(hoverBandRally(rallies, 12, { ...idle, lensActive: true }), null);
-  assert.equal(hoverBandRally(rallies, 12, { ...idle, centerFollowing: true }), null);
 });
 test("19. the score lane leaves hover to the shared band and keeps only selected and active", () => {
   const timeline = source("src/components/ReviewTimeline.vue");

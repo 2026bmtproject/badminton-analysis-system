@@ -276,7 +276,10 @@ watch(
       renderViewport.value,
       props.model.duration,
     );
-    if (next !== renderViewport.value) renderViewport.value = next;
+    if (next !== renderViewport.value) {
+      renderViewport.value = next;
+      scheduleInspectionRestore();
+    }
   },
   { flush: "sync" },
 );
@@ -352,7 +355,6 @@ const hoverBand = computed(() => {
   const rally = hoverBandRally(props.model.rallies, inspectionTime.value, {
     fit: fit.value,
     lensActive: lensActive.value,
-    centerFollowing: centerFollowing.value,
   });
   if (!rally) return null;
   const left = position(rally.start);
@@ -517,7 +519,6 @@ function startCenterFollow(spanSec: number) {
   stopCenterFollow();
   followSpanSec = spanSec;
   displayTime.value = readClock();
-  clearInspection();
   followTransition = reducedMotionQuery?.matches
     ? null
     : { from: { ...renderViewport.value }, startedAt: performance.now() };
@@ -540,6 +541,8 @@ function followCenter(now: number) {
     renderViewport.value = interpolateViewport(followTransition.from, target, temporalLensEase(elapsed));
     if (elapsed >= 1) followTransition = null;
   } else renderViewport.value = target;
+  // Content slides under a still pointer, so the hover readout is re-aimed every frame.
+  if (lastPointer) restoreInspection();
   followFrame = requestAnimationFrame(followCenter);
 }
 function setFit(next: TimelineFit, focus: RallyModel | null = null) {
@@ -712,7 +715,7 @@ function updateInspection(
   track: HTMLElement,
   exactMark: TimelineHoverMark | null = null,
 ) {
-  if (lensActive.value || centerFollowing.value || !surface.value) {
+  if (lensActive.value || !surface.value) {
     clearInspection(false);
     return;
   }
@@ -769,8 +772,6 @@ function scheduleInspectionRestore() {
   });
 }
 function inspectPointer(event: PointerEvent) {
-  // Content slides under a still pointer while centred, so a hover readout would only flicker.
-  if (centerFollowing.value) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
   const track = target.closest<HTMLElement>(".timeline-lane-track");
