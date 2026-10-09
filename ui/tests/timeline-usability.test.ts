@@ -5,10 +5,15 @@ import type { RallyModel } from "../src/domain/models";
 import {
   constrainTimelineViewport,
   doubleClickFit,
+  hoverBandRally,
   panTimelineViewport,
   zoomTimelineViewport,
 } from "../src/temporal/timelineNavigation";
-import { timelineHoverPreview } from "../src/components/timeline/timelinePreview";
+import {
+  doubleClickHint,
+  timelineHoverPreview,
+  withDoubleClickHint,
+} from "../src/components/timeline/timelinePreview";
 import { analysisContextSummary } from "../src/components/workspace/analysisContext";
 
 const rally: RallyModel = {
@@ -107,4 +112,36 @@ test("15. passive playback only fades management chrome and restores on interact
   assert.match(window, /workspace-window--chrome-idle/);
   assert.match(css, /workspace-window--chrome-idle[^}]*workspace-window__actions/);
   assert.doesNotMatch(css, /workspace-window--chrome-idle[^}]*workspace-window__body/);
+});
+test("16. the double-click hint names what a double-click would do, and nothing where it does nothing", () => {
+  assert.equal(doubleClickHint("match", rally), "雙擊放大片段");
+  assert.equal(doubleClickHint("custom", rally), "雙擊放大片段");
+  assert.equal(doubleClickHint("rally", rally), "雙擊返回全場");
+  assert.equal(doubleClickHint("rally", null), "雙擊返回全場");
+  assert.equal(doubleClickHint("custom", null), "雙擊返回全場");
+  assert.equal(doubleClickHint("match", null), null);
+});
+test("17. the hint is appended to a preview, or stands alone where the mode has none", () => {
+  const preview = timelineHoverPreview({ kind: "rally", id: 4 }, [rally]);
+  assert.deepEqual(withDoubleClickHint(preview, "雙擊放大片段"), { ...preview, hint: "雙擊放大片段" });
+  assert.deepEqual(withDoubleClickHint(null, "雙擊放大片段"), { title: "", lines: [], hint: "雙擊放大片段" });
+  assert.equal(withDoubleClickHint(preview, null), preview);
+  assert.equal(withDoubleClickHint(null, null), null);
+});
+test("18. the hover band follows the rally under the pointer only while it can be focused", () => {
+  const rallies = [{ start: 0, end: 8 }, { start: 10, end: 18 }];
+  const idle = { fit: "match" as const, lensActive: false, centerFollowing: false };
+  assert.equal(hoverBandRally(rallies, 12, idle), rallies[1]);
+  assert.equal(hoverBandRally(rallies, 12, { ...idle, fit: "custom" }), rallies[1]);
+  assert.equal(hoverBandRally(rallies, 9, idle), null, "a gap has no band");
+  assert.equal(hoverBandRally(rallies, null, idle), null);
+  assert.equal(hoverBandRally(rallies, 12, { ...idle, fit: "rally" }), null);
+  assert.equal(hoverBandRally(rallies, 12, { ...idle, lensActive: true }), null);
+  assert.equal(hoverBandRally(rallies, 12, { ...idle, centerFollowing: true }), null);
+});
+test("19. the score lane leaves hover to the shared band and keeps only selected and active", () => {
+  const timeline = source("src/components/ReviewTimeline.vue");
+  assert.match(timeline, /class="timeline-hover-band"/);
+  assert.doesNotMatch(timeline, /add\("hovered"/);
+  assert.doesNotMatch(source("src/styles/timeline.css"), /\.lead-focus\s*\{/);
 });

@@ -18,6 +18,19 @@
 .intelligence-timeline[data-lens-active="true"] .timeline-surface {
   pointer-events: none;
 }
+/* Track columns only, matching the playhead's span; quieter than the selected and active bands. */
+.timeline-hover-band {
+  position: absolute;
+  top: 0;
+  left: var(--timeline-label-total);
+  width: calc(100% - var(--timeline-label-total));
+  height: calc(100% - 30px);
+  overflow: hidden;
+  pointer-events: none;
+}
+.timeline-hover-band rect {
+  fill: rgb(255 255 255 / 5%);
+}
 .timeline-band {
   display: grid;
   grid-template-columns: var(--timeline-group-label) minmax(0, 1fr);
@@ -149,6 +162,10 @@
   border-top: 2px solid var(--color-rally);
   border-right: 1px solid var(--color-rally);
   border-left: 1px solid var(--color-rally);
+  transition:
+    border-color 100ms ease-out,
+    background-color 100ms ease-out,
+    box-shadow 100ms ease-out;
 }
 .rally-block::after {
   content: "";
@@ -192,6 +209,8 @@
 }
 .rally-block.hovered:not(.selected):not(.active)::before {
   border-color: var(--color-rally-hover);
+  background: rgb(255 255 255 / 6%);
+  box-shadow: 0 0 6px rgb(152 163 169 / 30%);
 }
 .rally-block.selected {
   color: var(--color-text);
@@ -332,9 +351,6 @@
 .lead-chart__gap {
   stroke: var(--color-text-muted);
   stroke-dasharray: 3 3;
-}
-.lead-focus {
-  fill: rgb(255 255 255 / 4%);
 }
 .lead-focus[data-state="selected"] {
   fill: rgb(212 216 218 / 10%);
@@ -646,6 +662,7 @@
 .timeline-hover-tooltip[data-side="end"] { transform: translate(-100%, calc(-100% - 8px)); }
 .timeline-hover-tooltip strong { font-size: var(--type-meta); }
 .timeline-hover-tooltip span { color: var(--color-text-secondary); }
+.timeline-hover-tooltip .timeline-hover-tooltip__hint { color: var(--color-text-muted); }
 
 .intelligence-timeline[data-density="compact"] {
   padding: var(--space-1) var(--space-2) var(--space-2);

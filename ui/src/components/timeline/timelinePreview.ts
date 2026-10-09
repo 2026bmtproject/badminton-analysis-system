@@ -1,15 +1,34 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
+import type { TimelineFit } from "../../temporal/timeline";
+import { doubleClickFit } from "../../temporal/timelineNavigation";
 
 export type TimelineHoverMark = {
   kind: "rally" | "score" | "stroke" | "commentary" | "cheer" | "cheer-window" | "highlight";
   id: number | string;
 };
 
-export type TimelineHoverPreview = { title: string; lines: string[] };
+/** `hint` is a muted last line naming what a double-click does here. */
+export type TimelineHoverPreview = { title: string; lines: string[]; hint?: string };
 
 export type LeadPreviewContext = { model: LeadModel; players: { a: string; b: string } };
+
+/** Worded from the double-click outcome itself, so the hint never promises an action that does nothing. */
+export function doubleClickHint(fit: TimelineFit | "custom", rallyAtPoint: RallyModel | null) {
+  const next = doubleClickFit(fit, rallyAtPoint);
+  if (!next) return null;
+  return next.fit === "rally" ? "雙擊放大片段" : "雙擊返回全場";
+}
+
+/** A position with no mode preview still gets a hint-only tooltip. */
+export function withDoubleClickHint(
+  preview: TimelineHoverPreview | null,
+  hint: string | null,
+): TimelineHoverPreview | null {
+  if (!hint) return preview;
+  return { ...(preview ?? { title: "", lines: [] }), hint };
+}
 
 function rallyIndex(rally: RallyModel) {
   return `片段 ${String(rally.id + 1).padStart(3, "0")}`;

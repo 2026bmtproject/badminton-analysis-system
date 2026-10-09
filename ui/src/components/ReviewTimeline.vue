@@ -50,11 +50,14 @@ import {
 } from "../temporal/timelineFollow";
 import {
   doubleClickFit,
+  hoverBandRally,
   panTimelineViewport,
   zoomTimelineViewport,
 } from "../temporal/timelineNavigation";
 import {
+  doubleClickHint,
   timelineHoverPreview,
+  withDoubleClickHint,
   type TimelineHoverMark,
 } from "./timeline/timelinePreview";
 import {
@@ -150,10 +153,15 @@ const inspectionClientX = ref(0);
 const inspectionClientY = ref(0);
 const hoveredMark = ref<TimelineHoverMark | null>(null);
 const hoverPreview = computed(() =>
-  timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
-    model: leadModel.value,
-    players: props.model.players,
-  }),
+  withDoubleClickHint(
+    timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
+      model: leadModel.value,
+      players: props.model.players,
+    }),
+    inspectionTime.value === null
+      ? null
+      : doubleClickHint(fit.value, activeRallyAt(props.model.rallies, inspectionTime.value)),
+  ),
 );
 const hoverTooltipSide = computed(() =>
   typeof window === "undefined"
@@ -327,8 +335,19 @@ const leadGrid = computed(() =>
     leadY(-lead, leadDomainValue.value),
   ]),
 );
+/** Shared by every mode: the rally a double-click would focus, positioned in SVG units so it never snaps against the lanes. */
+const hoverBand = computed(() => {
+  const rally = hoverBandRally(props.model.rallies, inspectionTime.value, {
+    fit: fit.value,
+    lensActive: lensActive.value,
+    centerFollowing: centerFollowing.value,
+  });
+  if (!rally) return null;
+  const left = position(rally.start);
+  return { left, width: Math.max(0, position(rally.end) - left) };
+});
 const leadFocusBands = computed(() => {
-  const bands: { state: "selected" | "active" | "hovered"; left: number; width: number }[] = [];
+  const bands: { state: "selected" | "active"; left: number; width: number }[] = [];
   const add = (state: (typeof bands)[number]["state"], rallyId: number | null | undefined) => {
     const rally = props.model.rallies.find((item) => item.id === rallyId);
     const entry = rally ? leadEntryAt(leadModel.value, rally.start) : null;
@@ -338,8 +357,6 @@ const leadFocusBands = computed(() => {
   };
   add("selected", props.selectedId);
   if (props.scoreContextId !== props.selectedId) add("active", props.scoreContextId);
-  const hovered = hoveredMark.value?.kind === "score" ? Number(hoveredMark.value.id) : null;
-  if (hovered !== props.selectedId && hovered !== props.scoreContextId) add("hovered", hovered);
   return bands;
 });
 const leadDescription = computed(
@@ -932,6 +949,11 @@ const timelineStyle = computed(() => ({
       @dblclick="toggleFitOnDoubleClick"
       @wheel="panTimeline"
     >
+      <!-- First in the surface so every lane paints over it; SVG units keep it
+           from snapping to whole pixels against the SVG lanes. -->
+      <svg v-if="hoverBand" class="timeline-hover-band" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <rect :x="hoverBand.left" y="0" :width="hoverBand.width" height="100" />
+      </svg>
       <section v-if="modeShows('rally') || modeShows('score')" class="timeline-band timeline-band--match" aria-label="比賽">
         <header class="timeline-band-label">
           <strong>比賽</strong>
@@ -987,7 +1009,7 @@ const timelineStyle = computed(() => ({
             <svg class="lead-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               <template v-for="band in leadFocusBands" :key="`focus-${band.state}`">
                 <rect class="lead-focus" :data-state="band.state" :x="band.left" y="0" :width="band.width" height="100" />
-                <line v-if="band.state !== 'hovered'" class="lead-focus-edge" :data-state="band.state" :x1="band.left" :x2="band.left" y1="0" y2="100" />
+                <line class="lead-focus-edge" :data-state="band.state" :x1="band.left" :x2="band.left" y1="0" y2="100" />
                 <line v-if="band.state === 'selected'" class="lead-focus-edge" data-state="selected" :x1="band.left + band.width" :x2="band.left + band.width" y1="0" y2="100" />
               </template>
               <line v-for="separator in leadMarks.separators" :key="`separator-${separator.game}`" class="lead-separator" :x1="separator.x" :x2="separator.x" y1="0" y2="100" />
@@ -1217,8 +1239,9 @@ const timelineStyle = computed(() => ({
         :style="{ left: inspectionClientX + 'px', top: inspectionClientY - 8 + 'px' }"
         role="tooltip"
       >
-        <strong>{{ hoverPreview.title }}</strong>
+        <strong v-if="hoverPreview.title">{{ hoverPreview.title }}</strong>
         <span v-for="line in hoverPreview.lines" :key="line">{{ line }}</span>
+        <span v-if="hoverPreview.hint" class="timeline-hover-tooltip__hint">{{ hoverPreview.hint }}</span>
       </div>
     </Teleport>
   </section>

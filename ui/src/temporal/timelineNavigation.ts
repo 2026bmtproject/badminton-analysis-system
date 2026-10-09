@@ -1,3 +1,5 @@
+import type { RallyModel } from "../domain/models";
+import { activeRallyAt } from "./activeContext";
 import type { TimelineFit, TimelineViewport } from "./timeline";
 
 /** 500 ms remains well above one video frame and avoids meaningless sub-frame zoom. */
@@ -67,4 +69,18 @@ export function doubleClickFit<T>(
   if (fit === "rally") return { fit: "match", rally: null };
   if (rallyAtPoint) return { fit: "rally", rally: rallyAtPoint };
   return fit === "custom" ? { fit: "match", rally: null } : null;
+}
+
+/**
+ * The rally a double-click would focus, shown as a band under the pointer.
+ * Hidden inside a focused rally, mid-lens and while playback holds the
+ * playhead centred, where content slides under a still pointer.
+ */
+export function hoverBandRally<T extends Pick<RallyModel, "start" | "end">>(
+  rallies: readonly T[],
+  timeSec: number | null,
+  view: { fit: TimelineFit | "custom"; lensActive: boolean; centerFollowing: boolean },
+): T | null {
+  if (timeSec === null || view.fit === "rally" || view.lensActive || view.centerFollowing) return null;
+  return activeRallyAt(rallies, timeSec);
 }
