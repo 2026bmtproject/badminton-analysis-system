@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -54,6 +54,14 @@ async function freePort(): Promise<number> {
         ? ok(address.port) : fail(new Error("no free port")));
     });
   });
+}
+
+/** `uv run` does not forward termination on Windows: killing uv alone orphans the Python
+ * service, which then keeps serving stale code to every later launch. Kill the whole tree. */
+function stopTree(child: ChildProcess) {
+  if (process.platform === "win32" && child.pid)
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+  else child.kill();
 }
 
 export class LocalTaskService {
@@ -174,7 +182,7 @@ export class LocalTaskService {
     if (this.port !== null && !this.healthValue) return false;
     if (this.healthValue?.activeTask) return false;
     if (this.ownedInstance && this.child && this.healthValue?.instanceId === this.ownedInstance)
-      this.child.kill();
+      stopTree(this.child);
     this.child = null; this.ownedInstance = null; this.healthValue = null; this.port = null;
     return true;
   }
