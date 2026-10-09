@@ -16,12 +16,7 @@
   background: var(--color-video);
   border: 1px solid var(--color-border);
 }
-.review-workspace-stage--analysis-left { grid-template-columns: var(--analysis-dock-width, 340px) minmax(0, 1fr); grid-template-areas: "analysis player" "analysis timeline"; }
 .review-workspace-stage--analysis-collapsed {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "player" "timeline";
-}
-.review-workspace-stage--analysis-left.review-workspace-stage--analysis-collapsed {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "player" "timeline";
 }
@@ -135,7 +130,6 @@
 }
 .workspace-window--docked.workspace-window--timeline { grid-area: timeline; border-top: 1px solid var(--color-border-strong); }
 .workspace-window--docked.workspace-window--analysis { grid-area: analysis; border-left: 1px solid var(--color-border-strong); }
-.workspace-window--docked.workspace-window--analysis.workspace-window--dock-left { border-right: 1px solid var(--color-border-strong); border-left: 0; }
 .workspace-window--docked .workspace-window__header { background: var(--color-surface-raised); cursor: default; }
 .workspace-window--docked.workspace-window--active { border-color: var(--color-border-strong); }
 .workspace-window__header {
@@ -236,7 +230,6 @@
   touch-action: none;
 }
 .workspace-window--analysis .workspace-window__dock-resize { top: 0; bottom: 0; left: -5px; width: 10px; cursor: ew-resize; }
-.workspace-window--analysis.workspace-window--dock-left .workspace-window__dock-resize { right: -5px; left: auto; }
 /* The strip ends above the toolbar's 28px controls, which start 4px below the top edge. */
 .workspace-window--timeline .workspace-window__dock-resize { top: -6px; right: 0; left: 0; height: 10px; cursor: ns-resize; }
 .workspace-window__dock-resize::after { position: absolute; background: var(--line-strong); content: ""; opacity: 0.28; transition: opacity var(--motion-fast) var(--motion-ease); }
@@ -264,10 +257,6 @@
 .workspace-window__mode-label { color: var(--color-text-muted); font-size: var(--type-micro); }
 .header-actions > .workspace-popover-anchor .workspace-popover__trigger { min-height: 30px; color: var(--color-text-muted); font-size: var(--type-meta); }
 .header-actions > .workspace-popover-anchor .workspace-popover__trigger:hover { color: var(--color-text-secondary); }
-.workspace-settings__label { white-space: nowrap; }
-.workspace-settings__content { display: grid; gap: var(--space-2); }
-.workspace-settings__content > label { display: grid; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--type-meta); }
-.workspace-settings__content > button { min-height: 34px; justify-content: flex-start; color: var(--color-text-secondary); white-space: nowrap; border: 1px solid var(--color-border); }
 .shortcut-help__content { display: grid; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--type-meta); }
 .shortcut-help__content strong { color: var(--color-text); }
 .analysis-window-content { display: flex; height: 100%; min-height: 0; flex-direction: column; }
@@ -299,9 +288,6 @@
 .analysis-court-view { min-height: 0; overflow: auto; padding: var(--space-3); }
 .analysis-court-view .rally-court-map { min-height: 0; border: 0; }
 .analysis-court-view .rally-court-map__court { width: auto; max-width: 100%; height: min(43vh, 360px); aspect-ratio: 284 / 524; }
-.workspace-source-details { color: var(--color-text-secondary); border-top: 1px solid var(--color-border); font-size: var(--type-micro); }
-.workspace-source-details summary { padding-top: var(--space-2); }
-.workspace-source-details p { margin-top: var(--space-2); overflow-wrap: anywhere; }
 
 .workspace-window--docked.workspace-window--analysis.workspace-window--collapsed {
   position: absolute;
@@ -316,13 +302,6 @@
   border-radius: var(--radius-md) 0 0 var(--radius-md);
   transform: translateY(-50%);
   overflow: hidden;
-}
-.workspace-window--docked.workspace-window--analysis.workspace-window--collapsed.workspace-window--dock-left {
-  right: auto;
-  left: 0;
-  border-right: 1px solid var(--color-border-strong);
-  border-left: 0;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
 @container (max-width: 420px) {

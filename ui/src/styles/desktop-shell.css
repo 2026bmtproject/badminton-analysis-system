@@ -90,7 +90,6 @@ h1[tabindex="-1"]:focus { outline: none; }
 .desktop-content .review-workspace-stage .video-wrap { background: #030405; }
 .desktop-content .review-matchbar { background: transparent; border-bottom: 1px solid var(--color-border); }
 .desktop-content .review-matchbar { display: grid; grid-template-columns: minmax(0, 1fr) var(--analysis-dock-width, 340px); grid-template-areas: "video actions"; gap: 12px; padding: 8px 20px; }
-.desktop-content .review-matchbar--analysis-left { grid-template-columns: var(--analysis-dock-width, 340px) minmax(0, 1fr); grid-template-areas: "actions video"; }
 .desktop-content .review-matchbar--video-wide { position: relative; grid-template-columns: minmax(0, 1fr); grid-template-areas: "video"; }
 .review-matchbar--video-wide .header-actions { position: absolute; top: 50%; right: 20px; transform: translateY(-50%); }
 .review-video-heading { grid-area: video; min-width: 0; }
@@ -130,7 +129,7 @@ h1[tabindex="-1"]:focus { outline: none; }
   .desktop-content .match-shell-identity { flex: 1 1 100%; order: 3; }
   .desktop-content .match-shell-identity--review { flex: none; }
   .desktop-content .review-main--workspace { padding: 8px; }
-  .desktop-content .review-matchbar, .desktop-content .review-matchbar--analysis-left { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "video actions"; padding: 8px 12px; }
+  .desktop-content .review-matchbar { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "video actions"; padding: 8px 12px; }
 }
 @media (max-width: 460px) {
   .section-page-header > .button-primary { width: 100%; }

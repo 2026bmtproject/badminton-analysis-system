@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { MAX_PANEL_ALPHA, MIN_PANEL_ALPHA, type AnalysisDockSide, type PanelLayout, type WorkspacePanelId } from "../../state/workspaceLayout";
+import { MAX_PANEL_ALPHA, MIN_PANEL_ALPHA, type PanelLayout, type WorkspacePanelId } from "../../state/workspaceLayout";
 import {
   constrainPanel,
   type CollapsedSize,
@@ -23,9 +23,8 @@ const props = withDefaults(defineProps<{
   toolbar?: boolean;
   /** Moves the toolbar below the body, e.g. the fullscreen timeline floating along the screen edge. */
   toolbarBottom?: boolean;
-  dockSide?: AnalysisDockSide;
   dockSize?: number;
-}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSide: "right", dockSize: 0 });
+}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSize: 0 });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
@@ -65,7 +64,7 @@ const analysisEdgeCollapsed = computed(
 const capsule = computed(() => props.fullscreen && props.panel.collapsed);
 const collapseIcon = computed(() => {
   if (props.panel.collapsed) return "chevron-up";
-  if (props.panelId === "analysis" && !props.fullscreen) return props.dockSide === "left" ? "chevron-left" : "chevron-right";
+  if (props.panelId === "analysis" && !props.fullscreen) return "chevron-right";
   return "chevron-down";
 });
 const maxTransparency = Number((1 - MIN_PANEL_ALPHA).toFixed(2));
@@ -157,8 +156,7 @@ function resizeDock(event: PointerEvent) {
   if (!dockGesture || event.pointerId !== dockGesture.pointerId) return;
   const position = props.panelId === "analysis" ? event.clientX : event.clientY;
   const delta = position - dockGesture.start;
-  const direction = props.panelId === "timeline" || props.dockSide === "right" ? -1 : 1;
-  emit("dockSize", dockGesture.size + delta * direction);
+  emit("dockSize", dockGesture.size - delta);
 }
 function endDockResize(event: PointerEvent) {
   if (!dockGesture || event.pointerId !== dockGesture.pointerId) return;
@@ -279,10 +277,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, `workspace-window--dock-${dockSide}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
+  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
     <div v-if="!fullscreen && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
     <button v-if="analysisEdgeCollapsed" type="button" class="workspace-window__edge-tab" aria-label="展開分析" title="展開分析" @click="toggleCollapsed">
-      <AppIcon :name="dockSide === 'left' ? 'chevron-right' : 'chevron-left'" :size="18" />
+      <AppIcon name="chevron-left" :size="18" />
       <span>分析</span>
     </button>
     <header v-else class="workspace-window__header" @click="handleHeaderClick" @pointerdown="startDrag" @pointermove="drag" @pointerup="endGesture" @pointercancel="endGesture">

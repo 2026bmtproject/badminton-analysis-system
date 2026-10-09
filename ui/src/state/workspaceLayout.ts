@@ -1,7 +1,6 @@
 import { reactive, watch } from "vue";
 
 export type WorkspacePanelId = "timeline" | "analysis";
-export type AnalysisDockSide = "left" | "right";
 export type TimelineMode = "rally" | "stroke" | "score" | "commentary" | "cheer";
 export type AnalysisView = "analysis" | "court";
 
@@ -18,7 +17,6 @@ export type WorkspaceLayout = {
   version: 3;
   timelineMode: TimelineMode;
   analysisView: AnalysisView;
-  analysisSide: AnalysisDockSide;
   analysisDockWidth: number;
   timelineDockHeight: number;
   panels: Record<WorkspacePanelId, PanelLayout>;
@@ -91,7 +89,6 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
     version: 3,
     timelineMode: "rally",
     analysisView: "analysis",
-    analysisSide: "right",
     analysisDockWidth: DEFAULT_ANALYSIS_DOCK_WIDTH,
     timelineDockHeight: DEFAULT_TIMELINE_DOCK_HEIGHT,
     panels: {
@@ -122,7 +119,6 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       version: 3,
       timelineMode: modes.includes(value.timelineMode as TimelineMode) ? value.timelineMode! : "rally",
       analysisView: views.includes(value.analysisView as AnalysisView) ? value.analysisView! : "analysis",
-      analysisSide: value.analysisSide === "left" ? "left" : "right",
       analysisDockWidth: constrainAnalysisDockWidth(finite(value.analysisDockWidth, DEFAULT_ANALYSIS_DOCK_WIDTH)),
       timelineDockHeight: constrainTimelineDockHeight(finite(value.timelineDockHeight, DEFAULT_TIMELINE_DOCK_HEIGHT)),
       panels: {
@@ -143,12 +139,8 @@ export function useWorkspaceLayout() {
   const stored = typeof localStorage === "undefined" ? null : localStorage.getItem(WORKSPACE_STORAGE_KEY);
   const layout = reactive(parseWorkspaceLayout(stored));
 
-  function reset() {
-    Object.assign(layout, defaultWorkspaceLayout());
-  }
-
   if (typeof localStorage !== "undefined") {
     watch(layout, (value) => localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(value)), { deep: true });
   }
-  return { layout, reset };
+  return { layout };
 }

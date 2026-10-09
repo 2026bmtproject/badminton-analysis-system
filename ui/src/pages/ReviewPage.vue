@@ -28,7 +28,7 @@ defineOptions({ name: "ReviewPage" });
 const context = useMatchContext();
 const route = useRoute();
 const { model, workspace } = context;
-const { layout, reset } = useWorkspaceLayout();
+const { layout } = useWorkspaceLayout();
 const activeWindow = ref<WorkspacePanelId>("analysis");
 const playing = workspace.playing;
 const player = ref<InstanceType<typeof ReviewPlayer> | null>(null);
@@ -57,12 +57,6 @@ const currentLabel = computed(() => activeId.value === null ? "比賽空檔" : `
 const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "選手 A"), b: playerName(match.value.players.b, "選手 B") }));
 const matchTitle = computed(() => !match.value.title || /^(?:match:)?yt[_:-]/i.test(match.value.title) ? "比賽回看" : match.value.title);
 const headerScore = computed(() => workspace.currentScore.value ? scoreText(workspace.currentScore.value) : null);
-const commentaryAvailabilityLabel = computed(() => {
-  const availability = match.value.commentaryAvailability;
-  if (availability.coverage === "none") return "未提供";
-  if (availability.coverage === "complete") return `全部 ${availability.totalRallyCount} 個片段均有賽評`;
-  return `部分提供（${availability.availableRallyCount}/${availability.totalRallyCount} 個片段）`;
-});
 const timelineModes = computed(() => availableTimelineModes(match.value.capabilities));
 const selectedTimelineLabel = computed(() => timelineModes.value.find((item) => item.id === layout.timelineMode)?.label ?? "片段");
 const adaptiveSizes = computed(() => adaptiveDefaultPanelSizes(viewportWidth.value, viewportHeight.value));
@@ -142,10 +136,6 @@ function fullscreenBounds() {
 }
 function restoreFullscreenPanel(id: WorkspacePanelId) {
   layout.fullscreenPanels[id] = fullscreenHomePanel(id, layout.fullscreenPanels[id], fullscreenBounds());
-}
-function restoreFullscreenPositions() {
-  restoreFullscreenPanel("timeline");
-  restoreFullscreenPanel("analysis");
 }
 function setDockSize(id: WorkspacePanelId, value: number) {
   if (id === "analysis") layout.analysisDockWidth = constrainAnalysisDockWidth(value);
@@ -230,7 +220,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="review-page">
-    <header class="topbar review-matchbar" :class="{ 'review-matchbar--analysis-left': layout.analysisSide === 'left', 'review-matchbar--video-wide': analysisDockCollapsed }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px` }">
+    <header class="topbar review-matchbar" :class="{ 'review-matchbar--video-wide': analysisDockCollapsed }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px` }">
       <div class="review-video-heading">
         <h2 class="review-match-title">{{ matchTitle }}</h2>
         <div class="match-identity">
@@ -247,25 +237,10 @@ onBeforeUnmount(() => {
           <template #trigger><span aria-hidden="true">?</span></template>
           <div class="shortcut-help__content"><strong>快捷鍵</strong><p>Space／K 播放 · ←／→ 跳 5 秒 · Shift + ←／→ 切換擊球 · [／] 切換片段</p><p>時間軸雙擊片段放大 · 再次雙擊回到全場</p><p>時間軸滾輪平移 · Ctrl／Cmd + 滾輪縮放</p></div>
         </WorkspacePopover>
-        <WorkspacePopover label="工作區設定" :min-width="220">
-          <template #trigger><span class="workspace-settings__label">工作區</span></template>
-          <div class="workspace-settings__content" aria-label="工作區版面">
-            <label>分析停靠位置<select v-model="layout.analysisSide" aria-label="分析停靠位置">
-              <option value="right">右側</option><option value="left">左側</option>
-            </select></label>
-            <button v-if="fullscreen" type="button" @click="restoreFullscreenPositions">回復全螢幕視窗位置</button>
-            <button type="button" @click="reset">還原預設版面</button>
-            <details class="workspace-source-details">
-              <summary>比賽資訊</summary>
-              <template v-if="match.source"><p v-for="note in match.source.limitations" :key="note">{{ note }}</p><p>來源：{{ match.source.matchId }} · 匯入：{{ match.source.importedAt }}</p></template>
-              <p>賽評：{{ commentaryAvailabilityLabel }}。</p>
-            </details>
-          </div>
-        </WorkspacePopover>
       </div>
     </header>
     <main class="review-main review-main--workspace">
-      <section ref="stage" class="review-workspace-stage" :class="[`review-workspace-stage--analysis-${layout.analysisSide}`, { 'review-workspace-stage--analysis-collapsed': analysisDockCollapsed, 'review-workspace-stage--timeline-collapsed': timelineDockCollapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }]" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
+      <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--analysis-collapsed': analysisDockCollapsed, 'review-workspace-stage--timeline-collapsed': timelineDockCollapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
         <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
@@ -278,7 +253,7 @@ onBeforeUnmount(() => {
           <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" />
         </WorkspaceWindow>
 
-        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">
+        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">
           <AnalysisWindow :model="match" :selected-id="workspace.selectedRallyIndex.value" :active-id="activeId" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-score="workspace.currentScore.value" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" @view="layout.analysisView = $event" @rally="workspace.selectRally" @stroke="workspace.selectStroke" @evidence="openEvidence" @previous-stroke="workspace.moveStroke(-1)" @next-stroke="workspace.moveStroke(1)" @back="workspace.clearSelection" />
         </WorkspaceWindow>
       </section>

@@ -103,7 +103,6 @@ test("browser-style back semantics use real links and no duplicate Match Library
   assert.match(shell, />\s*回看\s*<\/RouterLink>/);
   assert.match(shell, />\s*片段列表\s*<\/RouterLink>/);
   assert.match(shell, /route\.name === 'match-rallies'/);
-  assert.match(review, /aria-label="工作區版面"/);
   assert.match(routePaths, /analysis|tasks|settings/i);
   assert.doesNotMatch(routePaths, /watch|highlights|system/i);
   assert.doesNotMatch(

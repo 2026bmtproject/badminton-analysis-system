@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel, useWorkspaceLayout } from "../src/state/workspaceLayout";
+import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel } from "../src/state/workspaceLayout";
 import { availableTimelineModes } from "../src/components/timeline/timelineModeRegistry";
 import type { MatchCapabilities } from "../src/domain/models";
 import { FULLSCREEN_TIMELINE_HEIGHT_PX, fittedFullscreenTimeline, fullscreenHomePanel } from "../src/state/workspaceGeometry";
@@ -89,27 +89,6 @@ test("fullscreen home restores position without changing size, opacity, or norma
   assert.equal(home.height, current.height);
   assert.equal(home.alpha, current.alpha);
   assert.deepEqual(layout.panels.analysis, normal);
-});
-
-test("layout reset restores every persisted presentation field", () => {
-  const { layout, reset } = useWorkspaceLayout();
-  layout.timelineMode = "score";
-  layout.analysisView = "court";
-  layout.analysisSide = "left";
-  layout.analysisDockWidth = 420;
-  layout.timelineDockHeight = 360;
-  layout.panels.analysis = {
-    x: 0.1,
-    y: 0.2,
-    width: 0.5,
-    height: 0.4,
-    collapsed: true,
-    alpha: 0.8,
-  };
-
-  reset();
-
-  assert.deepEqual(JSON.parse(JSON.stringify(layout)), defaultWorkspaceLayout());
 });
 
 test("timeline mode registry exposes only renderers backed by match capabilities", () => {

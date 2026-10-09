@@ -82,7 +82,6 @@ test("production commentary keeps summary untimed and events on the shared Timel
     /selectedCommentaryEventIndex/,
   );
   assert.doesNotMatch(app, /生成賽評|Generate Commentary|commentary job/i);
-  assert.match(app, /部分提供/);
 });
 test("source switch resets state, discards old seek and ignores late media events", async () => {
   const c = createPlayback();

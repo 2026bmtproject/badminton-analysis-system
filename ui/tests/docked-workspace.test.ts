@@ -16,7 +16,7 @@ const styles = source("src/styles/floating-workspace.css");
 test("1. normal mode always docks Analysis right and Timeline bottom; fullscreen always floats", () => {
   const layout = defaultWorkspaceLayout();
   assert.equal(layout.version, 3);
-  assert.equal(layout.analysisSide, "right");
+  assert.ok(!("analysisSide" in layout));
   assert.doesNotMatch(source("src/state/workspaceLayout.ts"), /presentation/);
   assert.match(windowComponent, /const presentation = computed\(\(\) => props\.fullscreen \? "detached" : "docked"\)/);
 });
@@ -105,11 +105,10 @@ test("9. transparency follows the selected panel layout across a visible range",
   assert.match(windowComponent, /:max="maxTransparency"/);
 });
 
-test("10. Analysis side preference is finite and persisted in schema", () => {
-  const saved = defaultWorkspaceLayout();
-  saved.analysisSide = "left";
-  assert.equal(parseWorkspaceLayout(JSON.stringify(saved)).analysisSide, "left");
-  assert.match(review, /v-model="layout\.analysisSide"/);
+test("10. a stored Analysis side is dropped and the header has no workspace settings", () => {
+  const saved = { ...defaultWorkspaceLayout(), analysisSide: "left" };
+  assert.deepEqual(parseWorkspaceLayout(JSON.stringify(saved)), defaultWorkspaceLayout());
+  assert.doesNotMatch(review, /analysisSide|工作區設定|還原預設版面/);
 });
 
 test("11. dock sizes survive reload parsing and a stored presentation is dropped", () => {
@@ -124,7 +123,6 @@ test("11. dock sizes survive reload parsing and a stored presentation is dropped
 
 test("12. old floating v1 migrates safely while invalid state falls back", () => {
   const old = { ...defaultWorkspaceLayout(), version: 1 };
-  delete (old as Partial<typeof old>).analysisSide;
   delete (old as Partial<typeof old>).analysisDockWidth;
   delete (old as Partial<typeof old>).timelineDockHeight;
   assert.deepEqual(parseWorkspaceLayout(JSON.stringify(old)), defaultWorkspaceLayout());
