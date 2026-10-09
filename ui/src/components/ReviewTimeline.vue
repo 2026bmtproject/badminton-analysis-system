@@ -34,7 +34,11 @@ import type { TimelineFit, TimelineViewport } from "../temporal/timeline";
 import TimelineLane from "./timeline/TimelineLane.vue";
 import type { TimelineMode } from "../state/workspaceLayout";
 import { activeRallyAt } from "../temporal/activeContext";
-import { playbackFollowViewport } from "../temporal/timelineFollow";
+import {
+  centeredFollowViewport,
+  playbackFollowViewport,
+  shouldCenterFollow,
+} from "../temporal/timelineFollow";
 import {
   doubleClickFit,
   panTimelineViewport,
@@ -81,6 +85,10 @@ const props = withDefaults(
     selectedId: number | null;
     selectedStrokeIndex: number | null;
     time: number;
+    /** Playing state; the playhead is held centred only while playing. */
+    playing?: boolean;
+    /** Frame-accurate media time for smooth centred scrolling; falls back to `time`. */
+    clock?: () => number;
     activeId: number | null;
     activeStrokeIndex?: number | null;
     scoreContextId?: number | null;
@@ -89,6 +97,7 @@ const props = withDefaults(
   }>(),
   {
     timelineMode: "all",
+    playing: false,
     activeStrokeIndex: null,
     scoreContextId: null,
     compactRail: false,
@@ -115,6 +124,16 @@ const renderViewport = ref<TimelineViewport>(
 const lensProgress = ref(0);
 const lensActive = ref(false);
 const manualNavigation = ref(false);
+const centerFollowing = computed(() =>
+  shouldCenterFollow({
+    playing: props.playing,
+    fit: fit.value,
+    manualNavigation: manualNavigation.value,
+    lensActive: lensActive.value,
+  }),
+);
+/** Clock time sampled each follow frame, so the playhead moves in step with the scrolling content. */
+const displayTime = ref(props.time);
 const surface = ref<HTMLElement | null>(null);
 let scrubGesture: { pointerId: number; startX: number; track: HTMLElement; moved: boolean } | null = null;
 let suppressScrubClick = false;
@@ -151,6 +170,9 @@ let lensFrame: number | undefined;
 let inspectionFrame: number | undefined;
 let lensRequest = 0;
 let followResumeTimer: ReturnType<typeof setTimeout> | undefined;
+let followFrame: number | undefined;
+let followSpanSec = 0;
+let followTransition: { from: TimelineViewport; startedAt: number } | null = null;
 let lastPointer: {
   clientX: number;
   clientY: number;
@@ -189,6 +211,7 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   reducedMotionQuery?.removeEventListener("change", handleReducedMotionChange);
   cancelLens();
+  stopCenterFollow();
   clearTimeout(followResumeTimer);
   if (inspectionFrame !== undefined) cancelAnimationFrame(inspectionFrame);
 });
@@ -205,33 +228,39 @@ watch([() => props.selectedId, () => props.model.duration], (id) => {
     scheduleInspectionRestore();
     return;
   }
-  manualNavigation.value = false;
   cancelLens();
-  renderViewport.value = authoritativeViewport(fit.value);
   lensProgress.value = fit.value === "rally" ? 1 : 0;
+  if (centerFollowing.value) {
+    // Explicit selection re-zooms to the new rally, gliding there instead of flashing its exact span.
+    startCenterFollow(authoritativeViewport(fit.value).durationSec);
+    return;
+  }
+  renderViewport.value = authoritativeViewport(fit.value);
   scheduleInspectionRestore();
 });
 watch(
   () => props.time,
   (timeSec) => {
-    if (lensActive.value) return;
+    if (lensActive.value || centerFollowing.value) return;
     const next = playbackFollowViewport(
       manualNavigation.value,
       timeSec,
       renderViewport.value,
       props.model.duration,
-      fit.value === "rally"
-        ? activeRallyAt(props.model.rallies, timeSec)
-        : null,
     );
     if (next !== renderViewport.value) renderViewport.value = next;
   },
   { flush: "sync" },
 );
+watch(centerFollowing, (active) => {
+  if (active) startCenterFollow(renderViewport.value.durationSec);
+  else stopCenterFollow();
+});
 watch(
   () => props.model.scenario,
   () => {
     cancelLens();
+    stopCenterFollow();
     fit.value = "match";
     manualNavigation.value = false;
     renderViewport.value = fitViewport("match", props.model.duration, null);
@@ -263,6 +292,7 @@ const axisTicks = computed(() =>
     renderViewport.value.endSec,
     trackWidth.value,
     density.value,
+    props.model.duration,
   ),
 );
 const strokes = computed(() =>
@@ -344,7 +374,10 @@ const detailOpacity = computed(() => semanticRevealProgress.value);
 const position = (timeSec: number) =>
   timeToPercent(timeSec, renderViewport.value);
 const playheadFraction = computed(() =>
-  Math.min(1, Math.max(0, position(props.time) / 100)),
+  Math.min(
+    1,
+    Math.max(0, position(centerFollowing.value ? displayTime.value : props.time) / 100),
+  ),
 );
 const capability = (track: TrackKey) =>
   ({
@@ -421,6 +454,39 @@ function resumeFollow() {
   followResumeTimer = undefined;
   manualNavigation.value = false;
 }
+function readClock() {
+  return props.clock?.() ?? props.time;
+}
+/** Holds the playhead centred at a fixed span, first gliding there from the current view. */
+function startCenterFollow(spanSec: number) {
+  stopCenterFollow();
+  followSpanSec = spanSec;
+  displayTime.value = readClock();
+  clearInspection();
+  followTransition = reducedMotionQuery?.matches
+    ? null
+    : { from: { ...renderViewport.value }, startedAt: performance.now() };
+  followFrame = requestAnimationFrame(followCenter);
+}
+function stopCenterFollow() {
+  if (followFrame !== undefined) cancelAnimationFrame(followFrame);
+  followFrame = undefined;
+  followTransition = null;
+}
+function followCenter(now: number) {
+  followFrame = undefined;
+  if (!centerFollowing.value) return;
+  const timeSec = readClock();
+  displayTime.value = timeSec;
+  const target = centeredFollowViewport(timeSec, followSpanSec, props.model.duration);
+  if (followTransition) {
+    const elapsed = Math.min(1, Math.max(0, now - followTransition.startedAt) / LENS_DURATION_MS);
+    // The target keeps moving with playback, so the glide re-aims at it every frame.
+    renderViewport.value = interpolateViewport(followTransition.from, target, temporalLensEase(elapsed));
+    if (elapsed >= 1) followTransition = null;
+  } else renderViewport.value = target;
+  followFrame = requestAnimationFrame(followCenter);
+}
 function setFit(next: TimelineFit, focus: RallyModel | null = null) {
   const anchor = focus ?? selectedRally.value ?? activeRallyAt(props.model.rallies, props.time);
   if (next === "rally" && !anchor) return;
@@ -459,6 +525,10 @@ function pauseFollow() {
   manualNavigation.value = true;
   clearTimeout(followResumeTimer);
   followResumeTimer = setTimeout(resumeFollow, FOLLOW_RESUME_DELAY_MS);
+}
+/** Freezes centred scrolling under the pointer so clicks, drags and double-clicks land where aimed. */
+function holdFollowForPointer() {
+  if (props.playing && fit.value !== "match") pauseFollow();
 }
 function panTimeline(event: WheelEvent) {
   if (event.shiftKey || lensActive.value) return;
@@ -596,7 +666,7 @@ function updateInspection(
   track: HTMLElement,
   exactMark: TimelineHoverMark | null = null,
 ) {
-  if (lensActive.value || !surface.value) {
+  if (lensActive.value || centerFollowing.value || !surface.value) {
     clearInspection(false);
     return;
   }
@@ -653,6 +723,8 @@ function scheduleInspectionRestore() {
   });
 }
 function inspectPointer(event: PointerEvent) {
+  // Content slides under a still pointer while centred, so a hover readout would only flicker.
+  if (centerFollowing.value) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
   const track = target.closest<HTMLElement>(".timeline-lane-track");
@@ -768,6 +840,7 @@ function scrubTime(clientX: number, track: HTMLElement) {
   emit("seek", timeFromClientX(clientX, bounds.left, bounds.width, renderViewport.value));
 }
 function beginScrub(event: PointerEvent) {
+  holdFollowForPointer();
   if (event.button !== 0 || props.compactRail || lensActive.value || !(event.target instanceof Element)) return;
   if (event.target.closest("button,input,select,summary,a")) return;
   const track = event.target.closest<HTMLElement>(".timeline-lane-track");
@@ -779,6 +852,7 @@ function beginScrub(event: PointerEvent) {
 }
 function moveScrub(event: PointerEvent) {
   if (!scrubGesture || event.pointerId !== scrubGesture.pointerId) return;
+  holdFollowForPointer();
   if (Math.abs(event.clientX - scrubGesture.startX) > 3) scrubGesture.moved = true;
   scrubTime(event.clientX, scrubGesture.track);
 }
@@ -1088,7 +1162,7 @@ const timelineStyle = computed(() => ({
         }}</span>
       </div>
       <div v-if="!compactRail" class="time-axis">
-        <span v-for="tick in axisTicks" :key="tick.timeSec" :data-edge="tick.edge" :style="{ left: tick.percent + '%' }">{{
+        <span v-for="tick in axisTicks" :key="tick.timeSec" :style="{ left: tick.percent + '%', transform: `translateX(${tick.shift}%)`, opacity: tick.opacity }">{{
           formatTimelineAxisTime(tick.timeSec, renderViewport.durationSec)
         }}</span>
       </div>

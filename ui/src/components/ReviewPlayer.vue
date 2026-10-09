@@ -110,7 +110,9 @@ watch(
   { flush: "post" },
 );
 function pause() { video.value?.pause(); }
-defineExpose({ seek, pause, handleShortcut });
+/** Frame-accurate media time; `timeupdate` only refreshes `state.time` about four times a second. */
+function currentTime() { return video.value?.currentTime ?? state.time; }
+defineExpose({ seek, pause, handleShortcut, currentTime });
 </script>
 <template>
   <section

@@ -87,6 +87,7 @@ const fullscreenPanels = computed(() => ({
 const panels = computed(() => fullscreen.value ? fullscreenPanels.value : layout.panels);
 /** Writable panel layouts; `panels` may present a fitted copy. */
 const storedPanels = () => fullscreen.value ? layout.fullscreenPanels : layout.panels;
+const timelineClock = () => player.value?.currentTime() ?? workspace.currentTimeSec.value;
 const analysisDetached = computed(() => panels.value.analysis.presentation === "detached");
 const analysisCollapsed = computed(() => panels.value.analysis.presentation === "docked" && panels.value.analysis.collapsed);
 
@@ -299,7 +300,7 @@ onBeforeUnmount(() => {
             <label class="timeline-mode-selector" @wheel="modeWheel"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
           </template>
-          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="panels.timeline.presentation === 'docked' && panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @expand="expandTimeline" />
+          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :compact-rail="panels.timeline.presentation === 'docked' && panels.timeline.collapsed" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" @expand="expandTimeline" />
         </WorkspaceWindow>
 
         <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-side="layout.analysisSide" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @presentation="setPresentation('analysis', $event)" @dock-side="setAnalysisSide" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @snap-drag="updateSnapDrag('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">

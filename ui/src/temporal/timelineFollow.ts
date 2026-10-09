@@ -1,21 +1,39 @@
-import type { RallyModel } from "../domain/models";
-import type { TimelineViewport } from "./timeline";
-import { rallyViewport } from "./timeline";
+import type { TimelineFit, TimelineViewport } from "./timeline";
+import { constrainTimelineViewport } from "./timelineNavigation";
 
 export function viewportContainsTime(view: TimelineViewport, timeSec: number) {
   return timeSec >= view.startSec && timeSec <= view.endSec;
 }
 
+/** Centres `timeSec` at a fixed span; near the match edges the playhead drifts off centre instead. */
+export function centeredFollowViewport(
+  timeSec: number,
+  spanSec: number,
+  totalSec: number,
+): TimelineViewport {
+  return constrainTimelineViewport(timeSec - spanSec / 2, spanSec, totalSec);
+}
+
+/** The playhead stays centred only while playing in a zoomed fit the user is not navigating. */
+export function shouldCenterFollow(state: {
+  playing: boolean;
+  fit: TimelineFit | "custom";
+  manualNavigation: boolean;
+  lensActive: boolean;
+}) {
+  return state.playing && state.fit !== "match" && !state.manualNavigation && !state.lensActive;
+}
+
+/**
+ * Brings an off-screen playhead back into view after a discrete jump (keyboard
+ * seek, list selection) while centred follow is not running. The zoom is kept.
+ */
 export function playbackFollowViewport(
   manualNavigation: boolean,
   timeSec: number,
   current: TimelineViewport,
   durationSec: number,
-  activeRally: RallyModel | null,
 ): TimelineViewport {
   if (manualNavigation || viewportContainsTime(current, timeSec)) return current;
-  if (activeRally) return rallyViewport(activeRally);
-  const span = Math.min(durationSec, Math.max(0.001, current.durationSec));
-  const startSec = Math.min(Math.max(0, timeSec - span / 2), Math.max(0, durationSec - span));
-  return { startSec, endSec: startSec + span, durationSec: span };
+  return centeredFollowViewport(timeSec, current.durationSec, durationSec);
 }

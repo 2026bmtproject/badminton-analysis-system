@@ -81,7 +81,9 @@
   height: 32px;
   background: transparent;
   border-bottom: 1px solid var(--line-structure);
-  overflow: visible;
+  /* Marks crossing the view edge are cut at the track, never drawn over the lane labels; labels above marks still overflow vertically. */
+  overflow-x: clip;
+  overflow-y: visible;
   cursor: pointer;
 }
 .timeline-lane:hover .timeline-lane-label {
@@ -632,6 +634,4 @@
   font-size: var(--font-size-metadata);
   font-variant-numeric: tabular-nums;
 }
-.time-axis > span { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
-.time-axis > span[data-edge="start"] { transform: none; }
-.time-axis > span[data-edge="end"] { transform: translateX(-100%); }
+.time-axis > span { position: absolute; top: 0; white-space: nowrap; }

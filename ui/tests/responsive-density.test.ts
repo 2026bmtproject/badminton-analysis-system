@@ -39,6 +39,23 @@ test("pixel-aware ticks reduce count while retaining valid ordered ranges", () =
   assert.deepEqual(timelineTicks(0, 600, 1_000, "rail"), []);
 });
 
+test("scrolling ticks move their labels continuously and fade where the view cuts the match", () => {
+  const labelLeft = (tick: { percent: number; shift: number }) => tick.percent * 10 + (tick.shift / 100) * 40;
+  let previous: number | null = null;
+  for (let start = 100; start <= 104; start += 0.05) {
+    const tick = timelineTicks(start, start + 20, 1_000, "full", 600).find((item) => item.timeSec === 110)!;
+    const left = labelLeft(tick);
+    if (previous !== null) assert.ok(Math.abs(previous - left) < 4, `label jumped ${previous} -> ${left}`);
+    previous = left;
+  }
+  const scrolled = timelineTicks(101.99, 121.99, 1_000, "full", 600);
+  assert.ok(scrolled[0]!.opacity < 0.1, "a tick entering at the cut edge starts transparent");
+  assert.ok(scrolled.some((tick) => tick.opacity === 1));
+  const match = timelineTicks(0, 600, 1_000, "full", 600);
+  assert.equal(match[0]!.opacity, 1, "match boundaries never fade");
+  assert.equal(match.at(-1)!.opacity, 1);
+});
+
 test("Analysis resize resolves full or compact without becoming a collapsed rail", () => {
   assert.equal(resolveAnalysisDensity(340), "full");
   assert.equal(resolveAnalysisDensity(260), "compact");

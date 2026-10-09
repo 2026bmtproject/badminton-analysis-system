@@ -16,7 +16,9 @@ import {
   resolveActiveMatchContext,
 } from "../src/temporal/activeContext";
 import {
+  centeredFollowViewport,
   playbackFollowViewport,
+  shouldCenterFollow,
   viewportContainsTime,
 } from "../src/temporal/timelineFollow";
 
@@ -205,10 +207,29 @@ test("8. persisted workspace geometry excludes transient playback and selection 
 
 test("9. manual timeline navigation suspends follow until return-to-playback", () => {
   const oldView = { startSec: 10, endSec: 12, durationSec: 2 };
-  assert.equal(playbackFollowViewport(true, 14.5, oldView, 30, secondRally), oldView);
-  const followed = playbackFollowViewport(false, 14.5, oldView, 30, secondRally);
+  assert.equal(playbackFollowViewport(true, 14.5, oldView, 30), oldView);
+  const followed = playbackFollowViewport(false, 14.5, oldView, 30);
   assert.notEqual(followed, oldView);
   assert.equal(viewportContainsTime(followed, 14.5), true);
+  assert.deepEqual(followed, { startSec: 13.5, endSec: 15.5, durationSec: 2 }, "an off-screen jump recentres at the same zoom");
+  assert.equal(playbackFollowViewport(false, 11, oldView, 30), oldView, "a visible playhead never moves the view");
+});
+
+test("9a. centred follow keeps the span and clamps at the match edges", () => {
+  assert.deepEqual(centeredFollowViewport(15, 4, 30), { startSec: 13, endSec: 17, durationSec: 4 });
+  assert.deepEqual(centeredFollowViewport(0.5, 4, 30), { startSec: 0, endSec: 4, durationSec: 4 });
+  assert.deepEqual(centeredFollowViewport(29.5, 4, 30), { startSec: 26, endSec: 30, durationSec: 4 });
+  assert.deepEqual(centeredFollowViewport(5, 40, 30), { startSec: 0, endSec: 30, durationSec: 30 });
+});
+
+test("9b. centred follow runs only while playing in an undisturbed zoomed fit", () => {
+  const base = { playing: true, fit: "rally" as const, manualNavigation: false, lensActive: false };
+  assert.equal(shouldCenterFollow(base), true);
+  assert.equal(shouldCenterFollow({ ...base, fit: "custom" }), true);
+  assert.equal(shouldCenterFollow({ ...base, fit: "match" }), false);
+  assert.equal(shouldCenterFollow({ ...base, playing: false }), false);
+  assert.equal(shouldCenterFollow({ ...base, manualNavigation: true }), false);
+  assert.equal(shouldCenterFollow({ ...base, lensActive: true }), false);
 });
 
 test("10. responsive layout changes presentation only, not temporal ownership", () => {
