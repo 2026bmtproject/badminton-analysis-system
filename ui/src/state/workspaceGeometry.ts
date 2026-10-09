@@ -10,7 +10,6 @@ export const PANEL_MIN_HEIGHT_PX = 96;
 export const PANEL_MAX_WIDTH_RATIO = 0.96;
 export const PANEL_MAX_HEIGHT_RATIO = 0.92;
 export const PANEL_HEADER_HEIGHT_PX = 42;
-export const FULLSCREEN_SNAP_DISTANCE_PX = 72;
 /** The fullscreen timeline's single bottom toolbar (mode, player controls, window actions) replaces its header. */
 export const FULLSCREEN_TOOLBAR_HEIGHT_PX = 36;
 /** Timeline lanes have fixed pixel heights, so the floating timeline keeps the dock's lane space under a slimmer toolbar. */
@@ -94,19 +93,6 @@ export function fittedFullscreenTimeline(panel: PanelLayout, boundsHeight: numbe
   const height = Math.min(PANEL_MAX_HEIGHT_RATIO, FULLSCREEN_TIMELINE_HEIGHT_PX / Math.max(1, boundsHeight));
   const y = panel.y === home.y ? Math.max(0, home.y + home.height - height) : panel.y;
   return { ...panel, height, y };
-}
-
-export function fullscreenSnapCandidate(
-  id: WorkspacePanelId,
-  panel: PanelLayout,
-  bounds: WorkspaceBounds,
-): PanelLayout | null {
-  const home = fullscreenHomePanel(id, panel, bounds);
-  const distance = Math.hypot(
-    (panel.x - home.x) * bounds.width,
-    (panel.y - home.y) * bounds.height,
-  );
-  return distance <= FULLSCREEN_SNAP_DISTANCE_PX ? home : null;
 }
 
 export function resizePanel(

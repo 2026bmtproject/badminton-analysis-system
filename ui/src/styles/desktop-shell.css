@@ -105,16 +105,7 @@ h1[tabindex="-1"]:focus { outline: none; }
 .desktop-content .review-workspace-stage:fullscreen > .player { position: absolute; inset: 0; display: block; width: 100%; height: 100%; background: #030405; border: 0; border-radius: 0; box-shadow: none; }
 .review-workspace-stage:fullscreen .video-wrap { position: absolute; inset: 0; width: 100%; height: 100%; }
 .review-workspace-stage:fullscreen .video-wrap video { width: 100%; height: 100%; object-fit: contain; }
-.review-workspace-stage:fullscreen .workspace-window--docked { position: absolute; z-index: 31; }
-.review-workspace-stage:fullscreen .workspace-window--timeline.workspace-window--docked { right: 24%; bottom: 3%; left: 2%; width: 72%; height: var(--timeline-dock-height); }
-.review-workspace-stage:fullscreen .workspace-window--timeline.workspace-window--docked.workspace-window--collapsed { height: auto; }
-.review-workspace-stage:fullscreen .workspace-window--analysis.workspace-window--docked { top: 4%; right: 2%; width: var(--analysis-dock-width); height: 68%; }
-.review-workspace-stage:fullscreen .workspace-window--analysis.workspace-window--docked.workspace-window--dock-left { right: auto; left: 2%; }
-.review-workspace-stage:fullscreen .workspace-window--analysis.workspace-window--docked.workspace-window--collapsed { top: 50%; right: 0; width: 32px; height: 56px; }
-.review-workspace-stage:fullscreen .workspace-window--analysis.workspace-window--docked.workspace-window--collapsed.workspace-window--dock-left { right: auto; left: 0; }
 .review-workspace-stage:fullscreen .workspace-window--detached { z-index: 31; }
-.review-workspace-stage:fullscreen .fullscreen-snap-guide { position: absolute; z-index: 30; box-sizing: border-box; display: grid; place-items: center; pointer-events: none; border: 2px dashed rgb(255 255 255 / 42%); border-radius: var(--radius-panel); background: rgb(10 12 13 / 18%); color: #fff; font-size: 13px; text-shadow: 0 1px 2px #000; }
-.review-workspace-stage:fullscreen .fullscreen-snap-guide--near { border-style: solid; border-color: rgb(255 255 255 / 80%); background: rgb(10 12 13 / 30%); }
 .review-workspace-stage:fullscreen .workspace-window { transition: opacity 180ms ease, visibility 180ms ease; }
 .review-workspace-stage:fullscreen.review-workspace-stage--ui-hidden .workspace-window { visibility: hidden; opacity: 0; pointer-events: none; }
 @media (max-width: 1100px) {

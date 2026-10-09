@@ -1,7 +1,6 @@
 import { reactive, watch } from "vue";
 
 export type WorkspacePanelId = "timeline" | "analysis";
-export type PanelPresentation = "docked" | "detached";
 export type AnalysisDockSide = "left" | "right";
 export type TimelineMode = "rally" | "stroke" | "score" | "commentary" | "cheer";
 export type AnalysisView = "analysis" | "court";
@@ -13,7 +12,6 @@ export type PanelLayout = {
   height: number;
   collapsed: boolean;
   alpha: number;
-  presentation: PanelPresentation;
 };
 
 export type WorkspaceLayout = {
@@ -34,8 +32,15 @@ export const MIN_ANALYSIS_DOCK_WIDTH = 180;
 export const MAX_ANALYSIS_DOCK_WIDTH = 460;
 export const MIN_TIMELINE_DOCK_HEIGHT = 96;
 export const MAX_TIMELINE_DOCK_HEIGHT = 380;
+/** Fullscreen panel background alpha: from 80% transparent to fully opaque. */
+export const MIN_PANEL_ALPHA = 0.2;
+export const MAX_PANEL_ALPHA = 1;
 
-const detachedDefaults: Record<WorkspacePanelId, Omit<PanelLayout, "presentation">> = {
+/**
+ * Normal mode always docks both panels and keeps only their collapsed state;
+ * fullscreen always floats them with these geometries and alphas.
+ */
+const panelDefaults: Record<WorkspacePanelId, PanelLayout> = {
   timeline: { x: 0.025, y: 0.64, width: 0.70, height: 0.32, collapsed: false, alpha: 0.94 },
   analysis: { x: 0.735, y: 0.035, width: 0.24, height: 0.57, collapsed: false, alpha: 0.94 },
 };
@@ -53,7 +58,6 @@ const LEGACY_FULLSCREEN_TIMELINES = [
 
 const modes: TimelineMode[] = ["rally", "stroke", "score", "commentary", "cheer"];
 const views: AnalysisView[] = ["analysis", "court"];
-const presentations: PanelPresentation[] = ["docked", "detached"];
 
 function finite(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -78,8 +82,7 @@ export function sanitizePanel(value: unknown, fallback: PanelLayout): PanelLayou
     width,
     height,
     collapsed: typeof panel.collapsed === "boolean" ? panel.collapsed : fallback.collapsed,
-    alpha: Math.min(0.99, Math.max(0.78, finite(panel.alpha, fallback.alpha))),
-    presentation: presentations.includes(panel.presentation as PanelPresentation) ? panel.presentation! : fallback.presentation,
+    alpha: clamp(panel.alpha, fallback.alpha, MIN_PANEL_ALPHA, MAX_PANEL_ALPHA),
   };
 }
 
@@ -92,12 +95,12 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
     analysisDockWidth: DEFAULT_ANALYSIS_DOCK_WIDTH,
     timelineDockHeight: DEFAULT_TIMELINE_DOCK_HEIGHT,
     panels: {
-      timeline: { ...detachedDefaults.timeline, presentation: "docked" },
-      analysis: { ...detachedDefaults.analysis, presentation: "docked" },
+      timeline: { ...panelDefaults.timeline },
+      analysis: { ...panelDefaults.analysis },
     },
     fullscreenPanels: {
-      timeline: { x: 0.025, y: 0.78, width: 0.69, height: 0.19, collapsed: false, alpha: 0.94, presentation: "detached" },
-      analysis: { ...detachedDefaults.analysis, presentation: "detached" },
+      timeline: { x: 0.025, y: 0.78, width: 0.69, height: 0.19, collapsed: false, alpha: 0.94 },
+      analysis: { ...panelDefaults.analysis },
     },
   })) as WorkspaceLayout;
 }
@@ -108,11 +111,6 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
   try {
     const value = JSON.parse(raw) as Omit<Partial<WorkspaceLayout>, "version"> & { version?: number };
     if (value.version !== 1 && value.version !== 2 && value.version !== 3) return fallback;
-    const migratedFromFloatingV1 = value.version === 1;
-    const panelFallback = (id: WorkspacePanelId): PanelLayout => ({
-      ...fallback.panels[id],
-      presentation: migratedFromFloatingV1 ? "detached" : "docked",
-    });
     const fullscreenTimeline = sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline);
     const legacy = LEGACY_FULLSCREEN_TIMELINES.find((spot) => spot.height === fullscreenTimeline.height && spot.y === fullscreenTimeline.y)
       ?? LEGACY_FULLSCREEN_TIMELINES.find((spot) => spot.height === fullscreenTimeline.height);
@@ -128,8 +126,8 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       analysisDockWidth: constrainAnalysisDockWidth(finite(value.analysisDockWidth, DEFAULT_ANALYSIS_DOCK_WIDTH)),
       timelineDockHeight: constrainTimelineDockHeight(finite(value.timelineDockHeight, DEFAULT_TIMELINE_DOCK_HEIGHT)),
       panels: {
-        timeline: sanitizePanel(value.panels?.timeline, panelFallback("timeline")),
-        analysis: sanitizePanel(value.panels?.analysis, panelFallback("analysis")),
+        timeline: sanitizePanel(value.panels?.timeline, fallback.panels.timeline),
+        analysis: sanitizePanel(value.panels?.analysis, fallback.panels.analysis),
       },
       fullscreenPanels: {
         timeline: fullscreenTimeline,
@@ -148,13 +146,9 @@ export function useWorkspaceLayout() {
   function reset() {
     Object.assign(layout, defaultWorkspaceLayout());
   }
-  function redockAll() {
-    layout.panels.timeline.presentation = "docked";
-    layout.panels.analysis.presentation = "docked";
-  }
 
   if (typeof localStorage !== "undefined") {
     watch(layout, (value) => localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(value)), { deep: true });
   }
-  return { layout, reset, redockAll };
+  return { layout, reset };
 }

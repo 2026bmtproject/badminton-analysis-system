@@ -87,7 +87,7 @@ test("8. transparency changes only the rgba panel backgrounds", () => {
   const component = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
   const styles = readFileSync("src/styles/floating-workspace.css", "utf8");
   assert.match(component, /aria-label="背景透明度"/);
-  assert.match(component, /alpha: 1 - Number/);
+  assert.match(component, /alpha: Math\.min\(MAX_PANEL_ALPHA, Math\.max\(MIN_PANEL_ALPHA, 1 - value\)\)/);
   assert.match(styles, /background: rgb\(13 16 17 \/ var\(--workspace-panel-alpha\)\)/);
   assert.doesNotMatch(styles, /\.workspace-window\s*\{[^}]*opacity:/s);
 });

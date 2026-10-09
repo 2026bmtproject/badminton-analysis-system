@@ -13,12 +13,12 @@ const review = source("src/pages/ReviewPage.vue");
 const windowComponent = source("src/components/workspace/WorkspaceWindow.vue");
 const styles = source("src/styles/floating-workspace.css");
 
-test("1. fresh workspace docks Analysis right and Timeline bottom", () => {
+test("1. normal mode always docks Analysis right and Timeline bottom; fullscreen always floats", () => {
   const layout = defaultWorkspaceLayout();
   assert.equal(layout.version, 3);
   assert.equal(layout.analysisSide, "right");
-  assert.equal(layout.panels.analysis.presentation, "docked");
-  assert.equal(layout.panels.timeline.presentation, "docked");
+  assert.doesNotMatch(source("src/state/workspaceLayout.ts"), /presentation/);
+  assert.match(windowComponent, /const presentation = computed\(\(\) => props\.fullscreen \? "detached" : "docked"\)/);
 });
 
 test("2. Analysis dock width is directly adjustable within useful limits", () => {
@@ -64,33 +64,36 @@ test("5b. fullscreen Timeline merges mode, player controls and window actions in
 });
 
 test("5c. a collapsed floating window becomes a movable capsule", () => {
-  assert.match(windowComponent, /const capsule = computed\(\(\) => props\.panel\.presentation === "detached" && props\.panel\.collapsed\)/);
+  assert.match(windowComponent, /const capsule = computed\(\(\) => props\.fullscreen && props\.panel\.collapsed\)/);
   assert.match(windowComponent, /width: capsule\.value \? "auto"/);
   assert.match(styles, /\.workspace-window--capsule \{[^}]*border-radius: 999px/);
 });
 
-test("6. Analysis detach reuses the shared draggable and resizable window", () => {
-  assert.match(windowComponent, /changePresentation\('detached'\)/);
+test("6. windows cannot be detached, re-docked or snapped by hand", () => {
+  assert.doesNotMatch(windowComponent, /脫離工作區|停靠底部|停靠左側|停靠右側|changePresentation|dockAnalysis|snap/i);
+  assert.doesNotMatch(review, /全部重新停靠|setPresentation|snap/i);
   assert.match(windowComponent, /startDrag/);
   assert.match(windowComponent, /startResize/);
   assert.equal((review.match(/<AnalysisWindow /g) ?? []).length, 1);
 });
 
-test("7. Analysis re-dock explicitly ignores detached geometry for dock layout", () => {
-  assert.match(windowComponent, /停靠左側/);
-  assert.match(windowComponent, /停靠右側/);
-  assert.match(windowComponent, /props\.panel\.presentation === "detached" \? \(\{/);
+test("7. docked windows ignore floating geometry and opacity", () => {
+  assert.match(windowComponent, /const style = computed\(\(\) => props\.fullscreen \? \(\{[\s\S]*\}\) : \{\}\);/);
   assert.match(styles, /\.workspace-window--docked[\s\S]*position: relative/);
 });
 
-test("8. Timeline detach leaves temporal viewport owned by ReviewTimeline", () => {
+test("8. window settings exist only in fullscreen and hold just transparency and restore", () => {
   assert.equal((review.match(/<ReviewTimeline /g) ?? []).length, 1);
-  assert.doesNotMatch(review.slice(review.indexOf("function setPresentation"), review.indexOf("function setAnalysisSide")), /timelineMode|currentTime|viewport|zoom/);
+  assert.match(windowComponent, /<WorkspacePopover v-if="fullscreen && !capsule"/);
+  const menu = windowComponent.slice(windowComponent.indexOf("<WorkspacePopover"), windowComponent.indexOf("</WorkspacePopover>"));
+  assert.equal((menu.match(/<button /g) ?? []).length, 1);
+  assert.match(menu, /回復全螢幕預設位置/);
 });
 
-test("9. transparency follows the selected panel layout", () => {
-  assert.match(windowComponent, /<label>背景透明度<input/);
+test("9. transparency follows the selected panel layout across a visible range", () => {
+  assert.match(windowComponent, /<label><span>背景透明度 <output>/);
   assert.match(windowComponent, /"--workspace-panel-alpha": visiblePanel\.value\.alpha/);
+  assert.match(windowComponent, /:max="maxTransparency"/);
 });
 
 test("10. Analysis side preference is finite and persisted in schema", () => {
@@ -100,12 +103,14 @@ test("10. Analysis side preference is finite and persisted in schema", () => {
   assert.match(review, /v-model="layout\.analysisSide"/);
 });
 
-test("11. v2 presentation modes and dock sizes survive reload parsing", () => {
+test("11. dock sizes survive reload parsing and a stored presentation is dropped", () => {
   const saved = defaultWorkspaceLayout();
   saved.analysisDockWidth = 410;
   saved.timelineDockHeight = 310;
-  saved.panels.analysis.presentation = "detached";
   assert.deepEqual(parseWorkspaceLayout(JSON.stringify(saved)), saved);
+  const legacy = JSON.parse(JSON.stringify(saved));
+  legacy.panels.analysis.presentation = "detached";
+  assert.deepEqual(parseWorkspaceLayout(JSON.stringify(legacy)), saved);
 });
 
 test("12. old floating v1 migrates safely while invalid state falls back", () => {
@@ -113,11 +118,7 @@ test("12. old floating v1 migrates safely while invalid state falls back", () =>
   delete (old as Partial<typeof old>).analysisSide;
   delete (old as Partial<typeof old>).analysisDockWidth;
   delete (old as Partial<typeof old>).timelineDockHeight;
-  for (const panel of Object.values(old.panels)) delete (panel as Partial<typeof panel>).presentation;
-  const migrated = parseWorkspaceLayout(JSON.stringify(old));
-  assert.equal(migrated.version, 3);
-  assert.equal(migrated.panels.analysis.presentation, "detached");
-  assert.equal(migrated.panels.timeline.presentation, "detached");
+  assert.deepEqual(parseWorkspaceLayout(JSON.stringify(old)), defaultWorkspaceLayout());
   assert.deepEqual(parseWorkspaceLayout("broken"), defaultWorkspaceLayout());
 });
 

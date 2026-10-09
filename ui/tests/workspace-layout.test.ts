@@ -3,7 +3,7 @@ import test from "node:test";
 import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel, useWorkspaceLayout } from "../src/state/workspaceLayout";
 import { availableTimelineModes } from "../src/components/timeline/timelineModeRegistry";
 import type { MatchCapabilities } from "../src/domain/models";
-import { FULLSCREEN_SNAP_DISTANCE_PX, FULLSCREEN_TIMELINE_HEIGHT_PX, fittedFullscreenTimeline, fullscreenHomePanel, fullscreenSnapCandidate } from "../src/state/workspaceGeometry";
+import { FULLSCREEN_TIMELINE_HEIGHT_PX, fittedFullscreenTimeline, fullscreenHomePanel } from "../src/state/workspaceGeometry";
 
 test("invalid persisted workspace state falls back without breaking Review", () => {
   assert.deepEqual(parseWorkspaceLayout("not-json"), defaultWorkspaceLayout());
@@ -12,20 +12,20 @@ test("invalid persisted workspace state falls back without breaking Review", () 
 
 test("persisted panels are constrained to reachable, readable bounds", () => {
   const fallback = defaultWorkspaceLayout().panels.timeline;
-  const panel = sanitizePanel({ x: 9, y: -4, width: 0.01, height: 2, alpha: 0.1, collapsed: true }, fallback);
+  const panel = sanitizePanel({ x: 9, y: -4, width: 0.01, height: 2, alpha: 0.05, collapsed: true }, fallback);
   assert.equal(panel.width, 0.18);
   assert.equal(panel.height, 0.92);
   assert.ok(Math.abs(panel.x - 0.82) < Number.EPSILON);
   assert.equal(panel.y, 0);
-  assert.equal(panel.alpha, 0.78);
+  assert.equal(panel.alpha, 0.2);
   assert.equal(panel.collapsed, true);
+  assert.equal(sanitizePanel({ alpha: 1.4 }, fallback).alpha, 1);
 });
 
 test("default workspace exposes exactly two persistent panels and truthful modes", () => {
   const layout = defaultWorkspaceLayout();
   assert.deepEqual(Object.keys(layout.panels).sort(), ["analysis", "timeline"]);
   assert.deepEqual(Object.keys(layout.fullscreenPanels).sort(), ["analysis", "timeline"]);
-  assert.equal(layout.fullscreenPanels.timeline.presentation, "detached");
   assert.equal(layout.timelineMode, "rally");
   assert.equal(layout.analysisView, "analysis");
 });
@@ -91,15 +91,6 @@ test("fullscreen home restores position without changing size, opacity, or norma
   assert.deepEqual(layout.panels.analysis, normal);
 });
 
-test("fullscreen drag snaps only near its own home position", () => {
-  const bounds = { width: 1920, height: 1080 };
-  const panel = defaultWorkspaceLayout().fullscreenPanels.timeline;
-  const near = { ...panel, x: panel.x + 40 / bounds.width, y: panel.y - 35 / bounds.height };
-  const far = { ...panel, x: panel.x + (FULLSCREEN_SNAP_DISTANCE_PX + 20) / bounds.width };
-  assert.deepEqual(fullscreenSnapCandidate("timeline", near, bounds), panel);
-  assert.equal(fullscreenSnapCandidate("timeline", far, bounds), null);
-});
-
 test("layout reset restores every persisted presentation field", () => {
   const { layout, reset } = useWorkspaceLayout();
   layout.timelineMode = "score";
@@ -114,7 +105,6 @@ test("layout reset restores every persisted presentation field", () => {
     height: 0.4,
     collapsed: true,
     alpha: 0.8,
-    presentation: "detached",
   };
 
   reset();

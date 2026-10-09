@@ -27,15 +27,6 @@
 }
 /* A collapsed timeline keeps only its header, so the dock row shrinks to fit it. */
 .review-workspace-stage--timeline-collapsed { grid-template-rows: minmax(320px, 1fr) auto; }
-.review-workspace-stage--analysis-detached { grid-template-columns: minmax(0, 1fr); grid-template-areas: "player" "timeline"; }
-.review-workspace-stage--timeline-detached { grid-template-rows: minmax(360px, 1fr); grid-template-areas: "player analysis"; }
-.review-workspace-stage--analysis-left.review-workspace-stage--timeline-detached { grid-template-areas: "analysis player"; }
-.review-workspace-stage--analysis-collapsed.review-workspace-stage--timeline-detached,
-.review-workspace-stage--analysis-left.review-workspace-stage--analysis-collapsed.review-workspace-stage--timeline-detached {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "player";
-}
-.review-workspace-stage--analysis-detached.review-workspace-stage--timeline-detached { display: block; }
 .review-workspace-stage > .player {
   grid-area: player;
   display: grid;
