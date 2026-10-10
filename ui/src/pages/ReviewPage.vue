@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="review-page">
-    <header class="topbar review-matchbar" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px` }">
+    <header class="topbar review-matchbar">
       <div class="review-video-heading">
         <h2 class="review-match-title">{{ matchTitle }}</h2>
         <div class="match-identity">

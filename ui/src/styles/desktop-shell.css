@@ -6,8 +6,9 @@
 .desktop-shell {
   --shell-titlebar: 0px;
   --shell-statusbar: 22px;
+  --shell-nav: 48px;
   display: grid;
-  grid-template-columns: 48px minmax(0,1fr);
+  grid-template-columns: var(--shell-nav) minmax(0,1fr);
   grid-template-rows: auto minmax(0,1fr) auto;
   grid-template-areas: "title title" "nav content" "status status";
   height: 100vh;
@@ -220,8 +221,13 @@ h1[tabindex="-1"]:focus { outline: none; }
 .desktop-content .workspace-window--analysis .workspace-window__dock-resize { left: calc(-5px - var(--part-gap) / 2); }
 .desktop-content .workspace-window--timeline .workspace-window__dock-resize { top: calc(-5px - var(--part-gap) / 2); }
 .desktop-content .review-workspace-stage .video-wrap { background: var(--color-video); }
-.desktop-content .review-matchbar { display: grid; grid-template-columns: minmax(0, 1fr) var(--analysis-dock-width, 340px); grid-template-areas: "video actions"; gap: 12px; padding: 0 12px 4px; background: var(--color-chrome); }
-.review-video-heading { grid-area: video; min-width: 0; }
+/*
+ * Equal side columns centre the score in the page whatever the Analysis dock's width; the actions take the right one.
+ * The page sits right of the activity bar, so the heading moves back by half the difference to share the window's
+ * centre line with the title bar.
+ */
+.desktop-content .review-matchbar { display: grid; grid-template-columns: minmax(40px, 1fr) minmax(0, 720px) minmax(40px, 1fr); grid-template-areas: ". video actions"; gap: 12px; padding: 0 12px 4px; background: var(--color-chrome); }
+.review-video-heading { position: relative; left: calc((var(--part-gap) - var(--shell-nav, 0px)) / 2); grid-area: video; min-width: 0; }
 .review-match-title { margin: 0 0 5px; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-body); font-weight: var(--weight-medium); }
 /* The desktop title bar already names the Match. */
 .desktop-shell--titlebar .review-match-title { display: none; }
@@ -254,6 +260,7 @@ h1[tabindex="-1"]:focus { outline: none; }
   .analysis-page .pipeline-panel { display: grid; grid-template-columns: minmax(0,1fr); }
   .analysis-page .pipeline-panel > * { grid-column: 1 !important; }
   .desktop-content .review-matchbar { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "video actions"; padding: 0 12px 6px; }
+  .review-video-heading { left: 0; }
   .settings-layout { grid-template-columns: minmax(0,1fr); gap: 12px; }
   .settings-toc { position: static; display: flex; flex-wrap: wrap; }
 }
