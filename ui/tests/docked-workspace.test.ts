@@ -96,12 +96,13 @@ test("7. docked windows ignore floating geometry and opacity", () => {
   assert.match(styles, /\.workspace-window--docked[\s\S]*position: relative/);
 });
 
-test("8. window settings exist only in fullscreen and hold just transparency and restore", () => {
+test("8. window settings exist only in fullscreen and hold transparency, idle delay and restore", () => {
   assert.equal((review.match(/<ReviewTimeline /g) ?? []).length, 1);
   assert.match(windowComponent, /<div v-if="fullscreen" class="workspace-window__actions">\s*<WorkspacePopover v-if="!capsule"/);
   const menu = windowComponent.slice(windowComponent.indexOf("<WorkspacePopover"), windowComponent.indexOf("</WorkspacePopover>"));
   assert.equal((menu.match(/<button /g) ?? []).length, 1);
-  assert.match(menu, /回復全螢幕預設位置/);
+  assert.match(menu, />回復預設</);
+  assert.match(menu, /aria-label="閒置後隱藏秒數"/);
 });
 
 test("9. transparency follows the selected panel layout across a visible range", () => {

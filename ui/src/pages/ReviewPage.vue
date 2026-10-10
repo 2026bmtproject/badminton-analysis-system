@@ -14,6 +14,7 @@ import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rall
 import { useMatchContext } from "../state/matchContext";
 import {
   constrainAnalysisDockWidth,
+  constrainFullscreenIdleSec,
   constrainTimelineDockHeight,
   DEFAULT_ANALYSIS_DOCK_WIDTH,
   DEFAULT_TIMELINE_DOCK_HEIGHT,
@@ -181,6 +182,11 @@ function fullscreenBounds() {
 function restoreFullscreenPanel(id: WorkspacePanelId) {
   layout.fullscreenPanels[id] = fullscreenHomePanel(id, layout.fullscreenPanels[id], fullscreenBounds());
 }
+function setIdleSeconds(value: number | null) {
+  layout.fullscreenIdleSec = constrainFullscreenIdleSec(value);
+  // Switching to "never" while hidden would otherwise leave the windows gone until the next movement.
+  revealUi();
+}
 function setDockSize(id: WorkspacePanelId, value: number) {
   if (id === "analysis") layout.analysisDockWidth = constrainAnalysisDockWidth(value);
   else layout.timelineDockHeight = constrainTimelineDockHeight(value);
@@ -197,10 +203,11 @@ function interactionActive() {
 }
 function scheduleIdle() {
   clearIdleTimer();
-  if (!fullscreen.value || interactionActive()) return;
+  const idleSec = layout.fullscreenIdleSec;
+  if (!fullscreen.value || idleSec === null || interactionActive()) return;
   idleTimer = window.setTimeout(() => {
     if (!interactionActive()) fullscreenUiHidden.value = true;
-  }, 3000);
+  }, idleSec * 1000);
 }
 function revealUi() {
   if (!fullscreen.value) return;
@@ -316,7 +323,7 @@ onBeforeUnmount(() => {
         <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
-        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" @restore="restoreFullscreenPanel('timeline')">
+        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
             <label class="timeline-mode-selector"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
@@ -325,7 +332,7 @@ onBeforeUnmount(() => {
           <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @seek="workspace.seek" />
         </WorkspaceWindow>
 
-        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :fit-content="layout.analysisView === 'analysis' && layout.strokeListCollapsed" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">
+        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :fit-content="layout.analysisView === 'analysis' && layout.strokeListCollapsed" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('analysis')">
           <AnalysisWindow :model="match" :active-id="activeId" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" :strokes-collapsed="layout.strokeListCollapsed" @view="layout.analysisView = $event" @strokes-collapsed="layout.strokeListCollapsed = $event" @stroke="workspace.selectStroke" @evidence="openEvidence" />
         </WorkspaceWindow>
       </section>

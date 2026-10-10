@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { MAX_PANEL_ALPHA, MIN_PANEL_ALPHA, type PanelLayout, type WorkspacePanelId } from "../../state/workspaceLayout";
+import {
+  MAX_FULLSCREEN_IDLE_SEC,
+  MAX_PANEL_ALPHA,
+  MIN_FULLSCREEN_IDLE_SEC,
+  MIN_PANEL_ALPHA,
+  type PanelLayout,
+  type WorkspacePanelId,
+} from "../../state/workspaceLayout";
 import {
   constrainPanel,
   type CollapsedSize,
@@ -26,12 +33,15 @@ const props = withDefaults(defineProps<{
   dockSize?: number;
   /** Floating, the window shrinks to its content; its stored height becomes the most it grows to. */
   fitContent?: boolean;
-}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSize: 0, fitContent: false });
+  /** Fullscreen idle delay before the windows hide, or null to keep them shown; shared by every window, so the page owns it. */
+  idleSeconds?: number | null;
+}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSize: 0, fitContent: false, idleSeconds: 3 });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
   dockSize: [value: number];
   interaction: [value: boolean];
+  idleSeconds: [value: number | null];
   restore: [];
 }>();
 const root = ref<HTMLElement | null>(null);
@@ -63,6 +73,11 @@ const presentation = computed(() => props.fullscreen ? "detached" : "docked");
 const capsule = computed(() => props.fullscreen && props.panel.collapsed);
 const collapseIcon = computed(() => props.panel.collapsed ? "chevron-up" : "chevron-down");
 const maxTransparency = Number((1 - MIN_PANEL_ALPHA).toFixed(2));
+/** The slider's last stop, past the longest delay: the windows never hide. */
+const IDLE_NEVER_STOP = MAX_FULLSCREEN_IDLE_SEC + 1;
+function setIdleStop(stop: number) {
+  emit("idleSeconds", stop >= IDLE_NEVER_STOP ? null : stop);
+}
 const transparency = computed(() => Number((1 - props.panel.alpha).toFixed(2)));
 const style = computed(() => props.fullscreen ? ({
   left: `${visiblePanel.value.x * 100}%`,
@@ -283,7 +298,8 @@ onBeforeUnmount(() => {
         <WorkspacePopover v-if="!capsule" ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
           <template #trigger><AppIcon name="sliders" :size="17" /></template>
           <label><span>背景透明度 <output>{{ Math.round(transparency * 100) }}%</output></span><input aria-label="背景透明度" type="range" min="0" :max="maxTransparency" step="0.05" :value="transparency" @input="setTransparency(Number(($event.target as HTMLInputElement).value))" /></label>
-          <button type="button" role="menuitem" @click="closeMenu(); emit('restore')">回復全螢幕預設位置</button>
+          <label><span>閒置後隱藏 <output>{{ idleSeconds === null ? "不隱藏" : `${idleSeconds} 秒` }}</output></span><input aria-label="閒置後隱藏秒數" type="range" :min="MIN_FULLSCREEN_IDLE_SEC" :max="IDLE_NEVER_STOP" step="1" :value="idleSeconds ?? IDLE_NEVER_STOP" :aria-valuetext="idleSeconds === null ? '不隱藏' : `${idleSeconds} 秒`" @input="setIdleStop(Number(($event.target as HTMLInputElement).value))" /></label>
+          <button type="button" role="menuitem" title="位置與大小回到預設" @click="closeMenu(); emit('restore')">回復預設</button>
         </WorkspacePopover>
         <button type="button" class="workspace-window__collapse" :aria-label="panel.collapsed ? `展開${title}` : `收合${title}`" :title="panel.collapsed ? `展開${title}` : `收合${title}`" @click="toggleCollapsed"><AppIcon :name="collapseIcon" :size="17" /></button>
       </div>

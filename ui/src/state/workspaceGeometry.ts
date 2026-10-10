@@ -79,7 +79,8 @@ export function fullscreenHomePanel(
   bounds: WorkspaceBounds,
 ): PanelLayout {
   const home = defaultWorkspaceLayout().fullscreenPanels[id];
-  return constrainPanel({ ...panel, x: home.x, y: home.y }, bounds);
+  // Place and size both return home; transparency and folding are left as the user set them.
+  return constrainPanel({ ...panel, x: home.x, y: home.y, width: home.width, height: home.height }, bounds);
 }
 
 /**

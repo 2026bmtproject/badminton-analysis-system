@@ -21,6 +21,8 @@ export type WorkspaceLayout = {
   segmentsOnly: boolean;
   /** The Analysis window folds its stroke list away, leaving the header and commentary. */
   strokeListCollapsed: boolean;
+  /** Seconds without input before fullscreen hides both floating windows, or null to keep them shown; one value for both. */
+  fullscreenIdleSec: number | null;
   analysisDockWidth: number;
   timelineDockHeight: number;
   panels: Record<WorkspacePanelId, PanelLayout>;
@@ -37,6 +39,9 @@ export const MAX_TIMELINE_DOCK_HEIGHT = 380;
 /** Fullscreen panel background alpha: from 80% transparent to fully opaque. */
 export const MIN_PANEL_ALPHA = 0.2;
 export const MAX_PANEL_ALPHA = 1;
+export const DEFAULT_FULLSCREEN_IDLE_SEC = 3;
+export const MIN_FULLSCREEN_IDLE_SEC = 1;
+export const MAX_FULLSCREEN_IDLE_SEC = 10;
 
 /**
  * Normal mode always docks both panels, fully open: only fullscreen windows collapse.
@@ -70,6 +75,11 @@ function clamp(value: unknown, fallback: number, minimum: number, maximum: numbe
 export function constrainAnalysisDockWidth(value: number) {
   return clamp(value, DEFAULT_ANALYSIS_DOCK_WIDTH, MIN_ANALYSIS_DOCK_WIDTH, MAX_ANALYSIS_DOCK_WIDTH);
 }
+/** Null (never hide) stays null; anything else becomes whole seconds within the slider's range. */
+export function constrainFullscreenIdleSec(value: unknown): number | null {
+  if (value === null) return null;
+  return Math.round(clamp(value, DEFAULT_FULLSCREEN_IDLE_SEC, MIN_FULLSCREEN_IDLE_SEC, MAX_FULLSCREEN_IDLE_SEC));
+}
 export function constrainTimelineDockHeight(value: number) {
   return clamp(value, DEFAULT_TIMELINE_DOCK_HEIGHT, MIN_TIMELINE_DOCK_HEIGHT, MAX_TIMELINE_DOCK_HEIGHT);
 }
@@ -95,6 +105,7 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
     analysisView: "analysis",
     segmentsOnly: false,
     strokeListCollapsed: false,
+    fullscreenIdleSec: DEFAULT_FULLSCREEN_IDLE_SEC,
     analysisDockWidth: DEFAULT_ANALYSIS_DOCK_WIDTH,
     timelineDockHeight: DEFAULT_TIMELINE_DOCK_HEIGHT,
     panels: {
@@ -127,6 +138,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       analysisView: views.includes(value.analysisView as AnalysisView) ? value.analysisView! : "analysis",
       segmentsOnly: value.segmentsOnly === true,
       strokeListCollapsed: value.strokeListCollapsed === true,
+      fullscreenIdleSec: constrainFullscreenIdleSec(value.fullscreenIdleSec),
       analysisDockWidth: constrainAnalysisDockWidth(finite(value.analysisDockWidth, DEFAULT_ANALYSIS_DOCK_WIDTH)),
       timelineDockHeight: constrainTimelineDockHeight(finite(value.timelineDockHeight, DEFAULT_TIMELINE_DOCK_HEIGHT)),
       panels: {

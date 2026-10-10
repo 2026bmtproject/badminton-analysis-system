@@ -79,17 +79,37 @@ test("untouched fullscreen timeline fits a fixed pixel height above its default 
   assert.deepEqual(fittedFullscreenTimeline(resized, 1440), resized);
 });
 
-test("fullscreen home restores position without changing size, opacity, or normal layout", () => {
+test("restoring a fullscreen window resets position and size but keeps opacity and normal layout", () => {
   const layout = defaultWorkspaceLayout();
   const normal = { ...layout.panels.analysis };
-  const current = { ...layout.fullscreenPanels.analysis, x: 0.31, y: 0.42, width: 0.28, height: 0.48, alpha: 0.81 };
+  const defaults = layout.fullscreenPanels.analysis;
+  const current = { ...defaults, x: 0.31, y: 0.42, width: 0.28, height: 0.48, alpha: 0.81 };
   const home = fullscreenHomePanel("analysis", current, { width: 1920, height: 1080 });
-  assert.equal(home.x, 1 - current.width); // Wider windows remain entirely on screen.
-  assert.equal(home.y, layout.fullscreenPanels.analysis.y);
-  assert.equal(home.width, current.width);
-  assert.equal(home.height, current.height);
+  assert.equal(home.x, defaults.x);
+  assert.equal(home.y, defaults.y);
+  assert.equal(home.width, defaults.width);
+  assert.equal(home.height, defaults.height);
   assert.equal(home.alpha, current.alpha);
   assert.deepEqual(layout.panels.analysis, normal);
+});
+
+test("the fullscreen idle delay is one whole-second setting shared by both windows", () => {
+  assert.equal(defaultWorkspaceLayout().fullscreenIdleSec, 3);
+  const stored = (value: unknown) => parseWorkspaceLayout(JSON.stringify({ ...defaultWorkspaceLayout(), fullscreenIdleSec: value })).fullscreenIdleSec;
+  assert.equal(stored(7), 7);
+  assert.equal(stored(6.6), 7);
+  assert.equal(stored(0), 1);
+  assert.equal(stored(60), 10);
+  assert.equal(stored("x"), 3);
+  // The slider's last stop keeps the windows shown for good.
+  assert.equal(stored(null), null);
+  const windowSource = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
+  assert.match(windowSource, /stop >= IDLE_NEVER_STOP \? null : stop/);
+  assert.match(windowSource, /idleSeconds === null \? "不隱藏"/);
+  const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
+  assert.equal((review.match(/:idle-seconds="layout\.fullscreenIdleSec" @idle-seconds="setIdleSeconds"/g) ?? []).length, 2);
+  assert.match(review, /idleSec === null \|\| interactionActive\(\)\) return;/);
+  assert.match(review, /\}, idleSec \* 1000\);/);
 });
 
 test("timeline mode registry exposes only renderers backed by match capabilities", () => {
