@@ -54,10 +54,16 @@ async function loadRequestedMatch() {
   }
 }
 
+/** A re-import publishes the Review under a new content-hashed URL, so the catalog is read again first. */
 async function refreshMatch() {
-  const selected = entry.value;
-  if (!selected) throw new Error("No Match is loaded");
-  context.model.value = await loadMatch(selected, { fresh: true });
+  const current = entry.value;
+  if (!current) throw new Error("No Match is loaded");
+  catalog.value = await loadCatalog();
+  const selected = catalog.value.find((item) => item.id === current.id) ?? current;
+  const model = await loadMatch(selected, { fresh: true });
+  if (entry.value?.id !== current.id) return;
+  entry.value = selected;
+  context.model.value = model;
 }
 
 context.setRefreshMatch(refreshMatch);
