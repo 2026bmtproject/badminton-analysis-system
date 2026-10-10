@@ -696,6 +696,7 @@ class CommentaryModule(BaseModule):
         *,
         write: bool = True,
         progress: CommentaryProgress | None = None,
+        on_progress=None,
     ) -> CommentaryBatchResult:
         """Generate selected rallies without touching whole-match artifact/status."""
 
@@ -716,6 +717,7 @@ class CommentaryModule(BaseModule):
             config=config, progress=progress,
             segment_scope=True,
             write_segment_artifacts=write,
+            on_progress=on_progress,
         )
         if not write:
             return CommentaryBatchResult(
@@ -779,9 +781,10 @@ def generate_commentary_segments(
     providers: CommentaryProviders | None = None,
     write: bool = True,
     progress: CommentaryProgress | None = None,
+    on_progress=None,
 ) -> CommentaryBatchResult:
     """Public on-demand API; never owns whole-stage status or commentary.json."""
 
     return CommentaryModule(config=config, providers=providers).generate_segments(
-        match_path, segment_indices, write=write, progress=progress,
+        match_path, segment_indices, write=write, progress=progress, on_progress=on_progress,
     )

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Protocol
 
 from modules.artifacts import read_records, write_artifact
-from modules.base import BaseModule, StageResult
+from modules.base import BaseModule, ProgressFn, StageResult
 from modules.common import console
 from modules.contracts import PIPELINE, RallyScore, StrokeLabel, artifact_path
 from modules.player_identity.policy import IdentityResult, infer_identity, policy_metadata
@@ -23,7 +23,9 @@ from modules.player_identity.visual import (
 
 
 class VisualFallback(Protocol):
-    def resolve(self, match_path: str | Path, primary: IdentityResult) -> HsvFallbackOutcome: ...
+    def resolve(
+        self, match_path: str | Path, primary: IdentityResult, on_progress: ProgressFn | None = None,
+    ) -> HsvFallbackOutcome: ...
 
 
 class PlayerIdentityModule(BaseModule):
@@ -60,9 +62,14 @@ class PlayerIdentityModule(BaseModule):
         # The primary policy always runs first. Constructing the fallback lazily is
         # significant: a fully resolved match does not even read pose/video.
         if self.use_visual and result.unresolved:
+            if on_progress:
+                on_progress(0.05)
             fallback = self.visual_fallback or HsvIdentityFallback()
             try:
-                outcome = fallback.resolve(match_path, result)
+                outcome = fallback.resolve(
+                    match_path, result,
+                    on_progress=(lambda f: on_progress(0.05 + 0.9 * f)) if on_progress else None,
+                )
             except VisualFallbackUnavailable as exc:
                 visual = {
                     "status": "unavailable",

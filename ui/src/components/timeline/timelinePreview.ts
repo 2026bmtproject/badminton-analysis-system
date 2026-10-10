@@ -1,0 +1,159 @@
+import type { CheerWindowModel, RallyModel } from "../../domain/models";
+import { formatPreciseTime, playerName, scoreText } from "../../format";
+import { cheerScoreMoments, type CheerPeak } from "../../temporal/cheerCurve";
+import { RALLY_BREAK_LABELS, highlightRanks, type RallyBreak } from "../../temporal/rallyOutcome";
+import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
+import {
+  STROKE_FAMILY_LABELS,
+  strokeDepth,
+  strokeFamilyCounts,
+  type StrokeFamily,
+} from "../../temporal/strokeRhythm";
+import type { TimelineFit } from "../../temporal/timeline";
+import { doubleClickFit } from "../../temporal/timelineNavigation";
+
+export type TimelineHoverMark = {
+  /** `break` ids the Rally a break follows; `stroke-rally` ids a Rally summarised by its stroke bar. */
+  kind: "rally" | "break" | "score" | "stroke" | "stroke-rally" | "cheer" | "cheer-window";
+  id: number | string;
+};
+
+/** `hint` is a muted last line naming what a double-click does here. */
+export type TimelineHoverPreview = { title: string; lines: string[]; hint?: string };
+
+export type LeadPreviewContext = { model: LeadModel; players: { a: string; b: string } };
+
+/** Worded from the double-click outcome itself, so the hint never promises an action that does nothing. */
+export function doubleClickHint(fit: TimelineFit | "custom", rallyAtPoint: RallyModel | null) {
+  const next = doubleClickFit(fit, rallyAtPoint);
+  if (!next) return null;
+  return next.fit === "rally" ? "雙擊放大片段" : "雙擊返回全場";
+}
+
+/** A position with no mode preview still gets a hint-only tooltip. */
+export function withDoubleClickHint(
+  preview: TimelineHoverPreview | null,
+  hint: string | null,
+): TimelineHoverPreview | null {
+  if (!hint) return preview;
+  return { ...(preview ?? { title: "", lines: [] }), hint };
+}
+
+export function rallyBreakPreview(item: RallyBreak): TimelineHoverPreview {
+  return {
+    title: RALLY_BREAK_LABELS[item.kind],
+    lines: [`${(item.end - item.start).toFixed(1)} 秒`],
+  };
+}
+
+function shorten(text: string, limit: number) {
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function rallyIndex(rally: RallyModel) {
+  return `片段 ${String(rally.id + 1).padStart(3, "0")}`;
+}
+
+function leadPreview(rally: RallyModel, lead: LeadPreviewContext): TimelineHoverPreview | null {
+  const entry = leadEntryAt(lead.model, rally.start);
+  if (!entry || entry.rally.id !== rally.id) return null;
+  const name = (side: "a" | "b") => playerName(lead.players[side], side.toUpperCase());
+  if (!("score" in entry)) {
+    return { title: "比分未觀測", lines: [formatPreciseTime(rally.start), rallyIndex(rally)] };
+  }
+  const lines = [
+    entry.lead === 0 ? "平手" : `${name(entry.lead > 0 ? "a" : "b")} 領先 ${Math.abs(entry.lead)}`,
+  ];
+  for (const point of entry.points) lines.push(`${name(point.side)} ${point.match ? "賽點" : "局點"}`);
+  if (entry.leadChange) lines.push(`領先易主：${name(entry.leadChange)} 反超`);
+  lines.push(`第 ${entry.game + 1} 局 · ${rallyIndex(rally)}`);
+  if (entry.uncertain) lines.push("局數待確認");
+  return { title: `比分 ${scoreText(entry.score)}`, lines };
+}
+
+export function timelineHoverPreview(
+  mark: TimelineHoverMark | null,
+  rallies: RallyModel[],
+  cheerWindows: CheerWindowModel[] = [],
+  lead?: LeadPreviewContext,
+  cheerPeaks: CheerPeak[] = [],
+): TimelineHoverPreview | null {
+  if (!mark) return null;
+  if (mark.kind === "cheer-window") {
+    const window = cheerWindows[Number(mark.id)];
+    if (!window) return null;
+    // The raw window value, not the smoothed one the lane draws.
+    const lines = [`歡呼機率 ${window.score.toFixed(2)}`];
+    const rally = rallies.find((item) => item.id === window.segmentIndex);
+    const peak = cheerPeaks.find((item) => item.segmentIndex === window.segmentIndex);
+    if (peak) lines.push(`歡呼高峰 #${peak.rank} · 持續 ${Math.round(peak.seconds)} 秒`);
+    // Read against the score: what this point was played at, and what it did.
+    if (rally && lead) {
+      const name = (side: "a" | "b") => playerName(lead.players[side], side.toUpperCase());
+      const moments = cheerScoreMoments(lead.model, rally.id);
+      for (const point of moments.points) lines.push(`${name(point.side)} ${point.match ? "賽點" : "局點"}`);
+      if (moments.overtake) lines.push(`${name(moments.overtake)} 反超`);
+    }
+    return { title: "", lines };
+  }
+  if (mark.kind === "rally") {
+    const rally = rallies.find((item) => item.id === mark.id);
+    if (!rally) return null;
+    const lines = [`${rally.duration.toFixed(2)} 秒`];
+    if (rally.score) lines.push(`比分 ${scoreText(rally.score)}`);
+    if (rally.multi && rally.subScores.length)
+      lines.push(`多筆比分 ${rally.subScores.map(scoreText).join(" → ")}`);
+    // Review reasons: a raw recogniser note can run long, so only its start is shown.
+    if (rally.scoreIssue !== undefined) lines.push(`比分無法辨識：${shorten(rally.scoreIssue, 60)}`);
+    if (rally.gameConflict !== undefined) lines.push(rally.gameConflict);
+    // A ranking score, not a probability: only the place is meaningful.
+    const ranks = highlightRanks(rallies);
+    const rank = ranks.get(rally.id);
+    if (rank !== undefined) lines.push(`精華排名 #${rank} / ${ranks.size}`);
+    // Availability only: commentary text can say who won the point.
+    if (rally.commentary.status === "available") lines.push("有賽評");
+    return { title: "", lines };
+  }
+  if (mark.kind === "score") {
+    const rally = rallies.find((item) => item.id === mark.id);
+    if (rally && lead) return leadPreview(rally, lead);
+    if (!rally?.score) return null;
+    return {
+      title: `比分 ${scoreText(rally.score)}`,
+      lines: [formatPreciseTime(rally.end), `片段 ${String(rally.id + 1).padStart(3, "0")}`],
+    };
+  }
+  if (mark.kind === "stroke") {
+    const stroke = rallies.flatMap((rally) => rally.hits ?? []).find((item) => item.eventIndex === mark.id);
+    if (!stroke) return null;
+    const lines = [formatPreciseTime(stroke.time)];
+    if (stroke.type) lines.push(stroke.type);
+    if (stroke.player) lines.push(playerName(stroke.player));
+    // Names what a dashed swing on the lane stands for.
+    if (stroke.hitterSide && strokeDepth(stroke).estimated) lines.push("站位未量測，深度為估計");
+    return { title: `第 ${stroke.ordinal} 拍`, lines };
+  }
+  if (mark.kind === "stroke-rally") {
+    const rally = rallies.find((item) => item.id === mark.id);
+    if (!rally?.hits?.length) return null;
+    const counts = strokeFamilyCounts(rally.hits);
+    // Most aggressive first, as the bar stacks them from the top; unknown shots last.
+    const order: StrokeFamily[] = ["attack", "net", "transition", "serve", "unknown"];
+    return {
+      title: "",
+      lines: [
+        `${rally.hits.length} 拍`,
+        ...order.flatMap((family) => (counts[family] ? [`${STROKE_FAMILY_LABELS[family]} ${counts[family]}`] : [])),
+      ],
+    };
+  }
+  const rally = rallies.find((item) => item.id === mark.id);
+  if (!rally) return null;
+  if (mark.kind === "cheer" && rally.audio) {
+    return {
+      title: "歡呼訊號",
+      lines: [`片段 ${String(rally.id + 1).padStart(3, "0")}`, `信號 ${rally.audio.confidence.toFixed(2)}`],
+    };
+  }
+  return null;
+}

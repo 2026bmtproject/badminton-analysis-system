@@ -114,7 +114,7 @@ class FakeVisualFallback:
     def __init__(self):
         self.calls = []
 
-    def resolve(self, match_path, primary):
+    def resolve(self, match_path, primary, on_progress=None):
         self.calls.append((match_path, primary))
         row = primary.unresolved[0]
         epoch = PlayerIdentityEpoch(
@@ -152,6 +152,21 @@ def test_unresolved_primary_invokes_fallback_and_persists_source(tmp_path):
         "status": "resolved", "policy": "hsv_fallback_v1"
     }
     assert envelope["unresolved"] == []
+
+
+def test_visual_fallback_progress_reaches_the_task_bar(tmp_path):
+    class ReportingFallback(FakeVisualFallback):
+        def resolve(self, match_path, primary, on_progress=None):
+            for fraction in (0.0, 0.5, 1.0):
+                on_progress(fraction)
+            return super().resolve(match_path, primary)
+
+    match, _ = build_match(tmp_path, 3)
+    progress = []
+    PlayerIdentityModule(
+        use_dense=False, visual_fallback=ReportingFallback(),
+    ).run(match, on_progress=progress.append)
+    assert progress == pytest.approx([0.05, 0.05, 0.5, 0.95, 1.0])
 
 
 # ---------------------------------------------------------------- dense scan

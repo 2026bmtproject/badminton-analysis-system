@@ -1,0 +1,367 @@
+.review-main--workspace {
+  width: 100%;
+  max-width: none;
+  padding: var(--space-2);
+}
+.review-workspace-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--analysis-dock-width, 340px);
+  grid-template-rows: minmax(320px, 1fr) var(--timeline-dock-height, 200px);
+  grid-template-areas: "player analysis" "timeline analysis";
+  height: clamp(540px, calc(100dvh - 110px), 980px);
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--color-video);
+  border: 1px solid var(--color-border);
+}
+.review-workspace-stage > .player {
+  grid-area: player;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.review-workspace-stage > .layout-placeholder { grid-area: player; }
+.review-workspace-stage .video-wrap {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  aspect-ratio: auto;
+  overflow: hidden;
+}
+.review-workspace-stage .video-wrap video { min-height: 0; max-height: 100%; }
+.review-workspace-stage .controls {
+  position: relative;
+  z-index: var(--z-sticky);
+  background: rgb(24 24 24 / 96%);
+}
+/*
+ * A toolbar replaces the header: one 36px row (TIMELINE_TOOLBAR_HEIGHT_PX) of uniform 28px controls, laid
+ * out like a video player — mode │ play, time … volume, speed, fullscreen │ window actions. Docked, it sits
+ * on top, right under the video; a bottom toolbar floats along the screen edge, its right inset clearing
+ * the window resize grip.
+ */
+.workspace-window--toolbar .workspace-window__header { min-height: 36px; gap: var(--space-2); padding: 0 var(--space-2); }
+.workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header { order: 2; padding-right: 28px; border-top: 1px solid var(--color-border); border-bottom: 0; }
+.workspace-window--toolbar:not(.workspace-window--capsule) .workspace-window__header > strong,
+.workspace-window--toolbar .workspace-window__mode-label { display: none; }
+.workspace-window--toolbar .workspace-window__header :is(button, select, .workspace-popover__trigger) { height: 28px; min-height: 28px; }
+.workspace-window--toolbar .workspace-window__header select { padding: 0 var(--space-2); font-size: var(--type-meta); background: transparent; border-color: var(--color-border); }
+/* A transparent select hands its native popup the default light background; keep the options dark. */
+.workspace-window--toolbar .workspace-window__header option { color: var(--color-text); background: var(--color-surface-raised); }
+.workspace-window--toolbar .workspace-window__actions :is(button, .workspace-popover__trigger) { width: 28px; min-width: 28px; padding: 0; }
+.workspace-window--toolbar .workspace-window__actions::before,
+.workspace-window__player-controls::before { width: 1px; height: 18px; flex: 0 0 auto; align-self: center; background: var(--color-border-strong); content: ""; }
+.workspace-window--toolbar .workspace-window__actions::before { margin-right: var(--space-1); }
+.workspace-window__player-controls { display: flex; min-width: 0; flex: 1; gap: var(--space-2); }
+.workspace-window__player-controls .controls { display: flex; min-width: 0; flex: 1; align-items: center; padding: 0; background: transparent; border-top: 0; }
+.workspace-window__player-controls .control-row { flex: 1; min-width: 0; gap: var(--space-1); }
+.workspace-window__player-controls :is(.play-button, .player-icon-button) { width: 28px; padding: 0; }
+.workspace-window__player-controls .play-button { margin-right: var(--space-1); background: var(--color-surface-soft); border: 0; }
+.workspace-window__player-controls .time-readout { font-size: var(--type-meta); }
+.workspace-window__player-controls .control-label { display: none; }
+.workspace-window__player-controls :is(.player-icon-button--dock, .player-icon-button--fullscreen) { order: 1; }
+.workspace-window {
+  --workspace-panel-alpha: 0.94;
+  position: absolute;
+  display: flex;
+  min-width: 220px;
+  min-height: 96px;
+  flex-direction: column;
+  overflow: visible;
+  color: var(--color-text);
+  background: rgb(24 24 24 / var(--workspace-panel-alpha));
+  border: 1px solid var(--line-widget);
+  border-radius: var(--radius-widget);
+  box-shadow: 0 0 8px 2px rgb(0 0 0 / 36%);
+  container-type: inline-size;
+  transition: border-color var(--motion-fast) var(--motion-ease);
+}
+.workspace-window--active { border-color: rgb(212 216 218 / 42%); }
+.workspace-window--chrome-idle:not(:hover):not(:focus-within) { border-color: rgb(212 216 218 / 14%); }
+.workspace-window--collapsed {
+  min-height: 0;
+}
+/* A fitted window takes its content's height, so the content must have one instead of filling the window. */
+.workspace-window--fit { min-height: 0; }
+.workspace-window--fit .workspace-window__body { flex: 0 1 auto; }
+.workspace-window--fit :is(.analysis-window-content, .rally-panel) { height: auto; }
+.workspace-window--fit .rally-detail { position: relative; inset: auto; }
+.workspace-window--docked {
+  position: relative;
+  inset: auto;
+  z-index: 1 !important;
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  height: auto;
+  background: var(--color-surface);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.workspace-window--docked.workspace-window--timeline { grid-area: timeline; border-top: 1px solid var(--color-border); }
+.workspace-window--docked.workspace-window--analysis { grid-area: analysis; border-left: 1px solid var(--color-border); }
+.workspace-window--docked .workspace-window__header { background: var(--color-chrome); cursor: default; }
+.workspace-window--docked.workspace-window--active { border-color: var(--color-border); }
+.workspace-window__header {
+  display: flex;
+  min-height: 35px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  background: rgb(24 24 24 / var(--workspace-panel-alpha));
+  border-bottom: 1px solid var(--color-border);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.workspace-window--dragging .workspace-window__header { cursor: grabbing; }
+.workspace-window__header :is(button, select, input, label, summary) { cursor: auto; }
+.workspace-window__header button,
+.workspace-window__header summary { cursor: pointer; }
+.workspace-window--collapsed .workspace-window__header { border-bottom: 0; }
+.workspace-window--collapsed .workspace-window__header-slot { display: none; }
+.workspace-window--collapsed .workspace-window__actions { margin-left: auto; }
+/* Size containment would collapse a content-sized capsule to zero width. */
+.workspace-window--capsule { min-width: 0; border-radius: 999px; container-type: normal; }
+.workspace-window--capsule .workspace-window__header { min-height: 36px; gap: var(--space-2); padding: 2px 2px 2px var(--space-3); border-radius: 999px; }
+.workspace-window__header > strong {
+  min-width: 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-size: var(--type-micro);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0.04em;
+}
+.workspace-window__header-slot {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+}
+.workspace-window__actions { display: flex; flex: 0 0 auto; align-items: center; gap: var(--space-1); transition: opacity var(--motion-fast) var(--motion-ease); }
+.workspace-window--chrome-idle:not(:hover):not(:focus-within) .workspace-window__actions { opacity: 0.24; }
+.workspace-window__actions button {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-widget);
+}
+.workspace-popover-anchor { display: inline-flex; flex: 0 0 auto; }
+.workspace-popover__trigger { display: grid; min-width: 28px; width: auto; min-height: 28px; place-items: center; padding: 0 var(--space-2); color: var(--color-text-secondary); border: 1px solid transparent; border-radius: var(--radius-widget); }
+.workspace-popover__trigger[aria-expanded="true"] { color: var(--color-text); background: var(--color-surface-soft); }
+.workspace-popover {
+  position: fixed;
+  z-index: calc(var(--z-overlay) + 30);
+  display: grid;
+  max-width: calc(100vw - 16px);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  color: var(--color-text);
+  background: var(--color-widget);
+  border: 1px solid var(--line-widget);
+  border-radius: var(--radius-widget);
+  box-shadow: var(--shadow-dropdown);
+}
+/* Menu rows as in VS Code: borderless, hovered in the accent blue. */
+.workspace-popover > button,
+.workspace-popover [role="menuitem"] { width: 100%; min-height: 26px; justify-content: flex-start; padding: var(--space-1) var(--space-2); white-space: nowrap; text-align: left; border-radius: var(--radius-lg); }
+.workspace-popover > button:hover,
+.workspace-popover [role="menuitem"]:hover { color: var(--color-on-accent); background: var(--color-accent); }
+.workspace-popover label { display: grid; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--type-meta); white-space: nowrap; }
+.workspace-popover input[type="range"] { width: 100%; min-width: 168px; accent-color: var(--color-accent); }
+/* The overlay menu: a master switch over one checkbox row per layer, then the shuttle track choice. */
+.workspace-popover__trigger.player-icon-button { min-width: 0; padding: 0; }
+.overlay-menu { display: grid; min-width: 188px; gap: var(--space-1); }
+.workspace-popover .overlay-menu__row { display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-1); color: var(--color-text); cursor: pointer; }
+.overlay-menu__row > span { flex: 1; }
+.overlay-menu__row kbd { color: var(--color-text-muted); font-family: var(--font-measurement); font-size: var(--type-micro); }
+.workspace-popover .overlay-menu__row--master { padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); font-weight: 600; }
+.workspace-popover .overlay-menu__row--child { padding-left: calc(var(--space-1) + 20px); }
+.overlay-menu__layers { display: grid; gap: 2px; }
+.workspace-popover .overlay-menu__layers--off .overlay-menu__row { color: var(--color-text-secondary); }
+.workspace-popover .overlay-menu__row:has(input:disabled) { color: var(--color-text-muted); cursor: default; }
+.overlay-menu input:is([type="checkbox"], [type="radio"]) { margin: 0; accent-color: var(--color-accent); }
+.overlay-menu__methods { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: var(--space-2) var(--space-1) 0; border: 0; border-top: 1px solid var(--color-border); }
+.overlay-menu__methods legend { float: left; width: 100%; margin-bottom: var(--space-1); padding: 0; color: var(--color-text-secondary); font-size: var(--type-meta); }
+.workspace-popover .overlay-menu__methods label { display: flex; align-items: center; gap: var(--space-1); color: var(--color-text); }
+.overlay-menu__methods:disabled label { color: var(--color-text-muted); }
+.overlay-menu__note { max-width: 220px; margin: 0; color: var(--color-text-muted); font-size: var(--type-meta); white-space: normal; }
+.workspace-window__body {
+  min-height: 0;
+  flex: 1;
+  overflow-x: clip;
+  overflow-y: auto;
+  border-radius: 0 0 var(--radius-widget) var(--radius-widget);
+}
+.workspace-window__body > .intelligence-timeline,
+.workspace-window__body .rally-panel {
+  height: 100%;
+  max-height: none;
+  background: transparent;
+  border: 0;
+}
+.workspace-window__body .intelligence-timeline { min-width: 0; padding: var(--space-2); }
+.workspace-window__resize-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 24px;
+  height: 24px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.workspace-window__dock-resize {
+  position: absolute;
+  z-index: 8;
+  touch-action: none;
+}
+.workspace-window--analysis .workspace-window__dock-resize { top: 0; bottom: 0; left: -5px; width: 10px; cursor: ew-resize; }
+/* The strip ends above the toolbar's 28px controls, which start 4px below the top edge. */
+.workspace-window--timeline .workspace-window__dock-resize { top: -6px; right: 0; left: 0; height: 10px; cursor: ns-resize; }
+/* VS Code's sash: invisible until hovered or dragged, then a 4px accent bar over the panel border. */
+.workspace-window__dock-resize::after { position: absolute; background: var(--color-focus); content: ""; opacity: 0; transition: opacity var(--motion-fast) var(--motion-ease) 0.15s; }
+.workspace-window--analysis .workspace-window__dock-resize::after { top: 0; bottom: 0; left: 3px; width: 4px; }
+.workspace-window--timeline .workspace-window__dock-resize::after { top: 3px; right: 0; left: 0; height: 4px; }
+.workspace-window__dock-resize:hover::after { opacity: 1; }
+.workspace-window--resizing .workspace-window__dock-resize::after { opacity: 1; }
+.workspace-window__resize-grip::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 9px;
+  height: 9px;
+  opacity: 0.45;
+  border-right: 2px solid var(--color-text-secondary);
+  border-bottom: 2px solid var(--color-text-secondary);
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+.workspace-window--chrome-idle:not(:hover):not(:focus-within) .workspace-window__resize-grip::after { opacity: 0.08; }
+.workspace-window:hover .workspace-window__resize-grip::after,
+.workspace-window:focus-within .workspace-window__resize-grip::after,
+.workspace-window--resizing .workspace-window__resize-grip::after { opacity: 1; }
+.timeline-mode-selector select { min-height: 26px; padding: var(--space-1) var(--space-2); font-size: var(--type-meta); }
+.workspace-window__mode-label { color: var(--color-text-muted); font-size: var(--type-micro); }
+.header-actions > .workspace-popover-anchor .workspace-popover__trigger { min-height: 26px; color: var(--color-text-muted); font-size: var(--type-meta); }
+.header-actions > .workspace-popover-anchor .workspace-popover__trigger:hover { color: var(--color-text-secondary); }
+.shortcut-help__content { display: grid; gap: var(--space-3); color: var(--color-text-secondary); font-size: var(--type-meta); }
+.shortcut-help__title { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
+.shortcut-help__title strong { color: var(--color-text); font-size: var(--type-control); }
+.shortcut-help__title span { color: var(--color-text-muted); font-size: var(--type-micro); }
+.shortcut-help__group { display: grid; gap: var(--space-1); }
+.shortcut-help__group h3 { margin: 0; color: var(--color-text-muted); font-size: var(--type-micro); font-weight: 600; letter-spacing: 0.08em; }
+.shortcut-help__group dl { display: grid; margin: 0; }
+.shortcut-help__row { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: var(--space-3); min-height: 28px; }
+.shortcut-help__row dt { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1); }
+.shortcut-help__row dd { margin: 0; color: var(--color-text); white-space: nowrap; }
+.shortcut-help__combo { display: inline-flex; align-items: center; gap: 3px; }
+.shortcut-help__or,
+.shortcut-help__plus { color: var(--color-text-muted); font-size: var(--type-micro); }
+/* VS Code's keybinding label. */
+.shortcut-help__content kbd {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  color: var(--color-text);
+  font-family: var(--font-interface);
+  font-size: var(--type-micro);
+  line-height: 1;
+  white-space: nowrap;
+  background: rgb(128 128 128 / 17%);
+  border: 1px solid rgb(51 51 51 / 60%);
+  border-bottom-color: rgb(68 68 68 / 60%);
+  border-radius: 3px;
+  box-shadow: inset 0 -1px 0 rgb(68 68 68 / 60%);
+}
+.analysis-window-content { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.analysis-window-content[data-density="compact"] .analysis-context-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.analysis-window-content[data-density="compact"] .analysis-context-header > p { justify-content: flex-start; flex-wrap: wrap; }
+.analysis-window-content[data-density="compact"] .hit-row { grid-template-columns: 22px 8px minmax(0, 1fr); }
+.analysis-window-content[data-density="compact"] .hit-player__name { display: none; }
+.analysis-window-content[data-density="compact"] .commentary-request small { display: none; }
+.analysis-context-header {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: rgb(255 255 255 / 3%);
+  border-bottom: 1px solid var(--color-border);
+}
+.analysis-context-header__identity { display: flex; align-items: baseline; gap: var(--space-2); white-space: nowrap; }
+.analysis-context-header__identity strong { font-size: var(--type-meta); letter-spacing: 0.035em; }
+.analysis-context-header__identity span { color: var(--color-text-muted); font-size: var(--type-micro); }
+.analysis-context-header > p { display: flex; min-width: 0; justify-content: flex-end; gap: var(--space-2); color: var(--color-text-secondary); font-family: var(--font-measurement); font-size: var(--type-micro); font-variant-numeric: tabular-nums; }
+.analysis-context-header > p span + span::before { margin-right: var(--space-2); color: var(--color-text-muted); content: "·"; }
+.analysis-tabs { display: flex; flex: 0 0 auto; border-bottom: 1px solid var(--color-border); }
+.analysis-tabs button { min-height: 35px; flex: 1; color: var(--color-text-secondary); border-bottom: 1px solid transparent; border-radius: 0; }
+.analysis-tabs button:hover { color: var(--color-text); background: transparent; }
+.analysis-tabs button[aria-pressed="true"] { color: var(--color-text); border-bottom-color: var(--color-focus); }
+.analysis-window-content > .rally-panel { flex: 1; }
+.analysis-court-view { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; padding: var(--space-3); }
+.analysis-court-view .rally-court-map { flex: 1; min-height: 0; padding: 0; background: transparent; border: 0; }
+.analysis-court-view .rally-court-map__court { flex: 1; width: 100%; max-width: 100%; min-height: 240px; height: auto; }
+
+
+@container (max-width: 420px) {
+  .workspace-window__mode-label { display: none; }
+  .timeline-mode-selector select { max-width: 94px; }
+  .analysis-context-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .analysis-context-header > p { justify-content: flex-start; flex-wrap: wrap; }
+}
+@container (max-width: 330px) {
+  .workspace-window__header { gap: var(--space-1); padding-left: var(--space-2); }
+  .workspace-window__header > strong { max-width: 52px; }
+  .timeline-mode-selector select { max-width: 78px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-window,
+  .workspace-window__actions,
+  .workspace-window__resize-grip::after { transition: none; }
+}
+
+@media (max-width: 1100px) {
+  .review-workspace-stage { display: flex; height: auto; min-height: 0; max-height: none; overflow: visible; flex-direction: column; gap: var(--space-3); background: transparent; border: 0; }
+  .review-workspace-stage > .player { order: 1; min-height: 0; }
+  .workspace-window--analysis { order: 2; }
+  .workspace-window--timeline { order: 3; }
+  .review-workspace-stage .video-wrap { min-height: 0; aspect-ratio: 16 / 9; }
+  .workspace-window,
+  .workspace-window--collapsed {
+    position: relative;
+    inset: auto !important;
+    z-index: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+  }
+  .workspace-window__header { cursor: default; }
+  .workspace-window__body { max-height: min(62vh, 560px); }
+  .workspace-window__body > .intelligence-timeline { min-width: 0; }
+  .workspace-window__resize-grip { display: none; }
+  .workspace-window__dock-resize { display: none; }
+}
+@media (max-width: 560px) {
+  .review-main--workspace { padding: var(--space-2); }
+  .workspace-window__mode-label { display: none; }
+  .workspace-window__body { max-height: 70vh; }
+}

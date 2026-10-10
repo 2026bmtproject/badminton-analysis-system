@@ -424,7 +424,7 @@ def run_refine(monkeypatch, segments, finals, timeline, fps=25.0):
 
 
 def test_recognize_scores_refines_a_merged_segment(monkeypatch):
-    """First pass reads final scores; the jump on seg1 triggers a bisection that
+    """First pass reads one segment observation; the jump on seg1 triggers a bisection that
     recovers the intermediate rally into sub_scores/split_secs."""
     segments = [
         {"start_frame": 0, "end_frame": 100},      # seg0 -> 2:2
@@ -438,7 +438,7 @@ def test_recognize_scores_refines_a_merged_segment(monkeypatch):
     )
 
     merged = rallies[1]
-    assert (merged.score_a, merged.score_b) == (3, 3)   # scalar stays the final score
+    assert (merged.score_a, merged.score_b) == (3, 3)   # scalar stays the first-pass observation
     assert merged.sub_scores == [[3, 2], [3, 3]]
     assert len(merged.split_secs) == 1
     # Untouched segments carry no sub-scores.

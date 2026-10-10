@@ -1,0 +1,1102 @@
+{
+  "$defs": {
+    "audio_highlight": {
+      "$defs": {
+        "AudioSignalRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "cheer_confidence": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Cheer Confidence",
+              "type": "number"
+            },
+            "cheer_intensity": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cheer Intensity"
+            },
+            "n_cheer_windows": {
+              "minimum": 0,
+              "title": "N Cheer Windows",
+              "type": "integer"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "segment_index",
+            "cheer_confidence",
+            "n_cheer_windows"
+          ],
+          "title": "AudioSignalRecord",
+          "type": "object"
+        },
+        "AudioWindowRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "cheer_probability": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Cheer Probability",
+              "type": "number"
+            },
+            "end_sec": {
+              "minimum": 0,
+              "title": "End Sec",
+              "type": "number"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "start_sec": {
+              "minimum": 0,
+              "title": "Start Sec",
+              "type": "number"
+            }
+          },
+          "required": [
+            "segment_index",
+            "start_sec",
+            "end_sec",
+            "cheer_probability"
+          ],
+          "title": "AudioWindowRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "signals": {
+          "items": {
+            "$ref": "#/$defs/AudioSignalRecord"
+          },
+          "title": "Signals",
+          "type": "array"
+        },
+        "windows": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/AudioWindowRecord"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Windows"
+        }
+      },
+      "required": [
+        "signals"
+      ],
+      "title": "AudioArtifact",
+      "type": "object"
+    },
+    "commentary": {
+      "$defs": {
+        "CommentaryEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            },
+            "player": {
+              "enum": [
+                "a",
+                "b"
+              ],
+              "title": "Player",
+              "type": "string"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "source_fact_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Source Fact Ids",
+              "type": "array"
+            },
+            "stroke_index": {
+              "minimum": 0,
+              "title": "Stroke Index",
+              "type": "integer"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            },
+            "time_sec": {
+              "minimum": 0,
+              "title": "Time Sec",
+              "type": "number"
+            }
+          },
+          "required": [
+            "segment_index",
+            "text",
+            "source_fact_ids",
+            "stroke_index",
+            "frame",
+            "time_sec",
+            "player"
+          ],
+          "title": "CommentaryEvent",
+          "type": "object"
+        },
+        "CommentaryRally": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "items": {
+                "$ref": "#/$defs/CommentaryEvent"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CommentarySummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "segment_index",
+            "events",
+            "summary"
+          ],
+          "title": "CommentaryRally",
+          "type": "object"
+        },
+        "CommentarySummary": {
+          "additionalProperties": false,
+          "properties": {
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "source_fact_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Source Fact Ids",
+              "type": "array"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "segment_index",
+            "text",
+            "source_fact_ids"
+          ],
+          "title": "CommentarySummary",
+          "type": "object"
+        },
+        "UnsupportedCommentary": {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "segment_index",
+            "reason"
+          ],
+          "title": "UnsupportedCommentary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "rallies": {
+          "items": {
+            "$ref": "#/$defs/CommentaryRally"
+          },
+          "title": "Rallies",
+          "type": "array"
+        },
+        "runtime": {
+          "additionalProperties": true,
+          "title": "Runtime",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "commentary-rallies-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "unsupported_segments": {
+          "items": {
+            "$ref": "#/$defs/UnsupportedCommentary"
+          },
+          "title": "Unsupported Segments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_version",
+        "rallies",
+        "unsupported_segments",
+        "diagnostics",
+        "runtime"
+      ],
+      "title": "CommentaryArtifact",
+      "type": "object"
+    },
+    "commentary_segment": {
+      "$defs": {
+        "CommentaryEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            },
+            "player": {
+              "enum": [
+                "a",
+                "b"
+              ],
+              "title": "Player",
+              "type": "string"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "source_fact_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Source Fact Ids",
+              "type": "array"
+            },
+            "stroke_index": {
+              "minimum": 0,
+              "title": "Stroke Index",
+              "type": "integer"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            },
+            "time_sec": {
+              "minimum": 0,
+              "title": "Time Sec",
+              "type": "number"
+            }
+          },
+          "required": [
+            "segment_index",
+            "text",
+            "source_fact_ids",
+            "stroke_index",
+            "frame",
+            "time_sec",
+            "player"
+          ],
+          "title": "CommentaryEvent",
+          "type": "object"
+        },
+        "CommentaryRally": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "items": {
+                "$ref": "#/$defs/CommentaryEvent"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CommentarySummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "segment_index",
+            "events",
+            "summary"
+          ],
+          "title": "CommentaryRally",
+          "type": "object"
+        },
+        "CommentarySummary": {
+          "additionalProperties": false,
+          "properties": {
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "source_fact_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Source Fact Ids",
+              "type": "array"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "segment_index",
+            "text",
+            "source_fact_ids"
+          ],
+          "title": "CommentarySummary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "commentary": {
+          "additionalProperties": true,
+          "title": "Commentary",
+          "type": "object"
+        },
+        "identity": {
+          "additionalProperties": true,
+          "title": "Identity",
+          "type": "object"
+        },
+        "rally": {
+          "$ref": "#/$defs/CommentaryRally"
+        },
+        "runtime": {
+          "additionalProperties": true,
+          "title": "Runtime",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "commentary-segment-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "segment_index": {
+          "minimum": 0,
+          "title": "Segment Index",
+          "type": "integer"
+        },
+        "tactical": {
+          "additionalProperties": true,
+          "title": "Tactical",
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "segment_index",
+        "rally",
+        "identity",
+        "tactical",
+        "commentary",
+        "runtime"
+      ],
+      "title": "SegmentCommentaryArtifact",
+      "type": "object"
+    },
+    "court_detection": {
+      "$defs": {
+        "CourtRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "homography": {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "title": "Homography",
+              "type": "array"
+            },
+            "segment_index": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Segment Index"
+            }
+          },
+          "required": [
+            "homography"
+          ],
+          "title": "CourtRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "courts": {
+          "items": {
+            "$ref": "#/$defs/CourtRecord"
+          },
+          "title": "Courts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "courts"
+      ],
+      "title": "CourtArtifact",
+      "type": "object"
+    },
+    "event_detection": {
+      "$defs": {
+        "EventRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "frame"
+          ],
+          "title": "EventRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/EventRecord"
+          },
+          "title": "Events",
+          "type": "array"
+        }
+      },
+      "required": [
+        "events"
+      ],
+      "title": "EventsArtifact",
+      "type": "object"
+    },
+    "highlight_ranking": {
+      "$defs": {
+        "HighlightRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Score",
+              "type": "number"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "segment_index",
+            "score"
+          ],
+          "title": "HighlightRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "highlights": {
+          "items": {
+            "$ref": "#/$defs/HighlightRecord"
+          },
+          "title": "Highlights",
+          "type": "array"
+        }
+      },
+      "required": [
+        "highlights"
+      ],
+      "title": "HighlightsArtifact",
+      "type": "object"
+    },
+    "match_segmentation": {
+      "$defs": {
+        "SegmentRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "duration_sec": {
+              "minimum": 0,
+              "title": "Duration Sec",
+              "type": "number"
+            },
+            "end_frame": {
+              "minimum": 0,
+              "title": "End Frame",
+              "type": "integer"
+            },
+            "end_sec": {
+              "minimum": 0,
+              "title": "End Sec",
+              "type": "number"
+            },
+            "start_frame": {
+              "minimum": 0,
+              "title": "Start Frame",
+              "type": "integer"
+            },
+            "start_sec": {
+              "minimum": 0,
+              "title": "Start Sec",
+              "type": "number"
+            }
+          },
+          "required": [
+            "start_frame",
+            "end_frame",
+            "start_sec",
+            "end_sec",
+            "duration_sec"
+          ],
+          "title": "SegmentRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "fps": {
+          "exclusiveMinimum": 0,
+          "title": "Fps",
+          "type": "number"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/SegmentRecord"
+          },
+          "minItems": 1,
+          "title": "Segments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "fps",
+        "segments"
+      ],
+      "title": "SegmentsArtifact",
+      "type": "object"
+    },
+    "player_identity": {
+      "$defs": {
+        "IdentityEpoch": {
+          "additionalProperties": true,
+          "properties": {
+            "bottom": {
+              "enum": [
+                "a",
+                "b"
+              ],
+              "title": "Bottom",
+              "type": "string"
+            },
+            "first_segment": {
+              "minimum": 0,
+              "title": "First Segment",
+              "type": "integer"
+            },
+            "game_index": {
+              "minimum": 0,
+              "title": "Game Index",
+              "type": "integer"
+            },
+            "last_segment": {
+              "minimum": 0,
+              "title": "Last Segment",
+              "type": "integer"
+            },
+            "top": {
+              "enum": [
+                "a",
+                "b"
+              ],
+              "title": "Top",
+              "type": "string"
+            }
+          },
+          "required": [
+            "first_segment",
+            "last_segment",
+            "game_index",
+            "top",
+            "bottom"
+          ],
+          "title": "IdentityEpoch",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "epochs": {
+          "items": {
+            "$ref": "#/$defs/IdentityEpoch"
+          },
+          "title": "Epochs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "epochs"
+      ],
+      "title": "IdentityArtifact",
+      "type": "object"
+    },
+    "pose": {
+      "$defs": {
+        "PoseRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "bbox": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bbox"
+            },
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            },
+            "keypoints": {
+              "anyOf": [
+                {
+                  "items": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keypoints"
+            },
+            "player": {
+              "enum": [
+                "top",
+                "bottom"
+              ],
+              "title": "Player",
+              "type": "string"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "frame",
+            "segment_index",
+            "player",
+            "keypoints"
+          ],
+          "title": "PoseRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/PoseRecord"
+          },
+          "title": "Frames",
+          "type": "array"
+        }
+      },
+      "required": [
+        "frames"
+      ],
+      "title": "PoseArtifact",
+      "type": "object"
+    },
+    "score_recognition": {
+      "$defs": {
+        "ScoreRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "game_index": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Game Index"
+            },
+            "score_a": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Score A"
+            },
+            "score_b": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Score B"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "server": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "a",
+                    "b"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Server"
+            },
+            "split_secs": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Split Secs"
+            },
+            "sub_scores": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sub Scores"
+            }
+          },
+          "required": [
+            "segment_index"
+          ],
+          "title": "ScoreRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "attempts": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Attempts",
+          "type": "array"
+        },
+        "rallies": {
+          "items": {
+            "$ref": "#/$defs/ScoreRecord"
+          },
+          "title": "Rallies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rallies"
+      ],
+      "title": "ScoresArtifact",
+      "type": "object"
+    },
+    "shuttle_tracking": {
+      "$defs": {
+        "ShuttleRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            },
+            "method": {
+              "minLength": 1,
+              "title": "Method",
+              "type": "string"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "visible": {
+              "title": "Visible",
+              "type": "boolean"
+            },
+            "x": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X"
+            },
+            "y": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Y"
+            }
+          },
+          "required": [
+            "frame",
+            "segment_index",
+            "method",
+            "x",
+            "y",
+            "visible"
+          ],
+          "title": "ShuttleRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "points": {
+          "items": {
+            "$ref": "#/$defs/ShuttleRecord"
+          },
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "ShuttleArtifact",
+      "type": "object"
+    },
+    "stroke_classification": {
+      "$defs": {
+        "StrokeRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "confidence": {
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "event_index": {
+              "minimum": 0,
+              "title": "Event Index",
+              "type": "integer"
+            },
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            },
+            "player": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "top",
+                    "bottom"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Player"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "stroke_type": {
+              "title": "Stroke Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_index",
+            "frame",
+            "segment_index",
+            "player",
+            "stroke_type",
+            "confidence"
+          ],
+          "title": "StrokeRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "strokes": {
+          "items": {
+            "$ref": "#/$defs/StrokeRecord"
+          },
+          "title": "Strokes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "strokes"
+      ],
+      "title": "StrokesArtifact",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Badminton pipeline artifact envelopes"
+}

@@ -6,11 +6,16 @@ __pycache__/
 .Python
 build/
 dist/
+desktop-out/
+electron-dist/
+*.log
+*.tmp
 *.egg-info/
 .eggs/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.local/
 .ipynb_checkpoints/
 
 # ---- Virtual environments ----
@@ -38,9 +43,8 @@ matches/*
 !matches/.gitkeep
 
 # ---- Data / media artifacts ----
-# NOTE: broad ignore. If a small fixture must be committed, force-add it:
-*.csv
-*.json
+# Source JSON/CSV, contracts, and fixtures remain visible to Git. Match outputs,
+# UI publications, and task records are excluded by their directories above.
 *.mp4
 *.avi
 *.mkv

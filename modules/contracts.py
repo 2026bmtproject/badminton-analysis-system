@@ -138,17 +138,19 @@ class RallyScore:
 
     One record per segment, indexing back into ``segments.json`` by position.
 
-    ``score_a``/``score_b`` stay scalar and hold the segment's **final** score —
-    the one thing every consumer can rely on, and correct even when a segment
-    turns out to hold more than one rally. score_recognition detects that from
-    the score jump between two consecutive segments and bisects **both** of them.
+    ``score_a``/``score_b`` are the scoreboard observation selected by the first
+    recognition pass for this segment. The composite usually samples a stable score,
+    but the broadcast may update the board after a camera cut, so it is not guaranteed
+    to be either the score before or after the rally and must not be called a winner or
+    a final per-rally score. score_recognition detects larger jumps between neighboring
+    segments and bisects **both** candidates for additional observations.
     Segments are cut on camera changes rather than on rallies, so the segment
     holding the missed rally is as often the earlier one — whose own read then
     came back with the pre-rally score — as the one the jump surfaced on:
 
     * ``sub_scores`` — every distinct ``[a, b]`` the scoreboard showed inside the
-      segment, in order, e.g. ``[[3, 2], [3, 3]]``. ``None`` for the normal
-      single-rally case (the scalar score is the whole story). A rally that played
+      segment, in order, e.g. ``[[3, 2], [3, 3]]``. ``None`` when refinement found no
+      multiple observations. These do not redefine the scalar observation. A rally that played
       out entirely between two segments belongs to neither and leaves this None on
       both; the meta ``refine`` note records that it was seen.
     * ``split_secs`` — absolute match-time second(s) at which the score changed,
@@ -159,11 +161,11 @@ class RallyScore:
     """
 
     segment_index: int
-    score_a: int
-    score_b: int
+    score_a: int | None
+    score_b: int | None
     server: str | None = None          # "a" | "b" | None if unknown
     game_index: int | None = None      # which game within the match
-    sub_scores: list[list[int]] | None = None   # e.g. [[3, 2], [3, 3]]; None if single-rally
+    sub_scores: list[list[int]] | None = None   # e.g. [[3, 2], [3, 3]]; None without multiple observations
     split_secs: list[float] | None = None        # match-time seconds of each score change
 
 

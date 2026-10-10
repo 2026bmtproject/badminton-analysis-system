@@ -1,0 +1,408 @@
+<script setup lang="ts">
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import ReviewPlayer from "../components/ReviewPlayer.vue";
+import ReviewTimeline from "../components/ReviewTimeline.vue";
+import AnalysisWindow from "../components/workspace/AnalysisWindow.vue";
+import WorkspaceWindow from "../components/workspace/WorkspaceWindow.vue";
+import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
+import OverlayMenu from "../components/overlay/OverlayMenu.vue";
+import AppIcon from "../components/ui/AppIcon.vue";
+import VideoOverlay from "../components/overlay/VideoOverlay.vue";
+import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
+import { sameReview, type EvidenceModel } from "../domain/models";
+import { playerName, scoreText } from "../format";
+import { playerShortcutAction, repeatsWhileHeld } from "../interaction/playerShortcuts";
+import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
+import {
+  activeOverlayLayers,
+  overlayAvailability,
+  overlayShortcut,
+  shownShuttleMethods,
+  toggleOverlay,
+  toggleOverlayLayer,
+  type OverlayLayerId,
+  type OverlayShortcut,
+} from "../overlay/overlaySettings";
+import { useMatchContext } from "../state/matchContext";
+import {
+  constrainAnalysisDockWidth,
+  constrainFullscreenIdleSec,
+  constrainTimelineDockHeight,
+  DEFAULT_ANALYSIS_DOCK_WIDTH,
+  DEFAULT_TIMELINE_DOCK_HEIGHT,
+  useWorkspaceLayout,
+  type PanelLayout,
+  type WorkspacePanelId,
+} from "../state/workspaceLayout";
+import { adaptiveDefaultPanelSizes } from "../presentation/workspaceDensity";
+import { fittedFullscreenTimeline, fullscreenHomePanel } from "../state/workspaceGeometry";
+
+defineOptions({ name: "ReviewPage" });
+/** Each item lists alternative key combos; each combo is the keys pressed together. */
+const SHORTCUT_GROUPS: readonly { title: string; items: readonly { keys: readonly (readonly string[])[]; label: string }[] }[] = [
+  { title: "播放", items: [
+    { keys: [["Space"], ["K"]], label: "播放／暫停" },
+    { keys: [["←"], ["→"]], label: "倒退／快轉 5 秒" },
+    { keys: [["J"], ["L"]], label: "倒退／快轉 10 秒" },
+    { keys: [["<"], [">"]], label: "減慢／加快速度" },
+    { keys: [["S"]], label: "只播片段" },
+    { keys: [["M"]], label: "靜音" },
+    { keys: [["F"]], label: "全螢幕" },
+    { keys: [["D"]], label: "全螢幕時間軸停靠／浮動" },
+  ] },
+  { title: "導覽", items: [
+    { keys: [["["], ["]"]], label: "上一個／下一個片段" },
+    { keys: [["Shift", "←"], ["→"]], label: "上一拍／下一拍" },
+    { keys: [["Esc"]], label: "取消選取" },
+  ] },
+  { title: "疊圖", items: [
+    { keys: [["O"]], label: "疊圖開關" },
+    { keys: [["1 – 7"]], label: "切換圖層" },
+  ] },
+  { title: "時間軸", items: [
+    { keys: [["雙擊片段"]], label: "放大／回到全場" },
+    { keys: [["滾輪"]], label: "平移" },
+    { keys: [["Ctrl", "滾輪"]], label: "縮放" },
+    { keys: [["Shift", "滾輪"]], label: "切換時間軸模式" },
+  ] },
+];
+const context = useMatchContext();
+const route = useRoute();
+const { model, workspace } = context;
+const { layout } = useWorkspaceLayout();
+const activeWindow = ref<WorkspacePanelId>("analysis");
+const playing = workspace.playing;
+const player = ref<InstanceType<typeof ReviewPlayer> | null>(null);
+const shortcutHelp = ref<InstanceType<typeof WorkspacePopover> | null>(null);
+const stage = ref<HTMLElement | null>(null);
+/** The timeline's toolbar hosts the player controls, so the video and the timeline share one control bar. */
+const playerControlsHost = ref<HTMLElement | null>(null);
+const fullscreen = ref(false);
+/** Fullscreen floats the timeline over the video unless the user docks it underneath; Analysis floats in every fullscreen. */
+const timelineFloating = computed(() => fullscreen.value && !layout.fullscreenTimelineDocked);
+const floating = (id: WorkspacePanelId) => id === "timeline" ? timelineFloating.value : fullscreen.value;
+const fullscreenUiHidden = ref(false);
+const panelInteracting = ref<Record<WorkspacePanelId, boolean>>({ timeline: false, analysis: false });
+/** The overlay menu floats outside both windows, so an open menu holds the fullscreen UI by itself. */
+const overlayMenuOpen = ref(false);
+const pointerPressed = ref(false);
+let idleTimer: number | undefined;
+const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
+const viewportHeight = ref(typeof window === "undefined" ? 900 : window.innerHeight);
+const match = computed(() => {
+  if (!model.value) throw new Error("Review requires a loaded MatchModel");
+  return model.value;
+});
+/**
+ * The docked timeline sits right under the video, so its toolbar takes the player controls. Below 1100px the
+ * workspace stacks (floating-workspace.css) and Analysis comes between them, so the player keeps its own bar;
+ * fullscreen always floats the timeline toolbar over the video.
+ */
+const controlsInTimeline = computed(() => !match.value.layoutOnly && (fullscreen.value || viewportWidth.value > 1_100));
+const activeId = computed(() => workspace.activeRally.value?.id ?? null);
+const currentLabel = computed(() => activeId.value === null ? "比賽空檔" : `片段 ${String(activeId.value + 1).padStart(3, "0")}`);
+const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "選手 A"), b: playerName(match.value.players.b, "選手 B") }));
+const matchTitle = computed(() => !match.value.title || /^(?:match:)?yt[_:-]/i.test(match.value.title) ? "比賽回看" : match.value.title);
+const overlayLayersAvailable = computed(() => overlayAvailability(match.value));
+const overlayLayers = computed(() => activeOverlayLayers(layout.overlay, overlayLayersAvailable.value));
+const overlayMethods = computed(() => match.value.overlay?.methods ?? []);
+const shownOverlayMethods = computed(() => shownShuttleMethods(layout.overlay, overlayMethods.value));
+const headerScore = computed(() => workspace.currentScore.value ? scoreText(workspace.currentScore.value) : null);
+const timelineModes = computed(() => availableTimelineModes(match.value.capabilities));
+const selectedTimelineLabel = computed(() => timelineModes.value.find((item) => item.id === layout.timelineMode)?.label ?? "片段");
+const adaptiveSizes = computed(() => adaptiveDefaultPanelSizes(viewportWidth.value, viewportHeight.value));
+const effectiveAnalysisDockWidth = computed(() =>
+  layout.analysisDockWidth === DEFAULT_ANALYSIS_DOCK_WIDTH
+    ? adaptiveSizes.value.analysisWidth
+    : layout.analysisDockWidth,
+);
+const effectiveTimelineDockHeight = computed(() =>
+  layout.timelineDockHeight === DEFAULT_TIMELINE_DOCK_HEIGHT
+    ? adaptiveSizes.value.timelineHeight
+    : layout.timelineDockHeight,
+);
+const fullscreenPanels = computed(() => ({
+  ...layout.fullscreenPanels,
+  timeline: fittedFullscreenTimeline(layout.fullscreenPanels.timeline, viewportHeight.value),
+}));
+const panels = computed(() => ({
+  timeline: floating("timeline") ? fullscreenPanels.value.timeline : layout.panels.timeline,
+  analysis: floating("analysis") ? fullscreenPanels.value.analysis : layout.panels.analysis,
+}));
+/** Writable panel layouts; `panels` may present a fitted copy. */
+const storedPanels = (id: WorkspacePanelId) => floating(id) ? layout.fullscreenPanels : layout.panels;
+const timelineClock = () => player.value?.currentTime() ?? workspace.currentTimeSec.value;
+
+watch(player, (value) => { context.player.value = value; }, { flush: "sync" });
+watch([() => route.query.segment, () => route.query.stroke, model, player], (next, previous) => {
+  // A refreshed export of this same Review keeps the playhead; only a new route or Review re-targets it.
+  if (next[0] === previous?.[0] && next[1] === previous?.[1] && next[3] === previous?.[3] && sameReview(previous?.[2], next[2])) return;
+  const segment = route.query.segment;
+  if (segment === undefined || !model.value || !player.value) return;
+  const rally = resolveRouteRally(model.value, segment);
+  if (!rally) return;
+  const stroke = route.query.stroke === undefined ? null : resolveRouteStroke(rally, route.query.stroke);
+  if (stroke) workspace.selectStroke(stroke);
+  else workspace.selectRally(rally);
+}, { immediate: true, flush: "post" });
+watch(model, () => {
+  if (!timelineModes.value.some((item) => item.id === layout.timelineMode)) layout.timelineMode = "rally";
+}, { flush: "sync" });
+
+/** Input types that take no typed text, so shortcuts still apply while they hold focus. */
+const NON_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"]);
+function isTextEditingTarget(event: KeyboardEvent) {
+  if (!(event.target instanceof Element)) return false;
+  const field = event.target.closest("input,textarea,[contenteditable]:not([contenteditable='false'])");
+  return field !== null && !(field instanceof HTMLInputElement && NON_TEXT_INPUTS.has(field.type));
+}
+/**
+ * Only typing and system chords are exempt: a clicked button, select or slider keeps focus, and the
+ * shortcut must win over its own Space/arrow handling, or Space would press the button again.
+ */
+function shortcutBlocked(event: KeyboardEvent) {
+  return event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isTextEditingTarget(event);
+}
+/** Runs in the capture phase, so a consumed key never reaches the focused control. */
+function consume(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+function keyboard(event: KeyboardEvent) {
+  revealUi();
+  if (event.code === "Escape") {
+    if (event.isComposing || isTextEditingTarget(event)) return;
+    if (workspace.selectedRallyIndex.value !== null) { event.preventDefault(); workspace.clearSelection(); }
+    return;
+  }
+  if (shortcutBlocked(event)) return;
+  if (event.code === "KeyH" && !event.shiftKey) {
+    consume(event);
+    if (!event.repeat) shortcutHelp.value?.toggle();
+    return;
+  }
+  if (event.code === "KeyD" && !event.shiftKey && fullscreen.value) {
+    consume(event);
+    if (!event.repeat) toggleTimelineDocked();
+    return;
+  }
+  if (!event.repeat && workspace.handleKeyboard(event)) { event.stopPropagation(); return; }
+  const overlayKey = match.value.layoutOnly ? null : overlayShortcut(event);
+  if (overlayKey) {
+    consume(event);
+    if (!event.repeat) applyOverlayShortcut(overlayKey);
+    return;
+  }
+  const action = playerShortcutAction(event);
+  if (!action) return;
+  consume(event);
+  if (!event.repeat || repeatsWhileHeld(action)) player.value?.handleShortcut(action);
+}
+function applyOverlayShortcut(shortcut: OverlayShortcut) {
+  if (shortcut.kind === "overlay") toggleOverlay(layout.overlay);
+  else toggleLayer(shortcut.id);
+}
+/** An unavailable layer keeps its stored choice; there is nothing to switch on. */
+function toggleLayer(id: OverlayLayerId) {
+  if (overlayLayersAvailable.value[id] === null) toggleOverlayLayer(layout.overlay, id);
+}
+function overlayMenu(open: boolean) {
+  overlayMenuOpen.value = open;
+  if (open) { fullscreenUiHidden.value = false; clearIdleTimer(); }
+  else scheduleIdle();
+}
+/** A button fires its Space click on keyup, so the matching keyup is swallowed too. */
+function keyboardRelease(event: KeyboardEvent) {
+  if (event.code === "Space" && !shortcutBlocked(event)) consume(event);
+}
+function openEvidence(evidence: EvidenceModel) {
+  const target = findStrokeTarget(match.value, evidence.eventIndex);
+  if (target) workspace.selectStroke(target.stroke);
+}
+function updatePanel(id: WorkspacePanelId, panel: PanelLayout) {
+  const shown = panels.value[id];
+  const stored = storedPanels(id)[id];
+  // Moving, collapsing or fading a fitted panel must not freeze its fitted size into storage.
+  storedPanels(id)[id] = {
+    ...panel,
+    height: panel.height === shown.height ? stored.height : panel.height,
+    y: panel.y === shown.y ? stored.y : panel.y,
+  };
+}
+function fullscreenBounds() {
+  return { width: stage.value?.clientWidth ?? window.innerWidth, height: stage.value?.clientHeight ?? window.innerHeight };
+}
+function restoreFullscreenPanel(id: WorkspacePanelId) {
+  layout.fullscreenPanels[id] = fullscreenHomePanel(id, layout.fullscreenPanels[id], fullscreenBounds());
+}
+function setIdleSeconds(value: number | null) {
+  layout.fullscreenIdleSec = constrainFullscreenIdleSec(value);
+  // Switching to "never" while hidden would otherwise leave the windows gone until the next movement.
+  revealUi();
+}
+function setDockSize(id: WorkspacePanelId, value: number) {
+  if (id === "analysis") layout.analysisDockWidth = constrainAnalysisDockWidth(value);
+  else layout.timelineDockHeight = constrainTimelineDockHeight(value);
+}
+function clearIdleTimer() {
+  if (idleTimer !== undefined) window.clearTimeout(idleTimer);
+  idleTimer = undefined;
+}
+function interactionActive() {
+  return pointerPressed.value || panelInteracting.value.analysis || panelInteracting.value.timeline || overlayMenuOpen.value ||
+    // A pointer resting on a window keeps it: hidden windows let presses through to the video,
+    // so the next drag would toggle playback instead of moving the window.
+    Boolean(stage.value?.querySelector("select:focus, input:focus, [aria-expanded='true']:focus, .workspace-window:hover"));
+}
+function scheduleIdle() {
+  clearIdleTimer();
+  const idleSec = layout.fullscreenIdleSec;
+  if (!fullscreen.value || idleSec === null || interactionActive()) return;
+  idleTimer = window.setTimeout(() => {
+    if (!interactionActive()) fullscreenUiHidden.value = true;
+  }, idleSec * 1000);
+}
+function revealUi() {
+  if (!fullscreen.value) return;
+  fullscreenUiHidden.value = false;
+  scheduleIdle();
+}
+function panelInteraction(id: WorkspacePanelId, active: boolean) {
+  panelInteracting.value[id] = active;
+  if (active) { fullscreenUiHidden.value = false; clearIdleTimer(); }
+  else scheduleIdle();
+}
+function pointerDown() { pointerPressed.value = true; revealUi(); }
+function pointerUp() { pointerPressed.value = false; scheduleIdle(); }
+function syncFullscreen() {
+  fullscreen.value = document.fullscreenElement === stage.value;
+  fullscreenUiHidden.value = false;
+  pointerPressed.value = false;
+  scheduleIdle();
+}
+async function toggleFullscreen() {
+  if (!stage.value) return;
+  try {
+    if (document.fullscreenElement === stage.value) await document.exitFullscreen();
+    else await stage.value.requestFullscreen();
+  } catch { /* A user gesture is required by some browsers. */ }
+}
+function toggleTimelineDocked() {
+  layout.fullscreenTimelineDocked = !layout.fullscreenTimelineDocked;
+  fullscreenUiHidden.value = false;
+  scheduleIdle();
+}
+function cycleTimelineMode(direction: -1 | 1) {
+  const index = timelineModes.value.findIndex((item) => item.id === layout.timelineMode);
+  layout.timelineMode = timelineModes.value[(index + direction + timelineModes.value.length) % timelineModes.value.length]?.id ?? "rally";
+}
+/**
+ * Shift + wheel cycles the timeline mode wherever the pointer is; the timeline leaves Shift + wheel unpanned.
+ * Some platforms turn a shifted wheel into horizontal scroll, so either axis counts.
+ */
+function modeWheel(event: WheelEvent) {
+  if (!event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+  const delta = event.deltaY || event.deltaX;
+  if (delta === 0) return;
+  event.preventDefault();
+  cycleTimelineMode(delta > 0 ? 1 : -1);
+}
+function updateViewport() {
+  viewportWidth.value = window.innerWidth;
+  viewportHeight.value = window.innerHeight;
+}
+onMounted(() => {
+  window.addEventListener("resize", updateViewport);
+  document.addEventListener("fullscreenchange", syncFullscreen);
+  window.addEventListener("pointerup", pointerUp);
+  window.addEventListener("pointercancel", pointerUp);
+  updateViewport();
+});
+onActivated(() => {
+  window.addEventListener("keydown", keyboard, true);
+  window.addEventListener("keyup", keyboardRelease, true);
+  window.addEventListener("wheel", modeWheel, { passive: false });
+});
+onDeactivated(() => {
+  window.removeEventListener("keydown", keyboard, true);
+  window.removeEventListener("keyup", keyboardRelease, true);
+  window.removeEventListener("wheel", modeWheel);
+  shortcutHelp.value?.close();
+  player.value?.pause();
+  clearIdleTimer();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", keyboard, true);
+  window.removeEventListener("keyup", keyboardRelease, true);
+  window.removeEventListener("wheel", modeWheel);
+  window.removeEventListener("resize", updateViewport);
+  document.removeEventListener("fullscreenchange", syncFullscreen);
+  window.removeEventListener("pointerup", pointerUp);
+  window.removeEventListener("pointercancel", pointerUp);
+  clearIdleTimer();
+  if (context.player.value === player.value) context.player.value = null;
+});
+</script>
+
+<template>
+  <div class="review-page">
+    <header class="topbar review-matchbar">
+      <div class="review-video-heading">
+        <h2 class="review-match-title">{{ matchTitle }}</h2>
+        <div class="match-identity">
+          <span class="player-name">{{ displayPlayers.a }}</span>
+          <div class="match-score-context">
+            <strong v-if="headerScore" class="score-state match-score-state" :aria-label="headerScore"><span>{{ workspace.currentScore.value?.[0] }}</span><span class="score-state-divider" aria-hidden="true" /><span>{{ workspace.currentScore.value?.[1] }}</span></strong>
+            <small>{{ currentLabel }}</small>
+          </div>
+          <span class="player-name">{{ displayPlayers.b }}</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <WorkspacePopover ref="shortcutHelp" label="快捷鍵（H）" :min-width="360">
+          <template #trigger><span aria-hidden="true">?</span></template>
+          <div class="shortcut-help__content">
+            <header class="shortcut-help__title"><strong>快捷鍵</strong><span><kbd>H</kbd> 開關 · <kbd>Esc</kbd> 關閉</span></header>
+            <section v-for="group in SHORTCUT_GROUPS" :key="group.title" class="shortcut-help__group">
+              <h3>{{ group.title }}</h3>
+              <dl>
+                <div v-for="item in group.items" :key="item.label" class="shortcut-help__row">
+                  <dt><template v-for="(combo, comboIndex) in item.keys" :key="comboIndex"><span v-if="comboIndex" class="shortcut-help__or">/</span><span class="shortcut-help__combo"><template v-for="(key, keyIndex) in combo" :key="key"><span v-if="keyIndex" class="shortcut-help__plus">+</span><kbd>{{ key }}</kbd></template></span></template></dt>
+                  <dd>{{ item.label }}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        </WorkspacePopover>
+      </div>
+    </header>
+    <main class="review-main review-main--workspace">
+      <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden, 'review-workspace-stage--docked': fullscreen && !timelineFloating }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
+        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
+          <template #overlay="{ video }">
+            <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" />
+          </template>
+          <template #controls>
+            <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" />
+            <button v-if="fullscreen" class="player-icon-button player-icon-button--dock" type="button" :aria-label="timelineFloating ? '停靠時間軸' : '浮動時間軸'" :title="timelineFloating ? '停靠時間軸：移到影片下方，不遮擋畫面（D）' : '浮動時間軸：疊在影片上（D）'" @click="toggleTimelineDocked"><AppIcon :name="timelineFloating ? 'dock' : 'float'" /></button>
+          </template>
+        </ReviewPlayer>
+        <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
+
+        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :floating="timelineFloating" toolbar :toolbar-bottom="timelineFloating" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('timeline')">
+          <template #header>
+            <label class="timeline-mode-selector"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
+            <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
+            <div v-if="controlsInTimeline" ref="playerControlsHost" class="workspace-window__player-controls" />
+          </template>
+          <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @seek="workspace.seek" />
+        </WorkspaceWindow>
+
+        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :fit-content="layout.analysisView === 'analysis' && layout.strokeListCollapsed" :active="activeWindow === 'analysis'" :passive="playing" :floating="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('analysis')">
+          <AnalysisWindow :model="match" :active-id="activeId" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" :strokes-collapsed="layout.strokeListCollapsed" @view="layout.analysisView = $event" @strokes-collapsed="layout.strokeListCollapsed = $event" @stroke="workspace.selectStroke" @evidence="openEvidence" />
+        </WorkspaceWindow>
+      </section>
+    </main>
+  </div>
+</template>

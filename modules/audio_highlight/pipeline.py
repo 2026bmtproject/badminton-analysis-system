@@ -11,7 +11,7 @@ import numpy as np
 from modules.base import ProgressFn
 from modules.contracts import AudioSegmentSignals, Segment
 from modules.audio_highlight.aggregation import SegmentWindowSignal, aggregate_segment_signals
-from modules.audio_highlight.audio import FFmpegAudioNormalizer, FFMPEG_NORMALIZATION_FILTER
+from modules.audio_highlight.audio import FFmpegAudioNormalizer, FFMPEG_NORMALIZATION_FILTER, _cache_is_current
 from modules.audio_highlight.detector import ExportedCheerDetector, ModelArtifactError, _sha256
 from modules.audio_highlight.intensity import average_rank_percentiles, rms_and_log_db
 from modules.audio_highlight.windows import InferenceConfig, build_analysis_windows
@@ -42,18 +42,25 @@ def infer_signals(
         raise ModelArtifactError("packaged detector does not match the frozen model SHA-256")
     detector = ExportedCheerDetector.load(MODEL_DIR)
     planner = InferenceConfig()
+    report = on_progress or (lambda _value: None)
+    # Shares measured on a full match (test5): a cold FFmpeg decode ~6.7 s, the
+    # TensorFlow/YAMNet load ~6.3 s, then ~12 s of window embeddings. Reporting
+    # after each silent phase keeps the bar from idling at zero and then racing.
+    decode_end = 0.0 if _cache_is_current(video, audio_cache) else 0.25
+    load_end = decode_end + (0.2 if decode_end else 0.3)
     with FFmpegAudioNormalizer().normalize(video, audio_cache) as source:
+        report(decode_end)
         windows = build_analysis_windows(segments, planner, media_duration_sec=source.duration_sec)
         counts = Counter(window.segment_index for window in windows)
         missing = sorted(set(range(len(segments))) - set(counts))
         if missing:
             raise ValueError(f"segments without complete analysis windows: {missing}")
         extractor = YamNetEmbeddingExtractor()
+        report(load_end)
         embeddings = np.empty((len(windows), 1024), dtype=np.float32)
         for index, window in enumerate(windows):
             embeddings[index] = extractor.embed(source.slice_absolute(window.start_sec, window.end_sec))
-            if on_progress:
-                on_progress(0.9 * (index + 1) / len(windows))
+            report(load_end + (0.95 - load_end) * (index + 1) / len(windows))
         # Keep the reference's single matrix operation: changing batch shape can
         # change floating-point rounding at the frozen detector boundary.
         probabilities = detector.positive_probabilities(embeddings)
@@ -90,5 +97,14 @@ def infer_signals(
         "aggregation": {"name": "p95_linear", "q": 0.95, "method": "linear"},
         "audio": {**asdict(planner), "filter": FFMPEG_NORMALIZATION_FILTER},
         "window_count": len(windows),
+        "windows": [
+            {
+                "segment_index": window.segment_index,
+                "start_sec": window.start_sec,
+                "end_sec": window.end_sec,
+                "cheer_probability": float(probabilities[index]),
+            }
+            for index, window in enumerate(windows)
+        ],
     }
     return signals, metadata

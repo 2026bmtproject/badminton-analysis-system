@@ -32,7 +32,7 @@ including low-confidence events, and low/cautious current events require explici
 uncertainty wording. Zero eligible events returns an empty `CommentaryRally`
 without a provider call.
 
-Score context is deliberately withheld in v1. Segment-level final scores do not
+Score context is deliberately withheld in v1. Segment-level scoreboard observations do not
 prove rally winner, scoring cause, server, score transition, match point or game
 result. Highlight is an optional contextual ranking score, explicitly labeled as
 neither probability nor event evidence, and never changes event inclusion.

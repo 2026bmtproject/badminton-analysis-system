@@ -1,0 +1,475 @@
+"""Loopback HTTP facade for plans and persistent single-worker tasks."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import signal
+import subprocess
+import sys
+import threading
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+from modules.artifacts import read_artifact
+from modules.base import StageStatus, artifact_fingerprint, read_status, write_status
+from modules.contracts import PIPELINE, artifact_path, resolve_input_video, stage_path
+from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
+from modules.local_tasks.locking import WorkerLock
+from modules.local_tasks.planning import build_plan, resolve_match
+from modules.local_tasks.store import TaskStore, now
+from modules.runner import available_modules, default_modules, stale_inputs
+
+
+class PlanChanged(ValueError):
+    pass
+
+
+class WorkerBusy(ValueError):
+    pass
+
+
+def kill_tree(process) -> None:
+    """Stops the worker and whatever it started (ffmpeg, loader processes), not just the worker itself."""
+    if os.name == "nt":
+        result = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, check=False)
+        if result.returncode == 0:
+            return
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+            return
+        except OSError:
+            pass
+    process.kill()
+
+
+class TaskManager:
+    def __init__(self, matches_root: Path, tasks_root: Path,
+                 spawn=None, kill=None):
+        self.matches_root = matches_root.resolve()
+        self.store = TaskStore(tasks_root)
+        self.spawn = spawn or subprocess.Popen
+        self.kill = kill or kill_tree
+        self.guard = threading.Lock()
+        self.active_id: str | None = None
+        self.active_process = None
+        # Set by ``cancel``; the monitor records the cancellation once the worker is gone,
+        # so the dead worker can never overwrite it with a late save of its own.
+        self.cancel_requested: str | None = None
+        self.monitor_done = threading.Event()
+        self.instance_id = uuid.uuid4().hex
+        # path -> (mtime_ns, size, fingerprint): the library polls freshness, and re-hashing
+        # every artifact (pose alone is ~150 MB a match) on each poll would cost seconds.
+        self.fingerprints: dict[Path, tuple[int, int, str]] = {}
+        self.fingerprint_guard = threading.Lock()
+        self.refresh_recovery()
+
+    def refresh_recovery(self) -> bool:
+        """Return whether a worker lock is held; reconcile only after it clears."""
+        probe = WorkerLock(self.store.root / "worker.lock")
+        if not probe.acquire():
+            return True
+        probe.release()
+        for record in self.store.list():
+            if record["status"] in ("queued", "running") and record["id"] != self.active_id:
+                record.update(status="interrupted", finishedAt=now(),
+                              error="worker is no longer active; completion cannot be confirmed")
+                if record.get("currentStage"):
+                    record["stageStates"][record["currentStage"]]["status"] = "interrupted"
+                self.store.save(record)
+        return False
+
+    def health(self, ui_origin: str) -> dict:
+        locked = self.refresh_recovery()
+        unfinished = next((record for record in self.store.list()
+                           if record["status"] in ("queued", "running")), None)
+        active = ({"id": unfinished["id"],
+                   "status": "recovering" if self.active_id != unfinished["id"] else unfinished["status"]}
+                  if unfinished else {"id": None, "status": "unknown"} if locked else None)
+        return {"service": "badminton-local-tasks", "apiVersion": 2,
+                "instanceId": self.instance_id, "matchesRoot": str(self.matches_root),
+                "tasksRoot": str(self.store.root), "uiOrigin": ui_origin,
+                "activeTask": active}
+
+    def plan(self, request: dict) -> dict:
+        match = resolve_match(self.matches_root, request.get("matchId"))
+        return build_plan(match, request.get("stages"), request.get("mode"))
+
+    def court(self, match_id: str) -> dict:
+        match = resolve_match(self.matches_root, match_id)
+        result = load_court_review(match)
+        result["saveBlocked"] = self._court_busy(match_id)
+        return result
+
+    def _court_busy(self, match_id: str) -> bool:
+        if self.refresh_recovery():
+            return True
+        return any(record["matchId"] == match_id and record["status"] in ("queued", "running")
+                   for record in self.store.list())
+
+    def court_preview(self, request: dict) -> dict:
+        match = resolve_match(self.matches_root, request.get("matchId"))
+        return preview_corners(match, request.get("revision"), request.get("corners"))
+
+    def court_save(self, request: dict) -> dict:
+        with self.guard:
+            match = resolve_match(self.matches_root, request.get("matchId"))
+            if self._court_busy(match.name):
+                raise WorkerBusy("此比賽正在分析或 worker 狀態待確認，暫時無法保存場地")
+            result = save_corners(match, request.get("revision"), request.get("corners"))
+            result["staleStages"] = []
+            result["unknownStages"] = []
+            for name, module in available_modules().items():
+                if name == "court_detection":
+                    continue
+                status = read_status(stage_path(match, name))
+                if status is None or status.status != StageStatus.COMPLETED:
+                    continue
+                stale = stale_inputs(match, module)
+                if stale is None:
+                    result["unknownStages"].append(name)
+                elif stale:
+                    result["staleStages"].append(name)
+            return result
+
+    def stages(self) -> list[dict]:
+        modules = available_modules()
+        return [{"name": name, "description": PIPELINE[name].description,
+                 "dependencies": module.dependencies,
+                 "optionalDependencies": module.optional_dependencies,
+                 "usesGemini": name in ("score_recognition", "commentary")}
+                for name, module in modules.items()]
+
+    def _fingerprint(self, match: Path, stage: str) -> str | None:
+        path = artifact_path(match, stage)
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            return None
+        with self.fingerprint_guard:
+            cached = self.fingerprints.get(path)
+        if cached and cached[:2] == (info.st_mtime_ns, info.st_size):
+            return cached[2]
+        fingerprint = artifact_fingerprint(match, stage)
+        if fingerprint is not None:
+            with self.fingerprint_guard:
+                self.fingerprints[path] = (info.st_mtime_ns, info.st_size, fingerprint)
+        return fingerprint
+
+    def _stale_inputs(self, match: Path, module, recorded: dict[str, str] | None) -> list[str] | None:
+        """``runner.stale_inputs`` over cached fingerprints; None when the run predates input tracking."""
+        if recorded is None:
+            return None
+        current = {}
+        for name in [*module.dependencies, *module.optional_dependencies]:
+            fingerprint = self._fingerprint(match, name)
+            if fingerprint is not None:
+                current[name] = fingerprint
+        return sorted(n for n in set(recorded) | set(current) if recorded.get(n) != current.get(n))
+
+    def matches(self) -> list[dict]:
+        latest = {}
+        for task in self.store.list():
+            latest.setdefault(task["matchId"], task)
+        if not self.matches_root.is_dir():
+            return []
+        rows = []
+        for folder in sorted(self.matches_root.iterdir()):
+            if not folder.is_dir():
+                continue
+            try:
+                match = resolve_match(self.matches_root, folder.name)
+            except ValueError:
+                continue
+            try:
+                resolve_input_video(match)
+            except FileNotFoundError:
+                continue
+            completed, stale, unknown, finished = [], {}, [], []
+            modules = available_modules()
+            for name, module in modules.items():
+                try:
+                    status = read_status(stage_path(match, name))
+                    if status is None or status.status != StageStatus.COMPLETED or not artifact_path(match, name).is_file():
+                        continue
+                    completed.append(name)
+                    if status.finished_at:
+                        finished.append(status.finished_at)
+                    changed = self._stale_inputs(match, module, status.inputs)
+                    if changed is None:
+                        unknown.append(name)
+                    elif changed:
+                        stale[name] = changed
+                except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                    continue
+            rows.append({"id": folder.name, "completedStages": completed,
+                         "staleStages": stale, "unknownStages": unknown,
+                         "resultsUpdatedAt": max(finished) if finished else None,
+                         "analysisStatus": "completed" if set(default_modules()) <= set(completed)
+                         else "partial" if completed else "unanalysed",
+                         "hasSegments": "match_segmentation" in completed,
+                         "latestTask": latest.get(folder.name)})
+        return rows
+
+    def start(self, request: dict) -> dict:
+        with self.guard:
+            if self.active_id is not None:
+                raise WorkerBusy("an analysis task is already active")
+            if self.refresh_recovery():
+                raise WorkerBusy("a worker from another service process is active or recovering")
+            plan = self.plan(request)
+            if request.get("planId") != plan["planId"]:
+                raise PlanChanged("source or plan changed; preview again before starting")
+            if not any(row["action"] == "run" for row in plan["stages"]):
+                raise ValueError("plan has no work to run")
+            record = {"id": uuid.uuid4().hex, "matchId": plan["matchId"],
+                      "options": {"mode": plan["mode"], "stages": plan["requestedStages"]},
+                      "plan": plan, "status": "queued", "stageStates": {
+                          row["name"]: {"status": "queued" if row["action"] == "run" else "skipped",
+                                        "progress": None, "reason": row["reason"]}
+                          for row in plan["stages"]},
+                      "currentStage": None, "createdAt": now(), "startedAt": None,
+                      "finishedAt": None, "error": None, "exitCode": None}
+            return self._launch(record)
+
+    def start_segment_commentary(self, request: dict) -> dict:
+        """Queues commentary for one segment; it never rewrites the whole-match commentary stage."""
+        with self.guard:
+            if self.active_id is not None:
+                raise WorkerBusy("an analysis task is already active")
+            if self.refresh_recovery():
+                raise WorkerBusy("a worker from another service process is active or recovering")
+            match = resolve_match(self.matches_root, request.get("matchId"))
+            segment = request.get("segmentIndex")
+            if type(segment) is not int or segment < 0:
+                raise ValueError("invalid segmentIndex")
+            module = available_modules()["commentary"]
+            if not module.check_ready(match):
+                raise ValueError("commentary upstream stages are not complete")
+            spec = PIPELINE["match_segmentation"]
+            if segment >= len(read_artifact(spec, artifact_path(match, spec.name))[spec.record_key]):
+                raise ValueError("segmentIndex does not exist")
+            reason = f"segment {segment}"
+            # The plan mirrors a pipeline plan so task views need no second shape; it is never revalidated.
+            plan = {"planId": f"segment-commentary-{segment}", "matchId": match.name, "mode": "continue",
+                    "requestedStages": ["commentary"], "requiredStages": ["commentary"],
+                    "stages": [{"name": "commentary", "action": "run", "reason": reason,
+                                "stale": [], "unknown": False, "status": "missing"}],
+                    "affectedOutsideScope": [], "includesGemini": True}
+            record = {"id": uuid.uuid4().hex, "matchId": match.name, "segmentIndex": segment,
+                      "options": {"mode": "continue", "stages": ["commentary"]},
+                      "plan": plan, "status": "queued",
+                      "stageStates": {"commentary": {"status": "queued", "progress": None, "reason": reason}},
+                      "currentStage": None, "createdAt": now(), "startedAt": None,
+                      "finishedAt": None, "error": None, "exitCode": None}
+            return self._launch(record)
+
+    def _launch(self, record: dict) -> dict:
+        """Saves a queued record and starts its worker; the caller holds ``guard``."""
+        task_id = record["id"]
+        self.store.save(record)
+        argv = [sys.executable, "-m", "modules.local_tasks.worker",
+                "--tasks-dir", str(self.store.root), "--matches-dir", str(self.matches_root),
+                "--task-id", task_id]
+        try:
+            # Its own process group on POSIX, so a cancel can stop the whole tree at once.
+            process = self.spawn(argv, cwd=Path(__file__).resolve().parents[2],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, close_fds=True,
+                                 **({} if os.name == "nt" else {"start_new_session": True}))
+        except OSError as error:
+            record.update(status="failed", error=str(error), finishedAt=now(), exitCode=-1)
+            self.store.save(record)
+            raise
+        self.active_id = task_id
+        self.active_process = process
+        self.cancel_requested = None
+        self.monitor_done = threading.Event()
+        threading.Thread(target=self._monitor, args=(task_id, process, self.monitor_done),
+                         daemon=True).start()
+        return record
+
+    def cancel(self, task_id: str) -> dict:
+        """Stops this service's running task; its finished stages keep their results."""
+        with self.guard:
+            record = self.store.read(task_id)
+            if record["status"] not in ("queued", "running"):
+                raise ValueError("task is not active")
+            if task_id != self.active_id:
+                raise WorkerBusy("task belongs to a worker this service cannot stop")
+            self.cancel_requested = task_id
+            process, done = self.active_process, self.monitor_done
+        self.store.append_log(task_id, "Cancel requested")
+        self.kill(process)
+        done.wait(10)
+        return self.store.read(task_id)
+
+    def _record_cancel(self, record: dict, code) -> None:
+        """Marks a killed task cancelled; the caller holds ``guard`` and the worker has exited."""
+        current = record.get("currentStage")
+        record.update(status="cancelled", finishedAt=now(), exitCode=code, error=None)
+        if current:
+            record["stageStates"][current].update(status="cancelled", finishedAt=now())
+            # A killed stage never wrote its verdict; left RUNNING it would look like it is still going.
+            if record.get("segmentIndex") is None:
+                try:
+                    out_dir = stage_path(resolve_match(self.matches_root, record["matchId"]), current)
+                    state = read_status(out_dir)
+                    if state is not None and state.status == StageStatus.RUNNING:
+                        state.status = StageStatus.FAILED
+                        state.finished_at = now()
+                        state.error = "cancelled"
+                        write_status(out_dir, state)
+                except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                    pass
+        self.store.save(record)
+        self.store.append_log(record["id"], "Analysis cancelled")
+
+    def _monitor(self, task_id, process, done: threading.Event) -> None:
+        code = process.wait()
+        with self.guard:
+            record = self.store.read(task_id)
+            if self.cancel_requested == task_id and record["status"] in ("queued", "running"):
+                self._record_cancel(record, code)
+            elif record["status"] in ("queued", "running"):
+                record.update(status="failed" if code else "interrupted", exitCode=code,
+                              finishedAt=now(), error=f"worker exited with code {code} without final state")
+                self.store.save(record)
+                self.store.append_log(task_id, record["error"])
+            elif record.get("exitCode") is None:
+                record["exitCode"] = code
+                self.store.save(record)
+            if self.active_id == task_id:
+                self.active_id = None
+                self.active_process = None
+                self.cancel_requested = None
+        done.set()
+
+
+def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port: int):
+    class Handler(BaseHTTPRequestHandler):
+        def respond(self, code: int, value: object):
+            data = json.dumps(value, ensure_ascii=False).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def allowed(self, mutation=False):
+            host = self.headers.get("Host", "")
+            origin = self.headers.get("Origin")
+            if host not in (f"{bind_host}:{bind_port}", f"localhost:{bind_port}"):
+                self.respond(403, {"error": "invalid host"})
+                return False
+            if origin != ui_origin and (origin is not None or mutation):
+                self.respond(403, {"error": "origin is not allowed"})
+                return False
+            return True
+
+        def do_GET(self):
+            if not self.allowed():
+                return
+            url = urlsplit(self.path)
+            try:
+                if url.path == "/api/pipeline/health":
+                    return self.respond(200, manager.health(ui_origin))
+                if url.path == "/api/pipeline/stages":
+                    return self.respond(200, {"stages": manager.stages()})
+                if url.path == "/api/pipeline/matches":
+                    return self.respond(200, {"matches": manager.matches()})
+                if url.path == "/api/pipeline/court":
+                    return self.respond(200, manager.court(parse_qs(url.query).get("matchId", [None])[0]))
+                if url.path == "/api/pipeline/tasks":
+                    return self.respond(200, {"tasks": manager.store.list()})
+                parts = url.path.strip("/").split("/")
+                if len(parts) >= 4 and parts[:3] == ["api", "pipeline", "tasks"]:
+                    task = manager.store.read(parts[3])
+                    if len(parts) == 4:
+                        return self.respond(200, task)
+                    if len(parts) == 5 and parts[4] == "logs":
+                        query = parse_qs(url.query)
+                        return self.respond(200, manager.store.logs(parts[3],
+                            int(query.get("offset", ["0"])[0]), int(query.get("limit", ["100"])[0])))
+                self.respond(404, {"error": "not found"})
+            except FileNotFoundError as error:
+                self.respond(404, {"error": str(error)})
+            except CourtConflict as error:
+                self.respond(409, {"error": str(error)})
+            except (ValueError, OSError, KeyError) as error:
+                self.respond(400, {"error": str(error)})
+
+        def do_POST(self):
+            if not self.allowed(mutation=True):
+                return
+            if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                return self.respond(415, {"error": "JSON required"})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 1 or length > 8192:
+                    return self.respond(413, {"error": "invalid request size"})
+                request = json.loads(self.rfile.read(length))
+                if not isinstance(request, dict):
+                    raise ValueError("JSON object required")
+                if self.path == "/api/pipeline/plan":
+                    return self.respond(200, manager.plan(request))
+                if self.path == "/api/pipeline/tasks":
+                    return self.respond(201, manager.start(request))
+                if self.path == "/api/pipeline/commentary":
+                    return self.respond(201, manager.start_segment_commentary(request))
+                parts = self.path.strip("/").split("/")
+                if len(parts) == 5 and parts[:3] == ["api", "pipeline", "tasks"] and parts[4] == "cancel":
+                    return self.respond(200, manager.cancel(parts[3]))
+                if self.path == "/api/pipeline/court/preview":
+                    return self.respond(200, manager.court_preview(request))
+                if self.path == "/api/pipeline/court/save":
+                    return self.respond(200, manager.court_save(request))
+                self.respond(404, {"error": "not found"})
+            except PlanChanged as error:
+                self.respond(409, {"error": str(error)})
+            except WorkerBusy as error:
+                self.respond(409, {"error": str(error)})
+            except CourtConflict as error:
+                self.respond(409, {"error": str(error)})
+            except (ValueError, OSError, KeyError, json.JSONDecodeError) as error:
+                self.respond(400, {"error": str(error)})
+
+        def log_message(self, format, *args):
+            pass
+
+    return Handler
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Local pipeline task service")
+    parser.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1"])
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--ui-origin", default="http://127.0.0.1:5173")
+    parser.add_argument("--matches-dir", type=Path, default=Path(os.environ.get(
+        "BADMINTON_MATCHES_DIR", Path(__file__).resolve().parents[2] / "matches")))
+    parser.add_argument("--tasks-dir", type=Path, default=Path(os.environ.get(
+        "BADMINTON_TASKS_DIR", Path(__file__).resolve().parents[2] / ".local" / "pipeline-tasks")))
+    args = parser.parse_args()
+    service_lock = WorkerLock(args.tasks_dir.resolve() / "service.lock")
+    if not service_lock.acquire():
+        raise SystemExit("another pipeline task service is already using this task directory")
+    manager = TaskManager(args.matches_dir, args.tasks_dir)
+    server = ThreadingHTTPServer((args.host, args.port),
+        handler_for(manager, args.ui_origin, args.host, args.port))
+    print(f"Pipeline task service listening on http://{args.host}:{args.port}", flush=True)
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        service_lock.release()
+
+
+if __name__ == "__main__":
+    main()

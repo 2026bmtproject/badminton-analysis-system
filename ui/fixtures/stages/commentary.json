@@ -1,0 +1,36 @@
+{
+  "schema_version": "commentary-rallies-v1",
+  "rallies": [
+    {
+      "segment_index": 1,
+      "events": [
+        {
+          "segment_index": 1,
+          "stroke_index": 7,
+          "frame": 362,
+          "time_sec": 14.48,
+          "player": "a",
+          "text": "球員 A 以殺球加快節奏。",
+          "source_fact_ids": ["rally:1:stroke:7", "rally:1:stroke:8"]
+        }
+      ],
+      "summary": {
+        "segment_index": 1,
+        "text": "這段來回包含高遠球、殺球與小球。",
+        "source_fact_ids": [
+          "rally:1:stroke:6",
+          "rally:1:stroke:7",
+          "rally:1:stroke:8"
+        ]
+      }
+    }
+  ],
+  "unsupported_segments": [
+    {
+      "segment_index": 3,
+      "reason": "player_identity_unavailable"
+    }
+  ],
+  "diagnostics": [],
+  "runtime": {}
+}

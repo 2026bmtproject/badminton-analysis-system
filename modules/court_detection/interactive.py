@@ -68,13 +68,23 @@ def recompute_from_corners(corners: np.ndarray) -> Optional[list]:
     Returns a list of 16 ``(x, y)`` tuples, or ``None`` if the homography is
     degenerate.
     """
+    corners = np.asarray(corners, dtype=np.float64)
+    if corners.shape != (4, 2) or not np.isfinite(corners).all():
+        return None
+    outline = np.float32(corners[[0, 1, 3, 2]])
+    if not cv2.isContourConvex(outline) or cv2.contourArea(outline) <= 1.0:
+        return None
     H, _ = cv2.findHomography(CORNER_COURT_PTS, np.float32(corners))
-    if H is None:
+    if H is None or not np.isfinite(H).all():
         return None
     pts = []
     for hi, vi in OUTPUT_IDX:
         p = H @ np.array([V_LINES[vi], H_LINES[hi], 1.0])
+        if not np.isfinite(p).all() or abs(p[2]) < 1e-9:
+            return None
         pts.append((float(p[0] / p[2]), float(p[1] / p[2])))
+    if not np.isfinite(pts).all():
+        return None
     return pts
 
 
@@ -92,13 +102,17 @@ def is_detection_valid(pts: Optional[list], frame_shape) -> bool:
 
 
 def get_default_corners(frame_shape) -> np.ndarray:
-    """Fallback corners at the image corners, for manual marking (4x2 float32)."""
+    """Fallback corners for manual marking (4x2 float32).
+
+    A broadcast-shaped trapezoid well inside the frame, so every handle starts
+    fully visible and grabbable instead of sitting on the image edge.
+    """
     h, w = frame_shape[:2]
     return np.float32([
-        [0.0, 0.0],            # TL
-        [float(w), 0.0],       # TR
-        [0.0, float(h)],       # BL
-        [float(w), float(h)],  # BR
+        [0.30 * w, 0.25 * h],  # TL
+        [0.70 * w, 0.25 * h],  # TR
+        [0.15 * w, 0.85 * h],  # BL
+        [0.85 * w, 0.85 * h],  # BR
     ])
 
 

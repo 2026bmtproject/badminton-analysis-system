@@ -193,6 +193,8 @@ def test_run_writes_corners_clockwise_from_top_left(tmp_path, monkeypatch):
     assert data["segments_used"] == [2, 0, 3]   # the three longest, longest-first
     assert data["detection_failed"] is False
     assert data["confirmed"] is False
+    assert (out.parent / data["preview_file"]).is_file()
+    assert (data["preview_width"], data["preview_height"]) == (100, 100)
 
 
 def test_run_uses_the_confirm_callback_result(tmp_path, monkeypatch):
@@ -229,10 +231,10 @@ def test_run_falls_back_to_manual_when_detection_fails(tmp_path, monkeypatch):
 
     data = read_artifact(PIPELINE["court_detection"], out)
     assert data["detection_failed"] is True
-    # fallback corners are the image corners (100x100), reordered clockwise.
+    # fallback corners are the inset default trapezoid (100x100), reordered clockwise.
     # (they round-trip through a homography, so allow tiny float error)
     (record,) = data["courts"]
-    expected = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+    expected = [[30.0, 25.0], [70.0, 25.0], [85.0, 85.0], [15.0, 85.0]]
     for got, want in zip(record["corners"], expected):
         assert got == pytest.approx(want, abs=1e-3)
 
