@@ -7,7 +7,7 @@ import { stageLabel } from "../data/stageLabels";
 import { useTaskFeed } from "../composables/useTaskFeed";
 import { importLocalMatch } from "../data/matchRepository";
 import {
-  LOG_PAGE_SIZE, getPipelineLogs, getPipelineTask, listPipelineStages, planReasonLabel, previewPipeline,
+  CANCEL_CONFIRM, LOG_PAGE_SIZE, cancelPipelineTask, getPipelineLogs, getPipelineTask, listPipelineStages, planReasonLabel, previewPipeline,
   retryTask, startPipeline, taskElapsed, taskProgress, taskStatusLabel,
   type LocalAnalysisMatch, type PipelinePlan, type PipelineStage, type PipelineTask,
 } from "../data/pipelineTasks";
@@ -21,6 +21,7 @@ const plan = ref<PipelinePlan | null>(null);
 const planning = ref(false);
 const task = ref<PipelineTask | null>(props.match.latestTask);
 const busy = ref(false);
+const cancelling = ref(false);
 const importing = ref(false);
 const importError = ref("");
 const error = ref("");
@@ -121,6 +122,19 @@ async function retry() {
   try { await launch(await previewPipeline(props.match.id, requestedStages, previousMode)); }
   catch (cause) { error.value = cause instanceof Error ? cause.message : "無法重新開始分析"; }
   finally { busy.value = false; }
+}
+
+async function cancel() {
+  if (!task.value || cancelling.value || !window.confirm(CANCEL_CONFIRM)) return;
+  error.value = ""; cancelling.value = true;
+  try {
+    task.value = await cancelPipelineTask(task.value.id);
+    if (showLogs.value) await fetchLogs();
+    void refreshTasks();
+    emit("updated");
+  }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : "無法取消分析"; }
+  finally { cancelling.value = false; }
 }
 
 /** Imports results that exist without a task from this session, e.g. analysed before the UI existed. */
@@ -235,7 +249,8 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
       <p v-if="task.error" class="error" role="alert">{{ task.error }}</p>
       <p v-if="task.status === 'succeeded' && review && review.state !== 'failed'" class="secondary">{{ review.state === "publishing" ? "正在更新回看…" : "回看已更新。" }}</p>
       <div class="pipeline-task-actions">
-        <button v-if="task.status === 'failed' || task.status === 'interrupted'" type="button" class="button-primary" :disabled="busy" @click="retry">重試</button>
+        <button v-if="running" type="button" class="button-secondary" :disabled="cancelling" @click="cancel">{{ cancelling ? "取消中…" : "取消分析" }}</button>
+        <button v-if="task.status === 'failed' || task.status === 'interrupted' || task.status === 'cancelled'" type="button" class="button-primary" :disabled="busy" @click="retry">重試</button>
         <button type="button" class="button-secondary" :aria-expanded="showLogs" @click="toggleLogs">{{ showLogs ? "收合詳細記錄" : "查看詳細記錄" }}</button>
       </div>
       <div v-if="showLogs" class="pipeline-logs"><pre>{{ lines.join('\n') }}</pre></div>

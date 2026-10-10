@@ -255,6 +255,74 @@ def test_worker_exit_is_recorded_and_retry_has_new_id(tmp_path):
     processes[1].done.set()
 
 
+def test_cancel_kills_worker_and_records_cancelled_stage(tmp_path):
+    match = match_fixture(tmp_path)
+    process = DeferredProcess()
+    killed = []
+    def kill(target):
+        killed.append(target)
+        target.done.set()
+    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: process, kill=kill)
+    request = {"matchId": "Sample", "stages": ["match_segmentation"], "mode": "continue"}
+    task = manager.start({**request, "planId": manager.plan(request)["planId"]})
+    # As the worker would leave it mid-stage: the task and the stage's own status both say running.
+    record = manager.store.read(task["id"])
+    record.update(status="running", currentStage="match_segmentation")
+    record["stageStates"]["match_segmentation"]["status"] = "running"
+    manager.store.save(record)
+    write_status(stage_path(match, "match_segmentation"),
+                 StageState(name="match_segmentation", status=StageStatus.RUNNING))
+
+    cancelled = manager.cancel(task["id"])
+    assert killed == [process]
+    assert cancelled["status"] == "cancelled"
+    assert cancelled["error"] is None
+    assert cancelled["stageStates"]["match_segmentation"]["status"] == "cancelled"
+    assert manager.active_id is None
+    status = json.loads((stage_path(match, "match_segmentation") / "status.json").read_text())
+    assert status["status"] == "failed"
+    assert "Analysis cancelled" in manager.store.logs(task["id"])["lines"][-1]
+    with pytest.raises(ValueError):
+        manager.cancel(task["id"])
+    # The cancelled stage is planned again, and a new task can start straight away.
+    assert actions(manager.plan(request))["match_segmentation"] == "run"
+    second = manager.start({**request, "planId": manager.plan(request)["planId"]})
+    process.done.set()
+    assert second["id"] != task["id"]
+
+
+def test_cancel_after_worker_finished_keeps_its_result(tmp_path):
+    match = match_fixture(tmp_path)
+    process = DeferredProcess()
+    process.code = 0
+    def kill(target):
+        record = manager.store.read(task["id"])
+        record.update(status="succeeded", exitCode=0)
+        manager.store.save(record)
+        target.done.set()
+    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: process, kill=kill)
+    request = {"matchId": "Sample", "stages": ["match_segmentation"], "mode": "continue"}
+    task = manager.start({**request, "planId": manager.plan(request)["planId"]})
+    assert manager.cancel(task["id"])["status"] == "succeeded"
+
+
+def test_cancel_refuses_task_of_another_service(tmp_path):
+    match = match_fixture(tmp_path)
+    process = DeferredProcess()
+    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: process)
+    request = {"matchId": "Sample", "stages": ["match_segmentation"], "mode": "continue"}
+    task = manager.start({**request, "planId": manager.plan(request)["planId"]})
+    lock = WorkerLock(manager.store.root / "worker.lock")
+    assert lock.acquire()
+    try:
+        other = TaskManager(match.parent, tmp_path / "tasks", kill=lambda p: pytest.fail("must not kill"))
+        with pytest.raises(WorkerBusy):
+            other.cancel(task["id"])
+    finally:
+        lock.release()
+        process.done.set()
+
+
 def queued_task(store: TaskStore, match: Path, stages: list[str], registry):
     plan = build_plan(match, stages, "continue", registry)
     task_id = uuid.uuid4().hex
@@ -319,7 +387,8 @@ def test_worker_error_redacts_environment_secret(monkeypatch):
 def test_http_origin_policy_and_reconnect(tmp_path):
     match = match_fixture(tmp_path)
     process = DeferredProcess()
-    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: process)
+    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=lambda *a, **kw: process,
+                          kill=lambda target: target.done.set())
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler_for(manager,
         "http://127.0.0.1:5173", "127.0.0.1", 0))
     # Bind port is set after ephemeral allocation for the Host check.
@@ -333,7 +402,7 @@ def test_http_origin_policy_and_reconnect(tmp_path):
             headers = {"Content-Type": "application/json"}
             if origin:
                 headers["Origin"] = origin
-            conn.request(method, path, json.dumps(body) if body else None, headers)
+            conn.request(method, path, json.dumps(body) if body is not None else None, headers)
             response = conn.getresponse()
             result = response.status, json.loads(response.read())
             conn.close()
@@ -359,6 +428,10 @@ def test_http_origin_policy_and_reconnect(tmp_path):
         assert status == 201
         assert call("GET", f"/api/pipeline/tasks/{task['id']}")[1]["id"] == task["id"]
         assert call("GET", f"/api/pipeline/tasks/{task['id']}/logs?offset=0&limit=10")[0] == 200
+        assert call("POST", f"/api/pipeline/tasks/{task['id']}/cancel", {}, "http://evil.example")[0] == 403
+        status, cancelled = call("POST", f"/api/pipeline/tasks/{task['id']}/cancel", {}, "http://127.0.0.1:5173")
+        assert (status, cancelled["status"]) == (200, "cancelled")
+        assert call("POST", f"/api/pipeline/tasks/{task['id']}/cancel", {}, "http://127.0.0.1:5173")[0] == 400
     finally:
         process.done.set()
         server.shutdown()

@@ -16,7 +16,7 @@ export type TaskStage = {
   startedAt?: string; finishedAt?: string;
 };
 export type PipelineTask = {
-  id: string; matchId: string; status: "queued" | "running" | "succeeded" | "failed" | "interrupted";
+  id: string; matchId: string; status: "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
   plan: PipelinePlan; stageStates: Record<string, TaskStage>; currentStage: string | null;
   createdAt: string; startedAt: string | null; finishedAt: string | null;
   error: string | null; exitCode: number | null;
@@ -37,7 +37,7 @@ export type LocalAnalysisMatch = {
 
 export function taskStatusLabel(status: string): string {
   return ({ queued: "排隊中", running: "分析中", succeeded: "分析完成",
-    failed: "分析失敗", interrupted: "執行中斷", skipped: "沿用既有結果" } as Record<string, string>)[status] ?? status;
+    failed: "分析失敗", interrupted: "執行中斷", cancelled: "已取消", skipped: "沿用既有結果" } as Record<string, string>)[status] ?? status;
 }
 
 export function isActiveTask(task: PipelineTask): boolean {
@@ -158,6 +158,9 @@ export function startPipeline(plan: PipelinePlan) {
   });
 }
 export function getPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}`); }
+/** Stops a running task; stages it already finished keep their results, the one it was on starts over next time. */
+export function cancelPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}/cancel`, {}); }
+export const CANCEL_CONFIRM = "確定取消分析？已完成的階段會保留，進行中的階段下次需要重新執行。";
 /** Generates commentary for one segment only; the whole-match commentary stage is left alone. */
 export function startSegmentCommentary(matchId: string, segmentIndex: number) {
   return request<PipelineTask>("commentary", { matchId, segmentIndex });

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  formatDuration, formatLogLine, formatTaskTime, ranStages, ranStagesSummary, retryTask, stageElapsed, taskProgress, type PipelineTask,
+  cancelPipelineTask, formatDuration, formatLogLine, formatTaskTime, ranStages, ranStagesSummary, retryTask, stageElapsed, taskProgress, taskStatusLabel, type PipelineTask,
 } from "../src/data/pipelineTasks";
 import { sameReview, type MatchModel, type RallyModel } from "../src/domain/models";
 
@@ -68,6 +68,21 @@ test("a one-segment commentary task names its segment and retries only that segm
   finally { globalThis.fetch = original; }
   // Replanning the commentary stage would generate every Rally of the match.
   assert.deepEqual(calls, [{ url: "/api/pipeline/commentary", body: { matchId: "m", segmentIndex: 4 } }]);
+});
+
+test("cancelling posts to the task's own cancel route and reads back as cancelled", async () => {
+  const value = { ...task({ commentary: stage("cancelled") }), status: "cancelled" as const };
+  const calls: { url: string; method?: string; body: string }[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method, body: String(init?.body) });
+    return new Response(JSON.stringify(value), { status: 200 });
+  }) as typeof fetch;
+  try { assert.equal((await cancelPipelineTask(value.id)).status, "cancelled"); }
+  finally { globalThis.fetch = original; }
+  // The service rejects an empty POST body, so the request carries an empty JSON object.
+  assert.deepEqual(calls, [{ url: `/api/pipeline/tasks/${value.id}/cancel`, method: "POST", body: "{}" }]);
+  assert.equal(taskStatusLabel("cancelled"), "已取消");
 });
 
 test("a refreshed export of the same Review keeps playback; a different one does not", () => {

@@ -80,7 +80,7 @@ $env:BADMINTON_MATCHES_DIR='C:\path\to\matches'
 npm.cmd run dev -- --port 5173 --strictPort
 ```
 
-Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時若 worker lock 仍被持有，任務會顯示恢復中並阻擋新任務；lock 釋放後若無法確認結果，才標為 interrupted，不自動重跑。
+Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時若 worker lock 仍被持有，任務會顯示恢復中並阻擋新任務；lock 釋放後若無法確認結果，才標為 interrupted，不自動重跑。執行中的任務可在分析面板或任務頁按「取消分析」：服務會終止 worker 及其子程序（含 ffmpeg），任務標為 cancelled；已完成的階段保留，被中止的階段標為 failed，下次會重新執行。
 
 私有任務資料預設在 `<repository>/.local/pipeline-tasks/`，可用 `BADMINTON_TASKS_DIR` 覆寫。`--ui-origin` 預設為 `http://127.0.0.1:5173`；改用其他 Vue 連接埠時需在啟動 Python 服務時設定。Vite 將同源 `/api/pipeline/*` 代理至 loopback 服務。未啟動服務時，已匯入 Review 仍可讀取。
 
@@ -94,7 +94,7 @@ POST /api/pipeline/tasks
 {"matchId":"Kunlavut","stages":["audio_highlight"],"mode":"continue","planId":"<planId>"}
 ```
 
-plan 回應包含 `planId`、`stages`（run／skip 與原因）、`affectedOutsideScope`、`includesGemini`。來源變動時 start 回傳 409，需重新預覽。`GET /api/pipeline/tasks/<id>` 取得狀態，`GET /api/pipeline/tasks/<id>/logs?offset=0&limit=100` 分頁讀 log。
+plan 回應包含 `planId`、`stages`（run／skip 與原因）、`affectedOutsideScope`、`includesGemini`。來源變動時 start 回傳 409，需重新預覽。`GET /api/pipeline/tasks/<id>` 取得狀態，`GET /api/pipeline/tasks/<id>/logs?offset=0&limit=100` 分頁讀 log。`POST /api/pipeline/tasks/<id>/cancel`（body 為 `{}`）取消本服務啟動的執行中任務；任務已結束回傳 400，屬於其他服務程序的 worker 回傳 409。
 
 啟動後在 Matches 頁按「匯入比賽」，從 `<repository>/matches/` 選擇已完成分析的資料夾。這會沿用命令列匯入器，驗證 stage 指紋與影片，產生前端快取；不重新執行分析。缺少影片、分段結果或完成狀態的資料夾會列出原因，無法點選。
 

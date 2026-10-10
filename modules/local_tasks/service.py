@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -14,7 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from modules.artifacts import read_artifact
-from modules.base import StageStatus, artifact_fingerprint, read_status
+from modules.base import StageStatus, artifact_fingerprint, read_status, write_status
 from modules.contracts import PIPELINE, artifact_path, resolve_input_video, stage_path
 from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
 from modules.local_tasks.locking import WorkerLock
@@ -31,14 +32,37 @@ class WorkerBusy(ValueError):
     pass
 
 
+def kill_tree(process) -> None:
+    """Stops the worker and whatever it started (ffmpeg, loader processes), not just the worker itself."""
+    if os.name == "nt":
+        result = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, check=False)
+        if result.returncode == 0:
+            return
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+            return
+        except OSError:
+            pass
+    process.kill()
+
+
 class TaskManager:
     def __init__(self, matches_root: Path, tasks_root: Path,
-                 spawn=None):
+                 spawn=None, kill=None):
         self.matches_root = matches_root.resolve()
         self.store = TaskStore(tasks_root)
         self.spawn = spawn or subprocess.Popen
+        self.kill = kill or kill_tree
         self.guard = threading.Lock()
         self.active_id: str | None = None
+        self.active_process = None
+        # Set by ``cancel``; the monitor records the cancellation once the worker is gone,
+        # so the dead worker can never overwrite it with a late save of its own.
+        self.cancel_requested: str | None = None
+        self.monitor_done = threading.Event()
         self.instance_id = uuid.uuid4().hex
         # path -> (mtime_ns, size, fingerprint): the library polls freshness, and re-hashing
         # every artifact (pose alone is ~150 MB a match) on each poll would cost seconds.
@@ -254,22 +278,66 @@ class TaskManager:
                 "--tasks-dir", str(self.store.root), "--matches-dir", str(self.matches_root),
                 "--task-id", task_id]
         try:
+            # Its own process group on POSIX, so a cancel can stop the whole tree at once.
             process = self.spawn(argv, cwd=Path(__file__).resolve().parents[2],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, close_fds=True)
+                                 stderr=subprocess.DEVNULL, close_fds=True,
+                                 **({} if os.name == "nt" else {"start_new_session": True}))
         except OSError as error:
             record.update(status="failed", error=str(error), finishedAt=now(), exitCode=-1)
             self.store.save(record)
             raise
         self.active_id = task_id
-        threading.Thread(target=self._monitor, args=(task_id, process), daemon=True).start()
+        self.active_process = process
+        self.cancel_requested = None
+        self.monitor_done = threading.Event()
+        threading.Thread(target=self._monitor, args=(task_id, process, self.monitor_done),
+                         daemon=True).start()
         return record
 
-    def _monitor(self, task_id, process) -> None:
+    def cancel(self, task_id: str) -> dict:
+        """Stops this service's running task; its finished stages keep their results."""
+        with self.guard:
+            record = self.store.read(task_id)
+            if record["status"] not in ("queued", "running"):
+                raise ValueError("task is not active")
+            if task_id != self.active_id:
+                raise WorkerBusy("task belongs to a worker this service cannot stop")
+            self.cancel_requested = task_id
+            process, done = self.active_process, self.monitor_done
+        self.store.append_log(task_id, "Cancel requested")
+        self.kill(process)
+        done.wait(10)
+        return self.store.read(task_id)
+
+    def _record_cancel(self, record: dict, code) -> None:
+        """Marks a killed task cancelled; the caller holds ``guard`` and the worker has exited."""
+        current = record.get("currentStage")
+        record.update(status="cancelled", finishedAt=now(), exitCode=code, error=None)
+        if current:
+            record["stageStates"][current].update(status="cancelled", finishedAt=now())
+            # A killed stage never wrote its verdict; left RUNNING it would look like it is still going.
+            if record.get("segmentIndex") is None:
+                try:
+                    out_dir = stage_path(resolve_match(self.matches_root, record["matchId"]), current)
+                    state = read_status(out_dir)
+                    if state is not None and state.status == StageStatus.RUNNING:
+                        state.status = StageStatus.FAILED
+                        state.finished_at = now()
+                        state.error = "cancelled"
+                        write_status(out_dir, state)
+                except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                    pass
+        self.store.save(record)
+        self.store.append_log(record["id"], "Analysis cancelled")
+
+    def _monitor(self, task_id, process, done: threading.Event) -> None:
         code = process.wait()
         with self.guard:
             record = self.store.read(task_id)
-            if record["status"] in ("queued", "running"):
+            if self.cancel_requested == task_id and record["status"] in ("queued", "running"):
+                self._record_cancel(record, code)
+            elif record["status"] in ("queued", "running"):
                 record.update(status="failed" if code else "interrupted", exitCode=code,
                               finishedAt=now(), error=f"worker exited with code {code} without final state")
                 self.store.save(record)
@@ -279,6 +347,9 @@ class TaskManager:
                 self.store.save(record)
             if self.active_id == task_id:
                 self.active_id = None
+                self.active_process = None
+                self.cancel_requested = None
+        done.set()
 
 
 def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port: int):
@@ -353,6 +424,9 @@ def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port:
                     return self.respond(201, manager.start(request))
                 if self.path == "/api/pipeline/commentary":
                     return self.respond(201, manager.start_segment_commentary(request))
+                parts = self.path.strip("/").split("/")
+                if len(parts) == 5 and parts[:3] == ["api", "pipeline", "tasks"] and parts[4] == "cancel":
+                    return self.respond(200, manager.cancel(parts[3]))
                 if self.path == "/api/pipeline/court/preview":
                     return self.respond(200, manager.court_preview(request))
                 if self.path == "/api/pipeline/court/save":

@@ -5,7 +5,7 @@ import StageProgress from "../components/ui/StageProgress.vue";
 import { useTaskFeed } from "../composables/useTaskFeed";
 import { loadCatalog } from "../data/matchRepository";
 import {
-  LOG_PAGE_SIZE, formatDuration, formatLogLine, formatTaskTime, getPipelineLogs, ranStages, ranStagesSummary, retryTask, stageElapsed,
+  CANCEL_CONFIRM, LOG_PAGE_SIZE, cancelPipelineTask, formatDuration, formatLogLine, formatTaskTime, getPipelineLogs, ranStages, ranStagesSummary, retryTask, stageElapsed,
   stageSeconds, taskElapsed, taskProgress, taskStatusLabel, type PipelineTask, type TaskStage,
 } from "../data/pipelineTasks";
 import { stageLabel } from "../data/stageLabels";
@@ -17,6 +17,7 @@ const logsOpen = ref<string | null>(null);
 const logs = ref<Record<string, string[]>>({});
 const offsets: Record<string, number> = {};
 const retrying = ref<string | null>(null);
+const cancelling = ref<string | null>(null);
 const actionError = ref("");
 
 /** The running task, or the newest one when it failed: both need the user's attention more than history does. */
@@ -36,6 +37,8 @@ async function loadReviews() {
 }
 const hasReview = (task: PipelineTask) => reviewIds.value.has(`match:${task.matchId}`);
 const failed = (task: PipelineTask) => task.status === "failed" || task.status === "interrupted";
+/** A stopped task can be started again just like a failed one, without counting as a failure. */
+const retryable = (task: PipelineTask) => failed(task) || task.status === "cancelled";
 
 function stageMeta(stage: TaskStage) {
   if (stage.status === "running") return stage.progress === null ? "執行中" : `${Math.round(stage.progress * 100)}%`;
@@ -86,6 +89,18 @@ async function retry(task: PipelineTask) {
   finally { retrying.value = null; }
 }
 
+async function cancel(task: PipelineTask) {
+  if (cancelling.value || !window.confirm(CANCEL_CONFIRM)) return;
+  cancelling.value = task.id; actionError.value = "";
+  try {
+    await cancelPipelineTask(task.id);
+    await refresh();
+    if (logsOpen.value === task.id) await fetchLogs(task.id);
+  }
+  catch (cause) { actionError.value = cause instanceof Error ? cause.message : "無法取消分析"; }
+  finally { cancelling.value = null; }
+}
+
 watch(now, () => {
   const id = logsOpen.value;
   if (id && active.value?.id === id) void fetchLogs(id);
@@ -127,6 +142,7 @@ onMounted(() => { void loadReviews(); });
         <p v-if="skippedCount" class="secondary task-now-skipped">另 {{ skippedCount }} 項沿用既有結果</p>
         <p v-if="featured.error" class="error" role="alert">{{ featured.error }}</p>
         <footer class="task-actions">
+          <button v-if="featured.id === active?.id" type="button" class="button-secondary" :disabled="cancelling !== null" @click="cancel(featured)">{{ cancelling === featured.id ? "取消中…" : "取消分析" }}</button>
           <button v-if="failed(featured)" type="button" class="button-primary" :disabled="retrying !== null" @click="retry(featured)">{{ retrying === featured.id ? "重新開始中…" : "重試" }}</button>
           <RouterLink class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: featured.matchId } }">分析設定</RouterLink>
           <button type="button" class="button-secondary" :aria-expanded="logsOpen === featured.id" @click="toggleLogs(featured.id)">{{ logsOpen === featured.id ? "收合記錄" : "記錄" }}</button>
@@ -148,7 +164,7 @@ onMounted(() => { void loadReviews(); });
               <span class="task-row-duration">{{ taskElapsed(task, now) ?? "—" }}</span>
             </button>
             <span class="task-row-action">
-              <button v-if="failed(task)" type="button" class="button-secondary" :disabled="retrying !== null || active !== null" @click="retry(task)">{{ retrying === task.id ? "重新開始中…" : "重試" }}</button>
+              <button v-if="retryable(task)" type="button" class="button-secondary" :disabled="retrying !== null || active !== null" @click="retry(task)">{{ retrying === task.id ? "重新開始中…" : "重試" }}</button>
               <RouterLink v-else-if="task.status === 'succeeded' && hasReview(task)" class="button-secondary" :to="{ name: 'match-review', params: { matchId: `match:${task.matchId}` } }">回看</RouterLink>
               <RouterLink v-else class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: task.matchId } }">分析設定</RouterLink>
             </span>

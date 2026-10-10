@@ -74,6 +74,7 @@ img.library-thumbnail { object-fit: cover; }
 .status-chip[data-status="running"], .status-chip[data-status="queued"] { color: var(--color-link); }
 .status-chip[data-status="succeeded"], .status-chip[data-status="completed"] { color: var(--color-success); }
 .status-chip[data-status="failed"], .status-chip[data-status="interrupted"] { color: var(--color-error); }
+.status-chip[data-status="cancelled"] { color: var(--color-text-secondary); }
 .status-chip[data-status="partial"], .status-chip[data-status="stale"] { color: var(--color-warning); }
 .library-stage { margin-top: 6px; color: var(--color-text-secondary); font-size: 12px; }
 .library-card .stage-progress { max-width: 320px; margin-top: 4px; }
@@ -82,6 +83,7 @@ img.library-thumbnail { object-fit: cover; }
 .stage-progress[data-status="running"] .stage-progress-fill { background: var(--color-accent); }
 .stage-progress[data-status="succeeded"] .stage-progress-fill { background: var(--color-success); }
 .stage-progress[data-status="skipped"] .stage-progress-fill { background: var(--color-rally-hover); }
+.stage-progress[data-status="cancelled"] .stage-progress-fill { background: var(--color-text-muted); }
 .stage-progress[data-status="failed"] .stage-progress-fill, .stage-progress[data-status="interrupted"] .stage-progress-fill { background: var(--color-error); }
 .stage-progress[data-indeterminate] .stage-progress-fill { width: 30%; animation: stage-progress-sweep 1.4s var(--motion-ease) infinite; }
 @keyframes stage-progress-sweep { from { left: -30%; } to { left: 100%; } }
@@ -115,6 +117,7 @@ img.library-thumbnail { object-fit: cover; }
 .task-steps li[data-status="running"] .task-step-mark { border-color: var(--color-accent); box-shadow: 0 0 0 3px rgb(0 120 212 / 25%); }
 .task-steps li[data-status="failed"] .task-step-mark, .task-steps li[data-status="interrupted"] .task-step-mark { background: var(--color-error); border-color: var(--color-error); }
 .task-step-name { overflow-wrap: anywhere; font-size: var(--type-ui); }
+.task-steps li[data-status="cancelled"] .task-step-mark { background: var(--color-text-muted); border-color: var(--color-text-muted); }
 .task-steps li[data-status="queued"] .task-step-name { color: var(--color-text-secondary); }
 .task-step-meta { color: var(--color-text-muted); font: 12px var(--font-measurement); font-variant-numeric: tabular-nums; }
 .task-steps li[data-status="running"] .task-step-meta { color: var(--color-link); }
@@ -132,6 +135,7 @@ img.library-thumbnail { object-fit: cover; }
 .task-row-summary:focus-visible { outline: 1px solid var(--color-focus); outline-offset: -1px; }
 .task-row-dot { width: 8px; height: 8px; background: var(--color-text-muted); border-radius: 50%; }
 .task-row[data-status="succeeded"] .task-row-dot { background: var(--color-success); }
+.task-row[data-status="cancelled"] .task-row-dot { background: var(--color-text-muted); }
 .task-row[data-status="failed"] .task-row-dot, .task-row[data-status="interrupted"] .task-row-dot { background: var(--color-error); }
 .task-row-name { overflow: hidden; font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
 .task-row-stages { overflow: hidden; color: var(--color-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
