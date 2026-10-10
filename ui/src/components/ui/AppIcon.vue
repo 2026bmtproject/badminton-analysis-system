@@ -21,7 +21,8 @@ defineProps<{
     | "more"
     | "refresh"
     | "court"
-    | "segments";
+    | "segments"
+    | "alert";
   size?: number;
 }>();
 </script>
@@ -76,6 +77,7 @@ defineProps<{
     <template v-else-if="name === 'search'"><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></template>
     <template v-else-if="name === 'video'"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m10 9 5 3-5 3z" /></template>
     <template v-else-if="name === 'more'"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></template>
+    <template v-else-if="name === 'alert'"><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5h.01" /></template>
     <template v-else-if="name === 'refresh'"><path d="M20 7v5h-5M4 17v-5h5M5 9a8 8 0 0 1 14-2l1 5M4 12l1 5a8 8 0 0 0 14-2"/></template>
     <template v-else-if="name === 'segments'"><path d="M2 8h5v8H2zM17 8h5v8h-5z"/><path d="M9.5 12h5m-2-2.5 2.5 2.5-2.5 2.5"/></template>
     <template v-else-if="name === 'court'"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18M7 8h10M7 16h10"/></template>

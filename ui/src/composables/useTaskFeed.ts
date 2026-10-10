@@ -3,13 +3,15 @@ import { isActiveTask, listPipelineTasks, type PipelineTask } from "../data/pipe
 
 /*
  * One poller for every view that watches tasks (the nav badge, the tasks page, the analysis panel), so they never
- * disagree and never double the request rate. It polls fast only while a task runs. It also owns refreshing a
+ * disagree and never double the request rate. Its failures double as the service's connection state. It polls fast only while a task runs. It also owns refreshing a
  * match's Review once its task succeeds, wherever the user happens to be at that moment.
  */
 const tasks = ref<PipelineTask[]>([]);
 const error = ref("");
 const loaded = ref(false);
 const now = ref(Date.now());
+/** Polls failed in a row; one miss (a service still starting, a slow restart) is not yet "offline". */
+const failures = ref(0);
 const SEEN_KEY = "tasks.seenFailure";
 const seenFailure = ref(readSeen());
 export type ReviewSync = { state: "publishing" | "done" | "failed"; error?: string };
@@ -28,6 +30,7 @@ function readSeen(): string | null {
 }
 
 const active = computed(() => tasks.value.find(isActiveTask) ?? null);
+const offline = computed(() => failures.value >= 2);
 const newest = computed(() => tasks.value[0] ?? null);
 /** The newest task failed and nobody has opened the tasks page since. */
 const unseenFailure = computed(() => {
@@ -77,8 +80,12 @@ async function refresh() {
       lastStatus.set(task.id, task.status);
     }
     primed = true;
+    failures.value = 0;
   }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : "無法讀取任務"; }
+  catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "無法讀取任務";
+    failures.value++;
+  }
   finally { loaded.value = true; now.value = Date.now(); }
 }
 
@@ -107,5 +114,5 @@ export function useTaskFeed() {
     generation++;
     clearTimeout(timer);
   });
-  return { tasks, error, loaded, now, active, unseenFailure, refresh, acknowledgeFailure, reviewSync, reviewVersion, syncReview };
+  return { tasks, error, loaded, now, active, offline, unseenFailure, refresh, acknowledgeFailure, reviewSync, reviewVersion, syncReview };
 }
