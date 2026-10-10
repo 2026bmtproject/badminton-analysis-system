@@ -63,7 +63,7 @@
 .workspace-window__player-controls .play-button { margin-right: var(--space-1); background: var(--color-surface-soft); border: 0; }
 .workspace-window__player-controls .time-readout { font-size: var(--type-meta); }
 .workspace-window__player-controls .control-label { display: none; }
-.workspace-window__player-controls .player-icon-button--fullscreen { order: 1; }
+.workspace-window__player-controls :is(.player-icon-button--dock, .player-icon-button--fullscreen) { order: 1; }
 .workspace-window {
   --workspace-panel-alpha: 0.94;
   position: absolute;

@@ -24,8 +24,8 @@ const props = withDefaults(defineProps<{
   panelId: WorkspacePanelId;
   active: boolean;
   passive?: boolean;
-  /** Fullscreen floats the window over the video; otherwise it is docked in the workspace grid. */
-  fullscreen?: boolean;
+  /** Floats the window over the video, as fullscreen does unless docked; otherwise it is docked in the workspace grid. */
+  floating?: boolean;
   /** Slims the header into a single toolbar of uniform controls, e.g. the timeline that also hosts the player controls. */
   toolbar?: boolean;
   /** Moves the toolbar below the body, e.g. the fullscreen timeline floating along the screen edge. */
@@ -35,7 +35,7 @@ const props = withDefaults(defineProps<{
   fitContent?: boolean;
   /** Fullscreen idle delay before the windows hide, or null to keep them shown; shared by every window, so the page owns it. */
   idleSeconds?: number | null;
-}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSize: 0, fitContent: false, idleSeconds: 3 });
+}>(), { passive: false, floating: false, toolbar: false, toolbarBottom: false, dockSize: 0, fitContent: false, idleSeconds: 3 });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
@@ -68,9 +68,9 @@ let gesture: {
 let suppressHeaderClick = false;
 
 const visiblePanel = computed(() => draft.value ?? props.panel);
-const presentation = computed(() => props.fullscreen ? "detached" : "docked");
+const presentation = computed(() => props.floating ? "detached" : "docked");
 /** A collapsed floating window shrinks to a movable capsule instead of a full-width strip. */
-const capsule = computed(() => props.fullscreen && props.panel.collapsed);
+const capsule = computed(() => props.floating && props.panel.collapsed);
 const collapseIcon = computed(() => props.panel.collapsed ? "chevron-up" : "chevron-down");
 const maxTransparency = Number((1 - MIN_PANEL_ALPHA).toFixed(2));
 /** The slider's last stop, past the longest delay: the windows never hide. */
@@ -79,7 +79,7 @@ function setIdleStop(stop: number) {
   emit("idleSeconds", stop >= IDLE_NEVER_STOP ? null : stop);
 }
 const transparency = computed(() => Number((1 - props.panel.alpha).toFixed(2)));
-const style = computed(() => props.fullscreen ? ({
+const style = computed(() => props.floating ? ({
   left: `${visiblePanel.value.x * 100}%`,
   top: `${visiblePanel.value.y * 100}%`,
   width: capsule.value ? "auto" : `${visiblePanel.value.width * 100}%`,
@@ -102,7 +102,7 @@ function update(change: Partial<PanelLayout>) {
   emit("change", { ...props.panel, ...change });
 }
 function floatingEnabled() {
-  return props.fullscreen && !window.matchMedia("(max-width: 1100px)").matches;
+  return props.floating && !window.matchMedia("(max-width: 1100px)").matches;
 }
 function setTransparency(value: number) {
   update({ alpha: Math.min(MAX_PANEL_ALPHA, Math.max(MIN_PANEL_ALPHA, 1 - value)) });
@@ -152,7 +152,7 @@ function closeMenu() {
   menuOpen.value = false;
 }
 function startDockResize(event: PointerEvent) {
-  if (event.button !== 0 || props.panel.collapsed || props.fullscreen) return;
+  if (event.button !== 0 || props.panel.collapsed || props.floating) return;
   emit("activate");
   revealChrome();
   dockGesture = {
@@ -251,7 +251,7 @@ async function toggleCollapsed() {
   const bounds = containerSize();
   const collapsing = !props.panel.collapsed;
   // A bottom toolbar stays where the user clicked it: collapse and expand keep the bottom edge in place.
-  const bottom = props.toolbarBottom && props.fullscreen && root.value
+  const bottom = props.toolbarBottom && props.floating && root.value
     ? (root.value.offsetTop + root.value.offsetHeight) / bounds.height
     : null;
   const next = { ...props.panel, collapsed: collapsing };
@@ -288,13 +288,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle, 'workspace-window--fit': fullscreen && fitContent } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
-    <div v-if="!fullscreen && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
+  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle, 'workspace-window--fit': floating && fitContent } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
+    <div v-if="!floating && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
     <header class="workspace-window__header" @click="handleHeaderClick" @pointerdown="startDrag" @pointermove="drag" @pointerup="endGesture" @pointercancel="endGesture">
       <strong>{{ title }}</strong>
       <div class="workspace-window__header-slot"><slot name="header" /></div>
       <!-- Window settings and folding exist only while floating; docked, the actions (and their divider) go. -->
-      <div v-if="fullscreen" class="workspace-window__actions">
+      <div v-if="floating" class="workspace-window__actions">
         <WorkspacePopover v-if="!capsule" ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
           <template #trigger><AppIcon name="sliders" :size="17" /></template>
           <label><span>背景透明度 <output>{{ Math.round(transparency * 100) }}%</output></span><input aria-label="背景透明度" type="range" min="0" :max="maxTransparency" step="0.05" :value="transparency" @input="setTransparency(Number(($event.target as HTMLInputElement).value))" /></label>
@@ -305,6 +305,6 @@ onBeforeUnmount(() => {
       </div>
     </header>
     <div v-show="!panel.collapsed" class="workspace-window__body"><slot /></div>
-    <div v-if="!panel.collapsed && fullscreen" class="workspace-window__resize-grip" aria-hidden="true" @pointerdown.stop="startResize" @pointermove="resize" @pointerup="endGesture" @pointercancel="endGesture" />
+    <div v-if="!panel.collapsed && floating" class="workspace-window__resize-grip" aria-hidden="true" @pointerdown.stop="startResize" @pointermove="resize" @pointerup="endGesture" @pointercancel="endGesture" />
   </section>
 </template>

@@ -234,15 +234,24 @@ h1[tabindex="-1"]:focus { outline: none; }
 .review-video-heading .match-identity { grid-template-columns: minmax(0, 1fr) minmax(116px, auto) minmax(0, 1fr); gap: clamp(8px, 2vw, 28px); }
 .review-video-heading .player-name { max-width: none; }
 .review-matchbar .header-actions { grid-area: actions; justify-self: end; }
+/*
+ * Floating fullscreen lays the windows over a full-screen video. Docked fullscreen keeps the timeline's row of the
+ * workbench grid, so the video gives up that space instead of sitting under it; Analysis still floats over the video.
+ */
 .review-workspace-stage:fullscreen,
-.desktop-content .review-workspace-stage:fullscreen { display: block; width: 100vw; height: 100vh; max-height: none; margin: 0; padding: 0; overflow: hidden; background: var(--color-video); border: 0; border-radius: 0; }
-.review-workspace-stage:fullscreen > .player,
-.desktop-content .review-workspace-stage:fullscreen > .player { position: absolute; inset: 0; display: block; width: 100%; height: 100%; background: var(--color-video); border: 0; border-radius: 0; box-shadow: none; }
-.review-workspace-stage:fullscreen .video-wrap { position: absolute; inset: 0; width: 100%; height: 100%; }
+.desktop-content .review-workspace-stage:fullscreen { width: 100vw; height: 100vh; max-height: none; margin: 0; overflow: hidden; border: 0; border-radius: 0; }
+.review-workspace-stage--docked:fullscreen,
+.desktop-content .review-workspace-stage--docked:fullscreen { grid-template-columns: minmax(0, 1fr); grid-template-areas: "player" "timeline"; padding: var(--part-gap); background: var(--color-chrome); }
+.review-workspace-stage:fullscreen:not(.review-workspace-stage--docked),
+.desktop-content .review-workspace-stage:fullscreen:not(.review-workspace-stage--docked) { display: block; padding: 0; background: var(--color-video); }
+.review-workspace-stage:fullscreen:not(.review-workspace-stage--docked) > .player,
+.desktop-content .review-workspace-stage:fullscreen:not(.review-workspace-stage--docked) > .player { position: absolute; inset: 0; display: block; width: 100%; height: 100%; background: var(--color-video); border: 0; border-radius: 0; box-shadow: none; }
+.review-workspace-stage:fullscreen:not(.review-workspace-stage--docked) .video-wrap { position: absolute; inset: 0; width: 100%; height: 100%; }
 .review-workspace-stage:fullscreen .video-wrap video { width: 100%; height: 100%; object-fit: contain; }
 .review-workspace-stage:fullscreen .workspace-window--detached { z-index: 31; }
 .review-workspace-stage:fullscreen .workspace-window { transition: opacity 180ms ease, visibility 180ms ease; }
-.review-workspace-stage:fullscreen.review-workspace-stage--ui-hidden .workspace-window { visibility: hidden; opacity: 0; pointer-events: none; }
+/* Only floating windows idle away; a docked timeline holds its own row, which hiding would only leave empty. */
+.review-workspace-stage:fullscreen.review-workspace-stage--ui-hidden .workspace-window--detached { visibility: hidden; opacity: 0; pointer-events: none; }
 @media (max-width: 1100px) {
   .desktop-content .review-main--workspace { padding: 0; }
   .library-card-actions { grid-column: 2; justify-content: flex-start; }

@@ -7,6 +7,7 @@ import AnalysisWindow from "../components/workspace/AnalysisWindow.vue";
 import WorkspaceWindow from "../components/workspace/WorkspaceWindow.vue";
 import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
 import OverlayMenu from "../components/overlay/OverlayMenu.vue";
+import AppIcon from "../components/ui/AppIcon.vue";
 import VideoOverlay from "../components/overlay/VideoOverlay.vue";
 import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
 import { sameReview, type EvidenceModel } from "../domain/models";
@@ -48,6 +49,7 @@ const SHORTCUT_GROUPS: readonly { title: string; items: readonly { keys: readonl
     { keys: [["S"]], label: "只播片段" },
     { keys: [["M"]], label: "靜音" },
     { keys: [["F"]], label: "全螢幕" },
+    { keys: [["D"]], label: "全螢幕時間軸停靠／浮動" },
   ] },
   { title: "導覽", items: [
     { keys: [["["], ["]"]], label: "上一個／下一個片段" },
@@ -77,6 +79,9 @@ const stage = ref<HTMLElement | null>(null);
 /** The timeline's toolbar hosts the player controls, so the video and the timeline share one control bar. */
 const playerControlsHost = ref<HTMLElement | null>(null);
 const fullscreen = ref(false);
+/** Fullscreen floats the timeline over the video unless the user docks it underneath; Analysis floats in every fullscreen. */
+const timelineFloating = computed(() => fullscreen.value && !layout.fullscreenTimelineDocked);
+const floating = (id: WorkspacePanelId) => id === "timeline" ? timelineFloating.value : fullscreen.value;
 const fullscreenUiHidden = ref(false);
 const panelInteracting = ref<Record<WorkspacePanelId, boolean>>({ timeline: false, analysis: false });
 /** The overlay menu floats outside both windows, so an open menu holds the fullscreen UI by itself. */
@@ -121,9 +126,12 @@ const fullscreenPanels = computed(() => ({
   ...layout.fullscreenPanels,
   timeline: fittedFullscreenTimeline(layout.fullscreenPanels.timeline, viewportHeight.value),
 }));
-const panels = computed(() => fullscreen.value ? fullscreenPanels.value : layout.panels);
+const panels = computed(() => ({
+  timeline: floating("timeline") ? fullscreenPanels.value.timeline : layout.panels.timeline,
+  analysis: floating("analysis") ? fullscreenPanels.value.analysis : layout.panels.analysis,
+}));
 /** Writable panel layouts; `panels` may present a fitted copy. */
-const storedPanels = () => fullscreen.value ? layout.fullscreenPanels : layout.panels;
+const storedPanels = (id: WorkspacePanelId) => floating(id) ? layout.fullscreenPanels : layout.panels;
 const timelineClock = () => player.value?.currentTime() ?? workspace.currentTimeSec.value;
 
 watch(player, (value) => { context.player.value = value; }, { flush: "sync" });
@@ -174,6 +182,11 @@ function keyboard(event: KeyboardEvent) {
     if (!event.repeat) shortcutHelp.value?.toggle();
     return;
   }
+  if (event.code === "KeyD" && !event.shiftKey && fullscreen.value) {
+    consume(event);
+    if (!event.repeat) toggleTimelineDocked();
+    return;
+  }
   if (!event.repeat && workspace.handleKeyboard(event)) { event.stopPropagation(); return; }
   const overlayKey = match.value.layoutOnly ? null : overlayShortcut(event);
   if (overlayKey) {
@@ -209,9 +222,9 @@ function openEvidence(evidence: EvidenceModel) {
 }
 function updatePanel(id: WorkspacePanelId, panel: PanelLayout) {
   const shown = panels.value[id];
-  const stored = storedPanels()[id];
+  const stored = storedPanels(id)[id];
   // Moving, collapsing or fading a fitted panel must not freeze its fitted size into storage.
-  storedPanels()[id] = {
+  storedPanels(id)[id] = {
     ...panel,
     height: panel.height === shown.height ? stored.height : panel.height,
     y: panel.y === shown.y ? stored.y : panel.y,
@@ -274,6 +287,11 @@ async function toggleFullscreen() {
     if (document.fullscreenElement === stage.value) await document.exitFullscreen();
     else await stage.value.requestFullscreen();
   } catch { /* A user gesture is required by some browsers. */ }
+}
+function toggleTimelineDocked() {
+  layout.fullscreenTimelineDocked = !layout.fullscreenTimelineDocked;
+  fullscreenUiHidden.value = false;
+  scheduleIdle();
 }
 function cycleTimelineMode(direction: -1 | 1) {
   const index = timelineModes.value.findIndex((item) => item.id === layout.timelineMode);
@@ -360,18 +378,19 @@ onBeforeUnmount(() => {
       </div>
     </header>
     <main class="review-main review-main--workspace">
-      <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
+      <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden, 'review-workspace-stage--docked': fullscreen && !timelineFloating }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
         <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
           <template #overlay="{ video }">
             <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" />
           </template>
           <template #controls>
             <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" />
+            <button v-if="fullscreen" class="player-icon-button player-icon-button--dock" type="button" :aria-label="timelineFloating ? '停靠時間軸' : '浮動時間軸'" :title="timelineFloating ? '停靠時間軸：移到影片下方，不遮擋畫面（D）' : '浮動時間軸：疊在影片上（D）'" @click="toggleTimelineDocked"><AppIcon :name="timelineFloating ? 'dock' : 'float'" /></button>
           </template>
         </ReviewPlayer>
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
-        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('timeline')">
+        <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :floating="timelineFloating" toolbar :toolbar-bottom="timelineFloating" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
             <label class="timeline-mode-selector"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
             <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
@@ -380,7 +399,7 @@ onBeforeUnmount(() => {
           <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @seek="workspace.seek" />
         </WorkspaceWindow>
 
-        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :fit-content="layout.analysisView === 'analysis' && layout.strokeListCollapsed" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('analysis')">
+        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :fit-content="layout.analysisView === 'analysis' && layout.strokeListCollapsed" :active="activeWindow === 'analysis'" :passive="playing" :floating="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('analysis')">
           <AnalysisWindow :model="match" :active-id="activeId" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" :strokes-collapsed="layout.strokeListCollapsed" @view="layout.analysisView = $event" @strokes-collapsed="layout.strokeListCollapsed = $event" @stroke="workspace.selectStroke" @evidence="openEvidence" />
         </WorkspaceWindow>
       </section>

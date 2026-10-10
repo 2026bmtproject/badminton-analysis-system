@@ -13,12 +13,12 @@ const review = source("src/pages/ReviewPage.vue");
 const windowComponent = source("src/components/workspace/WorkspaceWindow.vue");
 const styles = source("src/styles/floating-workspace.css");
 
-test("1. normal mode always docks Analysis right and Timeline bottom; fullscreen always floats", () => {
+test("1. normal mode always docks Analysis right and Timeline bottom; fullscreen floats them, the timeline unless docked", () => {
   const layout = defaultWorkspaceLayout();
   assert.equal(layout.version, 3);
   assert.ok(!("analysisSide" in layout));
   assert.doesNotMatch(source("src/state/workspaceLayout.ts"), /presentation/);
-  assert.match(windowComponent, /const presentation = computed\(\(\) => props\.fullscreen \? "detached" : "docked"\)/);
+  assert.match(windowComponent, /const presentation = computed\(\(\) => props\.floating \? "detached" : "docked"\)/);
 });
 
 test("2. Analysis dock width is directly adjustable within useful limits", () => {
@@ -38,7 +38,7 @@ test("3. Timeline dock height changes independently of temporal viewport", () =>
 });
 
 test("4. docked windows cannot collapse; only fullscreen windows fold away", () => {
-  assert.match(windowComponent, /<div v-if="fullscreen" class="workspace-window__actions">[\s\S]*class="workspace-window__collapse"/);
+  assert.match(windowComponent, /<div v-if="floating" class="workspace-window__actions">[\s\S]*class="workspace-window__collapse"/);
   assert.doesNotMatch(windowComponent, /workspace-window__edge-tab|analysisEdgeCollapsed/);
   assert.doesNotMatch(styles, /review-workspace-stage--(analysis|timeline)-collapsed|workspace-window--docked[^{]*workspace-window--collapsed/);
   assert.doesNotMatch(review, /layout\.panels\.(analysis|timeline)\.collapsed|DockCollapsed/);
@@ -61,7 +61,7 @@ test("5. a collapsed fullscreen window keeps its header with a single expand con
 });
 
 test("5b. Timeline merges mode, player controls and window actions into one toolbar, at the bottom in fullscreen", () => {
-  assert.match(review, / toolbar :toolbar-bottom="fullscreen"/);
+  assert.match(review, / toolbar :toolbar-bottom="timelineFloating"/);
   assert.match(review, /<template #header>[\s\S]*<div v-if="controlsInTimeline" ref="playerControlsHost"[\s\S]*<\/template>/);
   assert.match(review, /:controls-target="controlsInTimeline \? playerControlsHost : null"/);
   assert.match(review, /const controlsInTimeline = computed\(\(\) => !match\.value\.layoutOnly && \(fullscreen\.value \|\| viewportWidth\.value > 1_100\)\)/, "the stacked layout puts Analysis between video and timeline, so the player keeps its bar");
@@ -78,9 +78,26 @@ test("5d. the docked Timeline toolbar keeps its dock resize strip clear of the c
 });
 
 test("5c. a collapsed floating window becomes a movable capsule", () => {
-  assert.match(windowComponent, /const capsule = computed\(\(\) => props\.fullscreen && props\.panel\.collapsed\)/);
+  assert.match(windowComponent, /const capsule = computed\(\(\) => props\.floating && props\.panel\.collapsed\)/);
   assert.match(windowComponent, /width: capsule\.value \? "auto"/);
   assert.match(styles, /\.workspace-window--capsule \{[^}]*border-radius: 999px/);
+});
+
+test("5e. fullscreen docks the timeline under the video or floats it over it; Analysis always floats", () => {
+  assert.equal(defaultWorkspaceLayout().fullscreenTimelineDocked, false, "fullscreen floats until asked to dock");
+  const docked = { ...defaultWorkspaceLayout(), fullscreenTimelineDocked: true };
+  assert.equal(parseWorkspaceLayout(JSON.stringify(docked)).fullscreenTimelineDocked, true);
+  assert.equal(parseWorkspaceLayout(JSON.stringify({ ...docked, fullscreenTimelineDocked: "yes" })).fullscreenTimelineDocked, false);
+  assert.match(review, /const timelineFloating = computed\(\(\) => fullscreen\.value && !layout\.fullscreenTimelineDocked\)/);
+  assert.match(review, /:floating="timelineFloating" toolbar :toolbar-bottom="timelineFloating"/);
+  assert.match(review, /panel-id="analysis"[^>]*:floating="fullscreen"/, "Analysis covers little of the picture, so it never docks in fullscreen");
+  assert.match(review, /timeline: floating\("timeline"\) \? fullscreenPanels\.value\.timeline : layout\.panels\.timeline/, "the docked timeline reuses the normal dock layout");
+  assert.match(review, /<button v-if="fullscreen" class="player-icon-button player-icon-button--dock"[^>]*@click="toggleTimelineDocked"/);
+  assert.match(review, /event\.code === "KeyD" && !event\.shiftKey && fullscreen\.value/);
+  const shell = source("src/styles/desktop-shell.css");
+  assert.match(shell, /\.desktop-content \.review-workspace-stage--docked:fullscreen \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: "player" "timeline";/, "the floating Analysis leaves no column behind");
+  assert.match(shell, /\.review-workspace-stage--ui-hidden \.workspace-window--detached \{ visibility: hidden;/, "idling hides only floating windows");
+  assert.match(shell, /\.review-workspace-stage:fullscreen:not\(\.review-workspace-stage--docked\) \.video-wrap \{ position: absolute;/, "only floating lays the video under the timeline");
 });
 
 test("6. windows cannot be detached, re-docked or snapped by hand", () => {
@@ -92,13 +109,13 @@ test("6. windows cannot be detached, re-docked or snapped by hand", () => {
 });
 
 test("7. docked windows ignore floating geometry and opacity", () => {
-  assert.match(windowComponent, /const style = computed\(\(\) => props\.fullscreen \? \(\{[\s\S]*\}\) : \{\}\);/);
+  assert.match(windowComponent, /const style = computed\(\(\) => props\.floating \? \(\{[\s\S]*\}\) : \{\}\);/);
   assert.match(styles, /\.workspace-window--docked[\s\S]*position: relative/);
 });
 
-test("8. window settings exist only in fullscreen and hold transparency, idle delay and restore", () => {
+test("8. window settings exist only while floating in fullscreen and hold transparency, idle delay and restore", () => {
   assert.equal((review.match(/<ReviewTimeline /g) ?? []).length, 1);
-  assert.match(windowComponent, /<div v-if="fullscreen" class="workspace-window__actions">\s*<WorkspacePopover v-if="!capsule"/);
+  assert.match(windowComponent, /<div v-if="floating" class="workspace-window__actions">\s*<WorkspacePopover v-if="!capsule"/);
   const menu = windowComponent.slice(windowComponent.indexOf("<WorkspacePopover"), windowComponent.indexOf("</WorkspacePopover>"));
   assert.equal((menu.match(/<button /g) ?? []).length, 1);
   assert.match(menu, />回復預設</);

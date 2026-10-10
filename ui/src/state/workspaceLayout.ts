@@ -24,6 +24,8 @@ export type WorkspaceLayout = {
   strokeListCollapsed: boolean;
   /** Seconds without input before fullscreen hides both floating windows, or null to keep them shown; one value for both. */
   fullscreenIdleSec: number | null;
+  /** Fullscreen docks the timeline under the video, as normal mode does, instead of floating it over the picture; Analysis always floats. */
+  fullscreenTimelineDocked: boolean;
   /** What is drawn over the video; off until asked for. */
   overlay: OverlaySettings;
   analysisDockWidth: number;
@@ -109,6 +111,7 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
     segmentsOnly: false,
     strokeListCollapsed: false,
     fullscreenIdleSec: DEFAULT_FULLSCREEN_IDLE_SEC,
+    fullscreenTimelineDocked: false,
     overlay: defaultOverlaySettings(),
     analysisDockWidth: DEFAULT_ANALYSIS_DOCK_WIDTH,
     timelineDockHeight: DEFAULT_TIMELINE_DOCK_HEIGHT,
@@ -143,6 +146,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       segmentsOnly: value.segmentsOnly === true,
       strokeListCollapsed: value.strokeListCollapsed === true,
       fullscreenIdleSec: constrainFullscreenIdleSec(value.fullscreenIdleSec),
+      fullscreenTimelineDocked: value.fullscreenTimelineDocked === true,
       overlay: sanitizeOverlaySettings(value.overlay),
       analysisDockWidth: constrainAnalysisDockWidth(finite(value.analysisDockWidth, DEFAULT_ANALYSIS_DOCK_WIDTH)),
       timelineDockHeight: constrainTimelineDockHeight(finite(value.timelineDockHeight, DEFAULT_TIMELINE_DOCK_HEIGHT)),

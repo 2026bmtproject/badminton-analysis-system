@@ -12,6 +12,8 @@ defineProps<{
     | "volume-muted"
     | "fullscreen"
     | "fullscreen-exit"
+    | "dock"
+    | "float"
     | "sliders"
     | "library"
     | "tasks"
@@ -73,6 +75,10 @@ defineProps<{
     <template v-else-if="name === 'fullscreen-exit'">
       <path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5" />
     </template>
+    <!-- The docked workbench: video, with the timeline below and the analysis beside it. -->
+    <template v-else-if="name === 'dock'"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 15h12M15 4v16" /></template>
+    <!-- A window floating over the video, clear of its edges. -->
+    <template v-else-if="name === 'float'"><rect x="3" y="4" width="18" height="16" rx="2" /><rect x="6" y="12" width="10" height="5" rx="1" /></template>
     <template v-else-if="name === 'library'"><path d="M4 5h16v14H4zM4 10h16M9 5v14" /></template>
     <template v-else-if="name === 'tasks'"><path d="M8 5h12M8 12h12M8 19h12M3 5h1M3 12h1M3 19h1" /></template>
     <template v-else-if="name === 'settings'"><circle cx="12" cy="12" r="3" /><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /></template>
