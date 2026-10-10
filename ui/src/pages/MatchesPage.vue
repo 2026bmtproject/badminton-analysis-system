@@ -25,6 +25,8 @@ const publishing = ref<string | null>(null);
 const query = ref("");
 const filter = ref("all");
 const scanning = ref(false);
+/** Raw match IDs whose thumbnail failed to load; they keep the placeholder icon. */
+const brokenThumbnails = ref(new Set<string>());
 let timer: ReturnType<typeof setInterval> | undefined;
 const rows = computed(() => mergeLibrary(catalog.value, local.value, candidates.value));
 const visible = computed(() => rows.value.filter(row => {
@@ -35,6 +37,10 @@ const visible = computed(() => rows.value.filter(row => {
   return true;
 }));
 function rawId(row: LibraryMatch) { return row.id.slice("match:".length); }
+// A completed segmentation is what the host needs to pick the frame.
+function thumbnailUrl(row: LibraryMatch) {
+  return row.candidate?.available && !brokenThumbnails.value.has(rawId(row)) ? `/local-thumbnail/${rawId(row)}` : null;
+}
 function needsUpdate(row: LibraryMatch) {
   return Boolean(row.local && Object.keys(row.local.staleStages).length);
 }
@@ -109,7 +115,8 @@ onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener(
     <p v-if="loading" role="status">正在讀取比賽…</p>
     <p v-else-if="!visible.length" class="console-panel empty-state">{{ rows.length ? '找不到符合條件的比賽。' : '尚無比賽。請在設定中選擇 matches 資料夾，或將現有影片資料放入該目錄後掃描。' }}</p>
     <div v-else class="library-list"><article v-for="row in visible" :key="row.id" class="console-panel library-card">
-      <div class="library-thumbnail" role="img" aria-label="沒有可用的比賽縮圖"><AppIcon name="video" :size="27" /></div>
+      <img v-if="thumbnailUrl(row)" class="library-thumbnail" :src="thumbnailUrl(row)!" :alt="`${row.name} 縮圖`" loading="lazy" @error="brokenThumbnails.add(rawId(row))" />
+      <div v-else class="library-thumbnail" role="img" aria-label="沒有可用的比賽縮圖"><AppIcon name="video" :size="27" /></div>
       <div class="library-card-content"><div class="library-card-title"><h2>{{ row.name }}</h2><span v-if="row.kind === 'fixture'" class="status-chip">示範</span></div><div class="library-card-meta"><span class="status-chip" :data-status="analysisStatus(row)">{{ analysisLabel(row) }}</span><span class="status-chip" :data-status="row.review ? 'succeeded' : 'missing'">{{ row.review ? '可回看' : '尚無回看' }}</span><span v-if="row.candidate && !row.candidate.available" class="secondary">{{ row.candidate.reason }}</span></div><p v-if="stageProgress(row)" class="library-stage" role="status">{{ stageProgress(row) }}</p><StageProgress v-if="currentStageState(row)" :status="currentStageState(row)!.status" :progress="currentStageState(row)!.progress" :label="`${row.name} 目前階段進度`" /><p v-for="issue in issues(row)" :key="issue" class="library-issue">{{ issue }}</p></div>
       <div class="library-card-actions"><RouterLink v-if="row.review" class="button-primary" :to="{ name: 'match-review', params: { matchId: row.id } }">開啟回看</RouterLink><RouterLink v-if="row.local && ['running', 'queued'].includes(row.local.latestTask?.status ?? '')" class="button-secondary" :to="{ name: 'tasks' }">查看進度</RouterLink><RouterLink v-else-if="row.local && needsUpdate(row)" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id }, query: { select: 'stale' } }">更新分析</RouterLink><RouterLink v-else-if="row.local" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">{{ row.local.analysisStatus === 'unanalysed' ? '開始分析' : '分析設定' }}</RouterLink><button v-if="row.kind === 'match' && row.candidate?.available" type="button" class="button-secondary" :title="row.review ? '以目前的分析結果更新回看' : '把已有的分析結果匯入成回看'" :disabled="publishing !== null" @click="publish(row)">{{ publishing === rawId(row) ? '匯入中…' : '匯入結果' }}</button></div>
     </article></div>

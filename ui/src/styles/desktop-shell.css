@@ -65,6 +65,7 @@ summary:focus-visible { outline: 1px solid var(--color-focus); outline-offset: -
 .library-card.console-panel { display: grid; grid-template-columns: 64px minmax(0,1fr) auto; align-items: center; gap: 14px; min-height: 76px; padding: 10px 12px; background: transparent; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; }
 .library-card.console-panel:hover { background: var(--color-surface-soft); }
 .library-thumbnail { display: grid; place-items: center; width: 64px; height: 48px; color: var(--color-text-muted); background: var(--color-chrome); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+img.library-thumbnail { object-fit: cover; }
 .library-card-content { min-width: 0; }
 .library-card-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .library-card h2 { min-width: 0; overflow-wrap: anywhere; font-size: var(--type-ui); font-weight: var(--weight-semibold); line-height: 18px; }

@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createMatchImportHandler } from "./match-import-plugin";
 import { createLocalVideoHandler } from "./video-plugin";
+import { createThumbnailHandler } from "./thumbnails";
 import type { LocalRuntime } from "./local-matches";
 
 export type LocalHost = { origin: string; port: number; close: () => Promise<void> };
@@ -65,6 +66,7 @@ export async function startLocalHost(context: LocalRuntime, distDir: string,
     throw new Error(`Vue dist is missing: ${dist}`);
   const importHandler = createMatchImportHandler(context);
   const videoHandler = createLocalVideoHandler(context);
+  const thumbnailHandler = createThumbnailHandler(context);
   let origin = "";
   const server = createServer(async (req, res) => {
     try {
@@ -77,6 +79,8 @@ export async function startLocalHost(context: LocalRuntime, distDir: string,
         return void importHandler(req, res, () => json(res, 404, { error: "not found" }));
       if (path.startsWith("/local-video/"))
         return void videoHandler(req, res, () => json(res, 404, { error: "not found" }));
+      if (path.startsWith("/local-thumbnail/"))
+        return void thumbnailHandler(req, res, () => json(res, 404, { error: "not found" }));
       if (path.startsWith("/api/pipeline/")) {
         const pipelinePort = options.pipelinePort?.();
         if (!pipelinePort) return json(res, 503, { error: "分析服務未連線" });
