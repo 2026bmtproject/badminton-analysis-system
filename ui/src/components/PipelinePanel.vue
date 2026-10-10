@@ -3,7 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import CourtCalibrationPanel from "./CourtCalibrationPanel.vue";
 import StageProgress from "./ui/StageProgress.vue";
 import { stageLabel } from "../data/stageLabels";
-import { importLocalMatch, loadCatalog, loadMatch } from "../data/matchRepository";
+import { useTaskFeed } from "../composables/useTaskFeed";
+import { importLocalMatch } from "../data/matchRepository";
 import {
   LOG_PAGE_SIZE, getPipelineLogs, getPipelineTask, listPipelineStages, planReasonLabel, previewPipeline,
   startPipeline, taskElapsed, taskProgress, taskStatusLabel,
@@ -19,10 +20,10 @@ const plan = ref<PipelinePlan | null>(null);
 const planning = ref(false);
 const task = ref<PipelineTask | null>(props.match.latestTask);
 const busy = ref(false);
-const publishing = ref(false);
+const importing = ref(false);
+const importError = ref("");
 const error = ref("");
-const publishError = ref("");
-const publishDone = ref(false);
+const { reviewSync, syncReview, refresh: refreshTasks } = useTaskFeed();
 const showLogs = ref(false);
 const lines = ref<string[]>([]);
 const logOffset = ref(0);
@@ -38,6 +39,8 @@ const overall = computed(() => task.value ? taskProgress(task.value) : null);
 const incomplete = computed(() => stages.value.map(stage => stage.name).filter(name => !props.match.completedStages.includes(name)));
 const runRows = computed(() => plan.value?.stages.filter(row => row.action === "run") ?? []);
 const skipRows = computed(() => plan.value?.stages.filter(row => row.action === "skip") ?? []);
+/** The shared feed publishes a succeeded task's Review; this panel only reports on it. */
+const review = computed(() => task.value ? reviewSync.value[task.value.id] : undefined);
 
 /** The plan follows the selection, so there is no separate "preview" step before starting. */
 async function refreshPlan() {
@@ -59,10 +62,10 @@ watch([selected, mode], () => { void refreshPlan(); }, { deep: true });
 watch(() => props.match.completedStages.join(), () => { if (selected.value.length && !running.value) void refreshPlan(); });
 watch(() => props.match.id, () => {
   selected.value = []; plan.value = null; task.value = props.match.latestTask;
-  lines.value = []; logOffset.value = 0; error.value = "";
-  publishError.value = ""; publishDone.value = false;
-  if (task.value?.status === "succeeded") void syncReviewAfterSuccess();
+  lines.value = []; logOffset.value = 0; error.value = ""; importError.value = "";
+  if (task.value?.status === "succeeded") void syncReview(task.value);
 });
+watch(() => review.value?.state, state => { if (state === "done") emit("updated"); });
 watch(() => props.match.latestTask, (value) => {
   if (!task.value || (value && task.value.id !== value.id)) task.value = value;
 });
@@ -74,7 +77,8 @@ function pick(names: string[]) {
 
 async function launch(next: PipelinePlan) {
   task.value = await startPipeline(next);
-  lines.value = []; logOffset.value = 0; publishDone.value = false; publishError.value = "";
+  lines.value = []; logOffset.value = 0;
+  void refreshTasks();
   emit("updated");
 }
 
@@ -98,35 +102,16 @@ async function retry() {
   finally { busy.value = false; }
 }
 
-async function publish() {
-  if ((!task.value || task.value.status !== "succeeded") && !props.match.hasSegments) return;
-  if (publishing.value) return;
-  publishing.value = true; publishError.value = "";
+/** Imports results that exist without a task from this session, e.g. analysed before the UI existed. */
+async function importExisting() {
+  if (importing.value) return;
+  importing.value = true; importError.value = "";
   try {
     await importLocalMatch(props.match.id);
-    publishDone.value = true;
     emit("updated");
   } catch (cause) {
-    publishError.value = cause instanceof Error ? cause.message : "回看更新失敗";
-  } finally { publishing.value = false; }
-}
-
-async function syncReviewAfterSuccess() {
-  if (task.value?.status !== "succeeded") return;
-  try {
-    const entry = (await loadCatalog()).find(row => row.id === `match:${props.match.id}`);
-    if (entry && task.value.finishedAt) {
-      const existing = await loadMatch(entry, { fresh: true });
-      if (existing.source?.importedAt &&
-          Date.parse(existing.source.importedAt) >= Date.parse(task.value.finishedAt)) {
-        publishDone.value = true;
-        return;
-      }
-    }
-  } catch {
-    // An unreadable old cache should not prevent a fresh export.
-  }
-  await publish();
+    importError.value = cause instanceof Error ? cause.message : "匯入失敗";
+  } finally { importing.value = false; }
 }
 
 /** Reads every log line not yet shown, page by page, so the panel never needs a "load more" button. */
@@ -158,7 +143,7 @@ async function poll() {
     if (showLogs.value) await fetchLogs();
     if (previous !== task.value.status && !running.value) {
       emit("updated");
-      if (task.value.status === "succeeded") await syncReviewAfterSuccess();
+      if (task.value.status === "succeeded") void syncReview(task.value, { verify: false });
     }
   } catch (cause) { error.value = cause instanceof Error ? cause.message : "任務狀態連線失敗"; }
 }
@@ -166,7 +151,7 @@ async function poll() {
 onMounted(async () => {
   try { stages.value = await listPipelineStages(); }
   catch (cause) { error.value = cause instanceof Error ? cause.message : "無法連接分析服務"; }
-  if (task.value?.status === "succeeded") await syncReviewAfterSuccess();
+  if (task.value?.status === "succeeded") void syncReview(task.value);
   pollTimer = setInterval(() => { void poll(); }, 1500);
 });
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
@@ -220,7 +205,7 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
         <StageProgress :status="stage.status" :progress="stage.progress" :label="`${stageLabel(String(name))}進度`" />
       </li></ul>
       <p v-if="task.error" class="error" role="alert">{{ task.error }}</p>
-      <p v-if="task.status === 'succeeded' && (publishing || publishDone)" class="secondary">{{ publishing ? "正在更新回看…" : "回看已更新。" }}</p>
+      <p v-if="task.status === 'succeeded' && review && review.state !== 'failed'" class="secondary">{{ review.state === "publishing" ? "正在更新回看…" : "回看已更新。" }}</p>
       <div class="pipeline-task-actions">
         <button v-if="task.status === 'failed' || task.status === 'interrupted'" type="button" class="button-primary" :disabled="busy" @click="retry">重試</button>
         <button type="button" class="button-secondary" :aria-expanded="showLogs" @click="toggleLogs">{{ showLogs ? "收合詳細記錄" : "查看詳細記錄" }}</button>
@@ -228,9 +213,10 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
       <div v-if="showLogs" class="pipeline-logs"><pre>{{ lines.join('\n') }}</pre></div>
     </section>
 
-    <p v-if="publishError" class="error" role="alert">回看更新失敗：{{ publishError }}。原有回看資料仍可使用。 <button type="button" :disabled="publishing" @click="publish">重新匯入</button></p>
+    <p v-if="task && review?.state === 'failed'" class="error" role="alert">回看更新失敗：{{ review.error }}。原有回看資料仍可使用。 <button type="button" @click="syncReview(task, { verify: false, retry: true })">重新匯入</button></p>
+    <p v-if="importError" class="error" role="alert">匯入失敗：{{ importError }}</p>
     <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')"
       :running="running" @updated="emit('updated')" @select="pick" />
-    <button v-if="!hasReview && match.hasSegments && !running" type="button" class="button-secondary" :disabled="publishing" @click="publish">{{ publishing ? "匯入中…" : "匯入已有分析結果" }}</button>
+    <button v-if="!hasReview && match.hasSegments && !running" type="button" class="button-secondary" :disabled="importing" @click="importExisting">{{ importing ? "匯入中…" : "匯入已有分析結果" }}</button>
   </section>
 </template>

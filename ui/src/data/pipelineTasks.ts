@@ -13,6 +13,7 @@ export type PipelinePlan = {
 };
 export type TaskStage = {
   status: string; progress: number | null; reason: string; error?: string;
+  startedAt?: string; finishedAt?: string;
 };
 export type PipelineTask = {
   id: string; matchId: string; status: "queued" | "running" | "succeeded" | "failed" | "interrupted";
@@ -31,23 +32,78 @@ export function taskStatusLabel(status: string): string {
     failed: "分析失敗", interrupted: "執行中斷", skipped: "沿用既有結果" } as Record<string, string>)[status] ?? status;
 }
 
-/** Wall-clock run time as m:ss, or h:mm:ss once a task passes an hour; null before it starts. */
-export function taskElapsed(task: PipelineTask, now: number): string | null {
-  if (!task.startedAt) return null;
-  const end = task.finishedAt ? Date.parse(task.finishedAt) : now;
-  const total = Math.max(0, Math.floor((end - Date.parse(task.startedAt)) / 1000));
+export function isActiveTask(task: PipelineTask): boolean {
+  return task.status === "queued" || task.status === "running";
+}
+
+/** Seconds as m:ss, or h:mm:ss past an hour. */
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
   const [h, m, s] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60];
   const pad = (value: number) => String(value).padStart(2, "0");
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
-/** Whole-task completion: finished stages count fully, the running one by its reported fraction. */
+/** Wall-clock run time; null before it starts. */
+export function taskElapsed(task: PipelineTask, now: number): string | null {
+  if (!task.startedAt) return null;
+  const end = task.finishedAt ? Date.parse(task.finishedAt) : now;
+  return formatDuration((end - Date.parse(task.startedAt)) / 1000);
+}
+
+/** A stage's own run time in seconds; null for stages that never started (queued or reused). */
+export function stageSeconds(stage: TaskStage, now: number): number | null {
+  if (!stage.startedAt) return null;
+  const end = stage.finishedAt ? Date.parse(stage.finishedAt) : now;
+  return Math.max(0, (end - Date.parse(stage.startedAt)) / 1000);
+}
+export function stageElapsed(stage: TaskStage, now: number): string | null {
+  const seconds = stageSeconds(stage, now);
+  return seconds === null ? null : formatDuration(seconds);
+}
+
+/** Stages this task actually ran, in plan order; reused results are not part of the work. */
+export function ranStages(task: PipelineTask): [string, TaskStage][] {
+  return Object.entries(task.stageStates).filter(([, stage]) => stage.status !== "skipped");
+}
+
+/** Whole-task completion over the stages it ran: finished ones count fully, the running one by its fraction. */
 export function taskProgress(task: PipelineTask) {
-  const states = Object.values(task.stageStates);
-  const done = states.filter(stage => stage.status === "succeeded" || stage.status === "skipped").length;
+  const states = ranStages(task).map(([, stage]) => stage);
+  const done = states.filter(stage => stage.status === "succeeded").length;
   const current = task.currentStage ? task.stageStates[task.currentStage] : undefined;
   const partial = current?.status === "running" ? current.progress ?? 0 : 0;
-  return { done, total: states.length, fraction: states.length ? (done + partial) / states.length : 0 };
+  return { done, total: states.length, fraction: states.length ? Math.min(1, (done + partial) / states.length) : 0 };
+}
+
+/** "擊球偵測、球種辨識 +2": what a task worked on, short enough for one row. */
+export function ranStagesSummary(task: PipelineTask, label: (name: string) => string, shown = 2): string {
+  const names = ranStages(task).map(([name]) => label(name));
+  const rest = names.length - shown;
+  return names.slice(0, shown).join("、") + (rest > 0 ? ` +${rest}` : "");
+}
+
+/** Task log lines start with an ISO UTC stamp; the page shows it as local wall-clock time. */
+export function formatLogLine(line: string): string {
+  const match = /^(\S+?T\S+)\s(.*)$/.exec(line);
+  const time = match ? new Date(match[1]) : null;
+  if (!match || !time || Number.isNaN(time.getTime())) return line;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}  ${match[2]}`;
+}
+
+/** "今天 03:09", "昨天 22:14", "10/08 14:02", or with the year once it differs. */
+export function formatTaskTime(iso: string, now: number): string {
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const today = new Date(now);
+  const dayStart = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((dayStart(today) - dayStart(date)) / 86_400_000);
+  if (days === 0) return `今天 ${time}`;
+  if (days === 1) return `昨天 ${time}`;
+  const day = `${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+  return date.getFullYear() === today.getFullYear() ? `${day} ${time}` : `${date.getFullYear()}/${day} ${time}`;
 }
 
 /** The planner's reasons are English diagnostics; the panel shows them in plain Chinese. */
@@ -88,6 +144,10 @@ export function startPipeline(plan: PipelinePlan) {
   });
 }
 export function getPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}`); }
+/** Starts the same request again against a fresh plan, since the old plan's ID is stale by now. */
+export async function retryTask(task: PipelineTask) {
+  return startPipeline(await previewPipeline(task.matchId, task.plan.requestedStages, task.plan.mode));
+}
 export const LOG_PAGE_SIZE = 100;
 export function getPipelineLogs(id: string, offset: number) {
   return request<{ lines: string[]; nextOffset: number }>(`tasks/${id}/logs?offset=${offset}&limit=${LOG_PAGE_SIZE}`);
