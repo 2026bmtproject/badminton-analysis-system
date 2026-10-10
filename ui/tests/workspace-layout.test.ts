@@ -100,7 +100,8 @@ test("timeline mode registry exposes only renderers backed by match capabilities
 test("main Review consolidates audio-derived Highlight into Cheer", () => {
   const capabilities: MatchCapabilities = { score: true, stroke: true, identity: false, cheer: true, highlight: true, commentary: true, court: true, pose: false, shuttle: false };
   const modes = availableTimelineModes(capabilities).map((mode) => mode.id);
-  assert.deepEqual(modes, ["rally", "stroke", "score", "commentary", "cheer"]);
+  // Commentary is read in the Analysis window; the rally lane only marks where it exists.
+  assert.deepEqual(modes, ["rally", "stroke", "score", "cheer"]);
   assert.equal(modes.some((mode) => String(mode) === "highlight"), false);
 });
 

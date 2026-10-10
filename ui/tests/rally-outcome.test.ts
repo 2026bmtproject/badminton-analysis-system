@@ -118,7 +118,7 @@ test("bar height is sqrt of duration against the 95th percentile, floored and ca
 test("lane marks are neutral: bars carry no winner", () => {
   const rallies = [rally(0, [0, 0]), rally(1, [1, 0]), rally(2, [1, 1])];
   const marks = rallyLaneMarks(model(rallies), rallies, { startSec: 0, endSec: 100, durationSec: 100 }, 1000);
-  assert.deepEqual(Object.keys(marks.bars[0]!).sort(), ["fraction", "rallyId", "splits", "wide", "width", "x"]);
+  assert.deepEqual(Object.keys(marks.bars[0]!).sort(), ["commentary", "fraction", "rallyId", "splits", "wide", "width", "x"]);
 });
 
 test("bars keep a visible minimum width, cull outside the viewport and turn to a tint when wide", () => {

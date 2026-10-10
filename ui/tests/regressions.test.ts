@@ -7,7 +7,6 @@ import {
   manifestSchema,
   type Input,
 } from "../scripts/adapter";
-import { relatedCommentaryEvents } from "../src/review";
 import {
   matchViewport,
   rallyViewport,
@@ -63,25 +62,17 @@ test("optional errors remain reviewable; only fixture validation is strict", () 
 });
 test("summary citations do not become stroke commentary, explicit event/evidence do", () => {
   const events = adapt(inputs(), manifest, "full").rallies[1].commentary.events;
-  assert.equal(relatedCommentaryEvents(events, 6).length, 0);
-  assert.equal(relatedCommentaryEvents(events, 7).length, 1);
-  assert.equal(relatedCommentaryEvents(events, 8).length, 0);
-  assert.equal(relatedCommentaryEvents(events, 9).length, 0);
+  const at = (strokeIndex: number) => events.filter((event) => event.strokeIndex === strokeIndex).length;
+  assert.deepEqual([at(6), at(7), at(8), at(9)], [0, 1, 0, 0]);
 });
-test("production commentary keeps summary untimed and events on the shared Timeline", () => {
+test("the Timeline marks which Rallies have commentary and leaves reading it to Analysis", () => {
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  const workspace = readFileSync("src/state/useReviewWorkspace.ts", "utf8");
+  const outcome = readFileSync("src/temporal/rallyOutcome.ts", "utf8");
   const app = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(timeline, /rally\.commentary\.events\.map/);
-  assert.match(timeline, /time:\s*comment\.timeSec/);
-  assert.doesNotMatch(timeline, /commentary\.summary[\s\S]*position\(/);
-  assert.match(workspace, /item\.eventIndex === comment\.strokeIndex/);
-  assert.match(workspace, /seek\(stroke\.time\)/);
-  assert.doesNotMatch(
-    `${timeline}\n${workspace}\n${app}`,
-    /selectedCommentaryEventIndex/,
-  );
-  assert.doesNotMatch(app, /生成賽評|Generate Commentary|commentary job/i);
+  assert.match(outcome, /commentary: rally\.commentary\.status === "available"/);
+  assert.match(timeline, /class="rally-commentary"/);
+  assert.doesNotMatch(timeline, /commentary\.events|commentary-marker|kind="commentary"/);
+  assert.doesNotMatch(app, /@commentary=|selectedCommentaryEventIndex/);
 });
 test("source switch resets state, discards old seek and ignores late media events", async () => {
   const c = createPlayback();

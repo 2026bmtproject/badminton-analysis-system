@@ -1,11 +1,3 @@
-import type { CommentaryEventModel } from "./domain/models";
-
-export function relatedCommentaryEvents(
-  events: CommentaryEventModel[],
-  eventIndex: number,
-) {
-  return events.filter((event) => event.strokeIndex === eventIndex);
-}
 export function hitStatus(status: string | undefined, count: number | null) {
   if (status === "error") return "擊球資料讀取失敗";
   if (status === "stale") return "擊球資料已過期";

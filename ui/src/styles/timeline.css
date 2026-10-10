@@ -175,6 +175,10 @@
   stroke-width: 1.5;
 }
 /* Same triangle for an unreadable score and a disputed game; the tooltip says which. */
+.rally-commentary {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
 .rally-flag polygon {
   fill: var(--color-warning);
 }
@@ -436,15 +440,6 @@
   height: 9px;
   transform: none;
 }
-.commentary-marker {
-  position: absolute;
-  top: 0;
-  width: 36px;
-  min-height: 32px;
-  height: 32px;
-  padding: 0;
-  transform: translateX(-50%);
-}
 .stroke-chart {
   position: absolute;
   inset: 0;
@@ -526,23 +521,6 @@
 }
 .stroke-label.selected {
   color: var(--color-text);
-}
-.commentary-marker {
-  color: var(--color-text-secondary);
-}
-.commentary-dot {
-  width: 10px;
-  height: 10px;
-  background: currentColor;
-  border-radius: 50%;
-}
-.commentary-marker.active .commentary-dot {
-  background: transparent;
-  border: 2px solid var(--line-active);
-}
-.commentary-marker.hovered:not(.active) .commentary-dot {
-  outline: 2px solid var(--color-text);
-  outline-offset: 2px;
 }
 .timeline-hover-tooltip {
   position: fixed;

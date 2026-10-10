@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ref } from "vue";
 import type {
-  CommentaryEventModel,
   MatchCapabilities,
   MatchModel,
   RallyModel,
@@ -270,24 +269,6 @@ test("6. court stroke selection seeks once and playback context resolves that st
   assert.equal(workspace.activeStroke.value?.eventIndex, 11);
   const analysis = readFileSync("src/components/workspace/AnalysisWindow.vue", "utf8");
   assert.match(analysis, /:selected-stroke-index="activeStrokeIndex"/);
-});
-
-test("7. commentary selection seeks to its linked stroke and resolves shared context", () => {
-  const { workspace, seeks } = workspaceHarness();
-  const comment: CommentaryEventModel = {
-    segmentIndex: 1,
-    text: "攻防轉換",
-    sourceFactIds: [],
-    evidence: [],
-    strokeIndex: 20,
-    frame: 435,
-    timeSec: 14.5,
-    player: "a",
-  };
-  workspace.selectCommentary(comment, secondRally);
-  workspace.updateTime(seeks.at(-1)!);
-  assert.equal(workspace.activeRally.value?.id, 1);
-  assert.equal(workspace.activeStroke.value?.eventIndex, 20);
 });
 
 test("8. persisted workspace geometry excludes transient playback and selection state", () => {

@@ -135,8 +135,9 @@ export type RallyLaneMarks = {
   /**
    * `wide`: a zoomed-in bar that would read as a solid slab, drawn as a tint instead.
    * `splits`: where a multi-point segment's score changed, in percent; empty until the bar has room.
+   * `commentary`: the Rally has commentary to read in the Analysis window; never its text, which can name the winner.
    */
-  bars: { rallyId: number; x: number; width: number; fraction: number; wide: boolean; splits: number[] }[];
+  bars: { rallyId: number; x: number; width: number; fraction: number; wide: boolean; splits: number[]; commentary: boolean }[];
   /** Rallies whose score or game needs review, at the Rally centre. */
   flags: { rallyId: number; x: number }[];
 };
@@ -181,6 +182,7 @@ export function rallyLaneMarks(
         rally.multi && barPx >= SPLIT_MIN_BAR_PX
           ? rally.splits.filter((timeSec) => timeSec > rally.start && timeSec < rally.end).map(percent)
           : [],
+      commentary: rally.commentary.status === "available",
     });
     if (needsReview(rally)) marks.flags.push({ rallyId: rally.id, x: percent((rally.start + rally.end) / 2) });
   }

@@ -14,7 +14,7 @@ import { doubleClickFit } from "../../temporal/timelineNavigation";
 
 export type TimelineHoverMark = {
   /** `break` ids the Rally a break follows; `stroke-rally` ids a Rally summarised by its stroke bar. */
-  kind: "rally" | "break" | "score" | "stroke" | "stroke-rally" | "commentary" | "cheer" | "cheer-window";
+  kind: "rally" | "break" | "score" | "stroke" | "stroke-rally" | "cheer" | "cheer-window";
   id: number | string;
 };
 
@@ -110,6 +110,8 @@ export function timelineHoverPreview(
     const ranks = highlightRanks(rallies);
     const rank = ranks.get(rally.id);
     if (rank !== undefined) lines.push(`精華排名 #${rank} / ${ranks.size}`);
+    // Availability only: commentary text can say who won the point.
+    if (rally.commentary.status === "available") lines.push("有賽評");
     return { title: "", lines };
   }
   if (mark.kind === "score") {
@@ -143,17 +145,6 @@ export function timelineHoverPreview(
         `${rally.hits.length} 拍`,
         ...order.flatMap((family) => (counts[family] ? [`${STROKE_FAMILY_LABELS[family]} ${counts[family]}`] : [])),
       ],
-    };
-  }
-  if (mark.kind === "commentary") {
-    const [rallyId, strokeIndex] = String(mark.id).split(":").map(Number);
-    const comment = rallies
-      .find((rally) => rally.id === rallyId)
-      ?.commentary.events.find((item) => item.strokeIndex === strokeIndex);
-    if (!comment) return null;
-    return {
-      title: "賽評",
-      lines: [formatPreciseTime(comment.timeSec), shorten(comment.text, 72)],
     };
   }
   const rally = rallies.find((item) => item.id === mark.id);

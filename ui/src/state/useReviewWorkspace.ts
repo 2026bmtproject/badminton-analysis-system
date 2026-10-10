@@ -1,7 +1,6 @@
 import { computed, ref, watch, type Ref } from "vue";
 import {
   sameReview,
-  type CommentaryEventModel,
   type MatchModel,
   type RallyModel,
   type StrokeModel,
@@ -149,20 +148,6 @@ export function useReviewWorkspace<T extends PlayerController>(
     seek(stroke.time);
   }
 
-  function selectCommentary(comment: CommentaryEventModel, rally: RallyModel) {
-    const stroke = rally.hits?.find(
-      (item) => item.eventIndex === comment.strokeIndex,
-    );
-    markSelected(rally.id, stroke?.time ?? comment.timeSec);
-    if (stroke) {
-      selectedStrokeIndex.value = stroke.eventIndex;
-      seek(stroke.time);
-    } else {
-      selectedStrokeIndex.value = null;
-      seek(comment.timeSec);
-    }
-  }
-
   function updateTime(timeSec: number) {
     currentTimeSec.value = timeSec;
   }
@@ -250,7 +235,6 @@ export function useReviewWorkspace<T extends PlayerController>(
     selectRally,
     selectRallyAt,
     selectStroke,
-    selectCommentary,
     updateTime,
     clearSelection,
     moveStroke,

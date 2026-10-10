@@ -1,7 +1,7 @@
 import { reactive, watch } from "vue";
 
 export type WorkspacePanelId = "timeline" | "analysis";
-export type TimelineMode = "rally" | "stroke" | "score" | "commentary" | "cheer";
+export type TimelineMode = "rally" | "stroke" | "score" | "cheer";
 export type AnalysisView = "analysis" | "court";
 
 export type PanelLayout = {
@@ -58,7 +58,7 @@ const LEGACY_FULLSCREEN_TIMELINES = [
   { y: 0.74, height: 0.23 },
 ];
 
-const modes: TimelineMode[] = ["rally", "stroke", "score", "commentary", "cheer"];
+const modes: TimelineMode[] = ["rally", "stroke", "score", "cheer"];
 const views: AnalysisView[] = ["analysis", "court"];
 
 function finite(value: unknown, fallback: number) {

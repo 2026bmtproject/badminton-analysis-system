@@ -295,47 +295,6 @@ test("same-rally stroke stepping seeks exact events and stops at boundaries", ()
   assert.deepEqual(seeks, [11, 11.5, 12.5, 11.5]);
 });
 
-test("commentary navigation reuses canonical Rally and Stroke selection", () => {
-  const selected = rally(0, 10, 12);
-  const stroke = {
-    eventIndex: 7,
-    strokeIndex: 7,
-    frame: 275,
-    time: 11,
-    ordinal: 1,
-    player: "選手 A",
-    type: "殺球",
-    confidence: 0.9,
-  };
-  selected.hits = [stroke];
-  const model: MatchModel = {
-    ...rawMatch([selected]),
-    capabilities: capabilityFromStates({}, true),
-  };
-  const seeks: number[] = [];
-  const workspace = useReviewWorkspace(
-    ref<MatchModel | null>(model),
-    ref({ seek: (time: number) => seeks.push(time) }),
-  );
-  workspace.selectCommentary(
-    {
-      segmentIndex: 0,
-      strokeIndex: 7,
-      frame: 275,
-      timeSec: 11,
-      player: "a",
-      text: "精確擊球賽評",
-      sourceFactIds: ["rally:0:stroke:7"],
-      evidence: [],
-    },
-    selected,
-  );
-  assert.equal(workspace.selectedRally.value?.id, 0);
-  assert.equal(workspace.selectedStroke.value?.eventIndex, 7);
-  assert.deepEqual(seeks, [11]);
-  assert.equal("selectedCommentaryEventIndex" in workspace, false);
-});
-
 test("runtime model validation rejects malformed JSON and normalizes legacy cached cheer data", () => {
   assert.throws(() => parseMatchModel({ title: "incomplete" }));
   const parsed = parseMatchModel({

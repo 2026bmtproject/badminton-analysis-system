@@ -75,11 +75,12 @@ test("7. switching timeline mode does not reset the temporal viewport", () => {
   assert.doesNotMatch(timeline, /watch\([^)]*timelineMode[\s\S]{0,220}renderViewport/);
 });
 test("8. rally hover preview uses canonical duration, strokes, score and highlight place", () => {
-  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 4 }, [rally]), { title: "", lines: ["6.00 秒", "比分 8:7", "精華排名 #1 / 1"] });
+  // Commentary shows as availability only; its text can name the point's winner.
+  assert.deepEqual(timelineHoverPreview({ kind: "rally", id: 4 }, [rally]), { title: "", lines: ["6.00 秒", "比分 8:7", "精華排名 #1 / 1", "有賽評"] });
 });
-test("9. stroke and commentary previews expose real metadata", () => {
+test("9. stroke preview exposes real metadata and no lane previews commentary text", () => {
   assert.deepEqual(timelineHoverPreview({ kind: "stroke", id: 12 }, [rally]), { title: "第 3 拍", lines: ["00:42.00", "殺球", "a"] });
-  assert.match(timelineHoverPreview({ kind: "commentary", id: "4:2" }, [rally])?.lines.join(" ") ?? "", /精準的進攻壓迫/);
+  assert.doesNotMatch(JSON.stringify(timelineHoverPreview({ kind: "rally", id: 4 }, [rally])), /精準的進攻壓迫/);
 });
 test("10. hover preview is teleported above overlapping windows, into the fullscreen element when there is one", () => {
   const timeline = source("src/components/ReviewTimeline.vue");

@@ -15,7 +15,6 @@ export const timelineModeRegistry: readonly TimelineModeRegistration[] = [
   { id: "rally", label: "片段", capability: null },
   { id: "stroke", label: "擊球", capability: "stroke" },
   { id: "score", label: "比分", capability: "score" },
-  { id: "commentary", label: "賽評", capability: "commentary" },
   { id: "cheer", label: "歡呼", capability: "cheer" },
 ];
 

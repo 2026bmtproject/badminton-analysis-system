@@ -8,7 +8,6 @@ import {
   watch,
 } from "vue";
 import type {
-  CommentaryEventModel,
   MatchModel,
   RallyModel,
   StrokeModel,
@@ -90,8 +89,7 @@ type TrackKey =
   | "rally"
   | "score"
   | "stroke"
-  | "cheer"
-  | "commentary";
+  | "cheer";
 const LENS_DURATION_MS = 220;
 /** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
 const FOLLOW_RESUME_DELAY_MS = 2000;
@@ -106,6 +104,8 @@ const SIGNAL_LANE_MARGIN_PX = 8;
 const RALLY_FLAG_Y_PX = 17;
 const RALLY_BASELINE_PX = 42;
 const RALLY_BAR_EXTENT_PX = 20;
+/** Between the baseline and the track's bottom edge. */
+const RALLY_COMMENTARY_Y_PX = 45.5;
 /**
  * Stroke lane geometry in track pixels, top to bottom: the game label row,
  * the far (video top) hitter's label row, the trace swinging STROKE_SWING_PX
@@ -148,7 +148,6 @@ const props = withDefaults(
 const emit = defineEmits<{
   rally: [rally: RallyModel];
   stroke: [stroke: StrokeModel];
-  commentary: [comment: CommentaryEventModel, rally: RallyModel];
   rallyAt: [rally: RallyModel, timeSec: number];
   seek: [timeSec: number];
   inspect: [timeSec: number | null];
@@ -347,15 +346,6 @@ const axisTicks = computed(() =>
 const strokes = computed(() =>
   rallies.value.flatMap((rally) => rally.hits ?? []),
 );
-const commentaryEvents = computed(() =>
-  rallies.value.flatMap((rally) =>
-    rally.commentary.events.map((comment) => ({
-      comment,
-      rally,
-      time: comment.timeSec,
-    })),
-  ),
-);
 /** Built from every Rally, not the visible ones, so the scale stays match-wide while zooming. */
 const leadModel = computed(() => scoreLeadModel(props.model.rallies));
 const leadDomainValue = computed(() => leadDomain(leadModel.value.maxAbsLead));
@@ -414,6 +404,7 @@ const rallyLane = computed(() => rallyLaneModel(props.model.rallies, leadModel.v
 const rallyMarks = computed(() =>
   rallyLaneMarks(rallyLane.value, props.model.rallies, renderViewport.value, trackWidth.value),
 );
+const commentaryBars = computed(() => rallyMarks.value.bars.filter((bar) => bar.commentary));
 function breakPreview(afterRallyId: number) {
   const item = rallyLane.value.breaks.find((candidate) => candidate.afterRallyId === afterRallyId);
   return item ? rallyBreakPreview(item) : null;
@@ -493,7 +484,6 @@ const capability = (track: TrackKey) =>
     score: props.model.capabilities.score,
     stroke: props.model.capabilities.stroke,
     cheer: props.model.capabilities.cheer,
-    commentary: props.model.capabilities.commentary,
   })[track];
 function authoritativeViewport(next: TimelineFit) {
   return fitViewport(next, props.model.duration, selectedRally.value);
@@ -737,18 +727,6 @@ function resolveHoveredMark(
       if (next < distance) { nearestIndex = index; distance = next; }
     });
     return nearestIndex < 0 ? null : { kind: "cheer-window" as const, id: nearestIndex };
-  }
-  if (kind === "commentary") {
-    const item = nearestTemporalMark(
-      commentaryEvents.value,
-      timeSec,
-      (candidate) => candidate.time,
-      renderViewport.value,
-      width,
-    );
-    return item
-      ? { kind, id: `${item.rally.id}:${item.comment.strokeIndex}` }
-      : null;
   }
   return null;
 }
@@ -1016,6 +994,16 @@ const timelineStyle = computed(() => ({
                 :y="RALLY_BASELINE_PX - bar.fraction * RALLY_BAR_EXTENT_PX"
                 :height="bar.fraction * RALLY_BAR_EXTENT_PX"
               />
+              <!-- A Rally with commentary to read gets a short accent rule under its bar. -->
+              <line
+                v-for="bar in commentaryBars"
+                :key="`commentary-${bar.rallyId}`"
+                class="rally-commentary"
+                :x1="bar.x + '%'"
+                :x2="bar.x + bar.width + '%'"
+                :y1="RALLY_COMMENTARY_Y_PX"
+                :y2="RALLY_COMMENTARY_Y_PX"
+              />
               <!-- A multi-point segment is cut where its score changed. -->
               <template v-for="bar in rallyMarks.bars" :key="`splits-${bar.rallyId}`">
                 <line
@@ -1144,7 +1132,7 @@ const timelineStyle = computed(() => ({
         </div>
       </section>
 
-      <section v-if="modeShows('stroke') || modeShows('commentary')" class="timeline-band timeline-band--stroke" aria-label="擊球">
+      <section v-if="modeShows('stroke')" class="timeline-band timeline-band--stroke" aria-label="擊球">
         <div class="timeline-band-tracks">
           <TimelineLane
             v-if="modeShows('stroke') && capability('stroke')"
@@ -1228,26 +1216,6 @@ const timelineStyle = computed(() => ({
                 aria-hidden="true"
               >{{ label.text }}</span>
             </template>
-          </TimelineLane>
-          <TimelineLane
-            v-if="modeShows('commentary') && capability('commentary')"
-            kind="commentary"
-            description="賽評事件軌道"
-          >
-            <button
-              v-for="item in commentaryEvents"
-              :key="`${item.rally.id}-${item.comment.strokeIndex}`"
-              class="commentary-marker"
-              :class="{
-                active: activeId === item.rally.id && activeStrokeIndex === item.comment.strokeIndex,
-                hovered: hoveredMark?.kind === 'commentary' && hoveredMark.id === `${item.rally.id}:${item.comment.strokeIndex}`,
-              }"
-              :style="{ left: position(item.time) + '%' }"
-              :aria-label="`賽評事件，${formatPreciseTime(item.comment.timeSec)}`"
-              @click.stop="emit('commentary', item.comment, item.rally)"
-            >
-              <span class="commentary-dot" aria-hidden="true" />
-            </button>
           </TimelineLane>
         </div>
       </section>
