@@ -715,3 +715,15 @@ test("exact Stroke evidence uses one precise formatter", () => {
   assert.doesNotMatch(timeline, /playerName\(stroke\.player\)/);
   assert.doesNotMatch(detail, /Math\.round\(\(stroke\.time % 1\) \* 100\)/);
 });
+
+test("only the shot list scrolls; the commentary stays pinned above it", () => {
+  const detail = readFileSync("src/components/inspector/RallyDetail.vue", "utf8");
+  const inspector = readFileSync("src/styles/inspector.css", "utf8");
+  const headAt = detail.indexOf('class="detail-head"');
+  const scrollAt = detail.indexOf('class="detail-scroll"');
+  assert.ok(headAt > 0 && headAt < detail.indexOf('class="commentary-block"'));
+  assert.ok(detail.indexOf('class="hit-list-toggle"') < scrollAt && scrollAt < detail.indexOf('class="hit-list"'));
+  assert.match(detail, /ref="scroll" class="detail-scroll"/);
+  assert.match(inspector, /\.detail-head\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(inspector, /\.detail-scroll\s*\{[^}]*flex:\s*1;[^}]*overflow:\s*auto;/s);
+});

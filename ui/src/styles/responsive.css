@@ -71,8 +71,11 @@
   .intelligence-timeline {
     padding: var(--space-3);
   }
+  .detail-head {
+    padding-inline: var(--space-3);
+  }
   .detail-scroll {
-    padding: var(--space-3);
+    padding: 0 var(--space-3) var(--space-3);
   }
 }
 @media (max-width: 420px) {

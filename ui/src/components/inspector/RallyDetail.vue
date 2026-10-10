@@ -79,10 +79,10 @@ function lowConfidence(stroke: StrokeModel) {
   return stroke.type !== null && stroke.confidence !== null && stroke.confidence < LOW_CONFIDENCE;
 }
 
-/** Keeps the playing shot in view inside the list, without scrolling anything outside the window. */
+/** Holds the playing shot at the middle of the list, so the list moves past it; nothing outside the window scrolls. */
 watch(
   () => [props.selectedStrokeIndex, props.strokesCollapsed] as const,
-  async ([index, collapsed]) => {
+  async ([index, collapsed], previous) => {
     if (index === null || collapsed) return;
     await nextTick();
     const container = scroll.value;
@@ -90,9 +90,10 @@ watch(
     if (!container || !row) return;
     const box = container.getBoundingClientRect();
     const rowBox = row.getBoundingClientRect();
-    // Out of view, the shot lands a third of the way down so the ones after it (and its comment) show too.
-    if (rowBox.top < box.top || rowBox.bottom > box.bottom)
-      container.scrollTop += rowBox.top - box.top - box.height / 3;
+    const offset = rowBox.top + rowBox.height / 2 - (box.top + box.height / 2);
+    // Following play glides from shot to shot; landing on the list (remount, reopening) jumps straight there.
+    const following = previous !== undefined && previous[1] === collapsed;
+    container.scrollTo({ top: container.scrollTop + offset, behavior: following ? "smooth" : "auto" });
   },
   // A remount (switching back from the court tab) or reopening the list lands on the playing shot too.
   { flush: "post", immediate: true },
@@ -102,7 +103,7 @@ watch(() => props.rally.id, () => { if (scroll.value) scroll.value.scrollTop = 0
 
 <template>
   <div class="rally-detail" :class="{ 'rally-detail--previous': previous }">
-    <div ref="scroll" class="detail-scroll">
+    <div class="detail-head">
       <ul v-if="highlightRank || rally.multi || rally.gameConflict || rally.scoreIssue || dataIssues.length" class="rally-flags" aria-label="回合標記">
         <li v-if="highlightRank" class="rally-flag rally-flag--highlight" :title="`全場 ${highlightRank.total} 個片段中排第 ${highlightRank.rank}`">精華第 {{ highlightRank.rank }} 名</li>
         <li v-if="rally.multi" class="rally-flag rally-flag--warning" :title="`比分依序為 ${rally.subScores.map(scoreText).join(' → ')}，約在 ${rally.splits.map(formatTime).join('、')} 變動`">含多個回合</li>
@@ -142,13 +143,15 @@ watch(() => props.rally.id, () => { if (scroll.value) scroll.value.scrollTop = 0
         </template>
       </section>
 
-      <template v-if="rally.hits?.length">
-      <button type="button" class="hit-list-toggle" :aria-expanded="!strokesCollapsed" aria-controls="analysis-hit-list" @click="emit('strokesCollapsed', !strokesCollapsed)">
+      <button v-if="rally.hits?.length" type="button" class="hit-list-toggle" :aria-expanded="!strokesCollapsed" aria-controls="analysis-hit-list" @click="emit('strokesCollapsed', !strokesCollapsed)">
         <AppIcon :name="strokesCollapsed ? 'chevron-right' : 'chevron-down'" />
         <span>擊球序列</span>
         <small>{{ rally.hits.length }} 拍</small>
       </button>
-      <ol v-show="!strokesCollapsed" id="analysis-hit-list" class="hit-list" aria-label="擊球序列">
+    </div>
+    <!-- Only the shots scroll; the flags, commentary and the list's fold stay put above them. -->
+    <div ref="scroll" class="detail-scroll">
+      <ol v-if="rally.hits?.length" v-show="!strokesCollapsed" id="analysis-hit-list" class="hit-list" aria-label="擊球序列">
         <li v-for="stroke in rally.hits" :key="stroke.eventIndex" :class="{ 'hit-item--selected': selectedStrokeIndex === stroke.eventIndex }">
           <button
             type="button"
@@ -169,7 +172,6 @@ watch(() => props.rally.id, () => { if (scroll.value) scroll.value.scrollTop = 0
           <p v-if="commentByStroke.get(stroke.eventIndex)" class="hit-comment">{{ commentByStroke.get(stroke.eventIndex)!.text }}</p>
         </li>
       </ol>
-      </template>
       <p v-else class="empty-state">{{ hitStatus(model.states.events?.status, rally.hits?.length ?? null) }}</p>
     </div>
   </div>
