@@ -22,6 +22,7 @@ defineProps<{
     | "refresh"
     | "court"
     | "segments"
+    | "layers"
     | "folder"
     | "alert";
   size?: number;
@@ -81,6 +82,7 @@ defineProps<{
     <template v-else-if="name === 'alert'"><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5h.01" /></template>
     <template v-else-if="name === 'refresh'"><path d="M20 7v5h-5M4 17v-5h5M5 9a8 8 0 0 1 14-2l1 5M4 12l1 5a8 8 0 0 0 14-2"/></template>
     <template v-else-if="name === 'segments'"><path d="M2 8h5v8H2zM17 8h5v8h-5z"/><path d="M9.5 12h5m-2-2.5 2.5 2.5-2.5 2.5"/></template>
+    <template v-else-if="name === 'layers'"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></template>
     <template v-else-if="name === 'folder'"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></template>
     <template v-else-if="name === 'court'"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18M7 8h10M7 16h10"/></template>
     <template v-else>

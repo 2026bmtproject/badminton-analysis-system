@@ -112,6 +112,14 @@
   aspect-ratio: 16 / 9;
   background: var(--color-video);
 }
+/* Drawn over the picture; clicks still reach the video. */
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 .video-wrap video {
   display: block;
   width: 100%;
@@ -305,7 +313,8 @@
   background: transparent;
 }
 /* VS Code's toggled input option: a blue frame on a tinted fill. */
-.player-icon-button[aria-pressed="true"] {
+.player-icon-button[aria-pressed="true"],
+.player-icon-button--on {
   color: var(--color-on-accent);
   border-color: var(--color-focus);
   background: rgb(0 120 212 / 25%);

@@ -69,6 +69,16 @@
   /* Scoreboard rows A and B; validated as a CVD-safe pair on the dark surface. */
   --color-player-a: #4f93cf;
   --color-player-b: #cf6f5e;
+  /*
+   * Video overlay marks sit on footage, not on the UI surface, so they are lighter and more saturated to read
+   * on a bright court. Players reuse the A/B hues; the shuttle tracks keep clear of them.
+   */
+  --overlay-court: #f2d649;
+  --overlay-neutral: #e6e6e6;
+  --overlay-hit: #ff4d4d;
+  --overlay-shuttle-inpaint: #3fd0e0;
+  --overlay-shuttle-viterbi: #e05cd6;
+  --overlay-label-bg: rgb(20 20 20 / 78%);
   --color-stroke: #858f94;
   /*
    * Shot families on the stroke lane, kept clear of the A/B hues. Serve and

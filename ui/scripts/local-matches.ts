@@ -1,4 +1,4 @@
-import { readFile, readdir, mkdir, writeFile, rename, stat, rm } from "node:fs/promises";
+import { cp, readFile, readdir, mkdir, writeFile, rename, stat, rm } from "node:fs/promises";
 import { resolve, join, extname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -61,8 +61,39 @@ async function save(path: string, value: unknown) {
   await rename(path + ".tmp", path);
 }
 
+/** The published overlay folder a Review model points at, e.g. `Match-0123456789abcdef`. */
+function overlayFolder(id: string, model: unknown): string | null {
+  const url = (model as { overlay?: { url?: unknown } } | null)?.overlay?.url;
+  if (typeof url !== "string") return null;
+  const folder = url.slice("/matches/overlay/".length);
+  if (!url.startsWith("/matches/overlay/") || !new RegExp(`^${id}-[a-f0-9]{16}$`).test(folder))
+    throw new Error("疊圖資料位址無效");
+  return folder;
+}
+
+/** Move the freshly exported overlay files to their content-addressed folder; an identical one may already be there. */
+async function publishOverlay(publicDir: string, folder: string, source: string) {
+  const target = join(publicDir, "overlay", folder);
+  if (await stat(target).then(info => info.isDirectory(), () => false)) return;
+  await mkdir(join(publicDir, "overlay"), { recursive: true });
+  try { await rename(source, target); }
+  catch {
+    await cp(source, target + ".tmp", { recursive: true });
+    await rename(target + ".tmp", target);
+  }
+}
+
+/** Overlay folders of earlier imports of this match; nothing points at them once the catalog moved on. */
+async function pruneOverlays(publicDir: string, id: string, keep: string | null) {
+  const stale = new RegExp(`^${id}-[a-f0-9]{16}$`);
+  const names = await readdir(join(publicDir, "overlay")).catch(() => [] as string[]);
+  for (const name of names)
+    if (stale.test(name) && name !== keep) await rm(join(publicDir, "overlay", name), { recursive: true, force: true });
+}
+
 export async function registerMatch(
   context: string | LocalRuntime, id: string, name: string, model: unknown, video: VideoRegistration,
+  overlayDir?: string,
 ) {
   matchIdSchema.parse(id);
   const { reviewDir: publicDir, dataDir: localDir } = runtime(context);
@@ -73,7 +104,10 @@ export async function registerMatch(
     (await optionalJson(join(localDir, "videos.json"))) ?? {};
   const hash = createHash("sha256").update(JSON.stringify(model)).digest("hex").slice(0, 16);
   const entry = { id: `match:${id}`, name, url: `/matches/${id}-${hash}.json` };
+  const overlay = overlayFolder(id, model);
+  if (overlay && !overlayDir) throw new Error("缺少疊圖資料檔");
   // Publish immutable data first; the catalog update is the commit point.
+  if (overlay && overlayDir) await publishOverlay(publicDir, overlay, overlayDir);
   await save(join(publicDir, `${id}-${hash}.json`), model);
   await save(join(localDir, "videos.json"), { ...registry, [id]: video });
   try {
@@ -84,10 +118,13 @@ export async function registerMatch(
     await save(join(localDir, "videos.json"), registry);
     throw error;
   }
+  await pruneOverlays(publicDir, id, overlay).catch(() => undefined);
 }
 
 /** Invoke the Python data boundary with an argv array; no shell command is composed. */
-export async function exportReview(context: string | LocalRuntime, id: string, videoPath: string): Promise<MatchModel> {
+export async function exportReview(
+  context: string | LocalRuntime, id: string, videoPath: string, overlayDir?: string,
+): Promise<MatchModel> {
   matchIdSchema.parse(id);
   const { backendDir: repositoryRoot, matchesDir, dataDir: localDir, uvBinary } = runtime(context);
   const matchRoot = resolve(matchesDir, id);
@@ -108,6 +145,7 @@ export async function exportReview(context: string | LocalRuntime, id: string, v
     "--video-url", `/local-video/${id}`, "--scenario", `match:${id}`];
   if (metadata.title) args.push("--title", metadata.title);
   if (metadata.players) args.push("--player-a", metadata.players.a, "--player-b", metadata.players.b);
+  if (overlayDir) args.push("--overlay-dir", overlayDir, "--overlay-url", `/matches/overlay/${id}`);
   try {
     execFileSync(uvBinary, args, {
       cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
@@ -132,16 +170,22 @@ export async function importMatch(context: string | LocalRuntime, id: string) {
   const videoPath = await resolveInputVideo(matchRoot);
   if (!videoPath) throw new Error("input/ 中找不到影片檔");
   const before = await stat(videoPath);
-  const model = await exportReview(config, id, videoPath);
-  const after = await stat(videoPath);
-  if (before.size !== after.size || before.mtimeMs !== after.mtimeMs)
-    throw new Error("匯入期間影片變動");
-  await registerMatch(config, id, model.title, model, {
-    path: videoPath, size: after.size, mtimeMs: after.mtimeMs,
-  });
-  await save(join(config.dataDir, `${id}-sources.json`), {
-    matchRoot, video: { path: videoPath, size: after.size, mtimeMs: after.mtimeMs },
-    fingerprints: model.source?.fingerprints ?? {}, states: model.states,
-  });
-  return model;
+  const overlayDir = join(config.dataDir, `${id}-overlay-${process.pid}`);
+  await rm(overlayDir, { recursive: true, force: true });
+  try {
+    const model = await exportReview(config, id, videoPath, overlayDir);
+    const after = await stat(videoPath);
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs)
+      throw new Error("匯入期間影片變動");
+    await registerMatch(config, id, model.title, model, {
+      path: videoPath, size: after.size, mtimeMs: after.mtimeMs,
+    }, overlayDir);
+    await save(join(config.dataDir, `${id}-sources.json`), {
+      matchRoot, video: { path: videoPath, size: after.size, mtimeMs: after.mtimeMs },
+      fingerprints: model.source?.fingerprints ?? {}, states: model.states,
+    });
+    return model;
+  } finally {
+    await rm(overlayDir, { recursive: true, force: true });
+  }
 }

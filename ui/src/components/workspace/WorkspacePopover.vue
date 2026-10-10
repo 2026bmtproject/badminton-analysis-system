@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, type HTMLAttributes } from "vue";
 import { placeWorkspacePopover } from "../../presentation/workspacePopover";
 
 const props = withDefaults(defineProps<{
   label: string;
   minWidth?: number;
-}>(), { minWidth: 200 });
+  /** Extra classes for the trigger, so it can match the toolbar it sits in. */
+  triggerClass?: HTMLAttributes["class"];
+}>(), { minWidth: 200, triggerClass: undefined });
 const emit = defineEmits<{ open: [value: boolean] }>();
 const trigger = ref<HTMLButtonElement | null>(null);
 const menu = ref<HTMLElement | null>(null);
@@ -76,7 +78,7 @@ defineExpose({ close, toggle });
 
 <template>
   <span class="workspace-popover-anchor">
-    <button ref="trigger" type="button" class="workspace-popover__trigger" :aria-label="label" :title="label" aria-haspopup="menu" :aria-expanded="open" @click.stop="toggle">
+    <button ref="trigger" type="button" class="workspace-popover__trigger" :class="triggerClass" :aria-label="label" :title="label" aria-haspopup="menu" :aria-expanded="open" @click.stop="toggle">
       <slot name="trigger" />
     </button>
     <Teleport :to="teleportTarget">

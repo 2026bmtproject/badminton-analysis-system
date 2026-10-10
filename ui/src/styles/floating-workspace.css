@@ -181,6 +181,23 @@
 .workspace-popover [role="menuitem"]:hover { color: var(--color-on-accent); background: var(--color-accent); }
 .workspace-popover label { display: grid; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--type-meta); white-space: nowrap; }
 .workspace-popover input[type="range"] { width: 100%; min-width: 168px; accent-color: var(--color-accent); }
+/* The overlay menu: a master switch over one checkbox row per layer, then the shuttle track choice. */
+.workspace-popover__trigger.player-icon-button { min-width: 0; padding: 0; }
+.overlay-menu { display: grid; min-width: 188px; gap: var(--space-1); }
+.workspace-popover .overlay-menu__row { display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-1); color: var(--color-text); cursor: pointer; }
+.overlay-menu__row > span { flex: 1; }
+.overlay-menu__row kbd { color: var(--color-text-muted); font-family: var(--font-measurement); font-size: var(--type-micro); }
+.workspace-popover .overlay-menu__row--master { padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); font-weight: 600; }
+.workspace-popover .overlay-menu__row--child { padding-left: calc(var(--space-1) + 20px); }
+.overlay-menu__layers { display: grid; gap: 2px; }
+.workspace-popover .overlay-menu__layers--off .overlay-menu__row { color: var(--color-text-secondary); }
+.workspace-popover .overlay-menu__row:has(input:disabled) { color: var(--color-text-muted); cursor: default; }
+.overlay-menu input:is([type="checkbox"], [type="radio"]) { margin: 0; accent-color: var(--color-accent); }
+.overlay-menu__methods { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: var(--space-2) var(--space-1) 0; border: 0; border-top: 1px solid var(--color-border); }
+.overlay-menu__methods legend { float: left; width: 100%; margin-bottom: var(--space-1); padding: 0; color: var(--color-text-secondary); font-size: var(--type-meta); }
+.workspace-popover .overlay-menu__methods label { display: flex; align-items: center; gap: var(--space-1); color: var(--color-text); }
+.overlay-menu__methods:disabled label { color: var(--color-text-muted); }
+.overlay-menu__note { max-width: 220px; margin: 0; color: var(--color-text-muted); font-size: var(--type-meta); white-space: normal; }
 .workspace-window__body {
   min-height: 0;
   flex: 1;

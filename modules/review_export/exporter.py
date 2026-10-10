@@ -29,6 +29,7 @@ from modules.review_export.contracts import (
     SegmentCommentaryArtifact,
 )
 from modules.review_export.court_positions import derive_court_positions
+from modules.review_export.overlay import write_overlay
 
 
 ALIASES = {
@@ -54,6 +55,10 @@ class ExportOptions:
     duration: float | None = None
     scenario: str | None = None
     backend_base_commit: str | None = None
+    #: Where to write the per-rally overlay files; none are written without it.
+    overlay_dir: Path | None = None
+    #: Published address of ``overlay_dir`` without its content hash.
+    overlay_url: str | None = None
 
 
 def _sha256_16(data: bytes) -> str:
@@ -458,6 +463,10 @@ def export_review(match_path: str | Path, options: ExportOptions | None = None) 
         rallies.append(rally)
 
     derive_court_positions(rallies, snapshot.raw.get("court"), snapshot.raw.get("pose"), fps)
+    overlay = (write_overlay(options.overlay_dir, options.overlay_url or f"/matches/overlay/{match_path.name}",
+                             segments, snapshot.raw.get("court"), snapshot.raw.get("pose"),
+                             snapshot.raw.get("shuttle"), (events or {}).get("base_method"))
+               if options.overlay_dir is not None else None)
     available_count = len(commentary)
     states = {name: state.model_dump(exclude_none=True) for name, state in snapshot.states.items()}
     capabilities = {
@@ -491,6 +500,7 @@ def export_review(match_path: str | Path, options: ExportOptions | None = None) 
             "limitations": ["分析片段不等於完整得分回合；資料一致性不代表辨識準確率。",
                 "比分是 segment 內觀察結果；缺值保留，未推導得分前後或勝者。",
                 "局數與場上身分依已驗證 artifact 推導；未知舊指紋會明確標示。",
-                "歡呼與精彩分數為片段彙總指標，不代表戰術品質。"]}).model_dump(mode="json")
+                "歡呼與精彩分數為片段彙總指標，不代表戰術品質。"]},
+        overlay=overlay).model_dump(mode="json")
     snapshot.verify_unchanged()
     return result

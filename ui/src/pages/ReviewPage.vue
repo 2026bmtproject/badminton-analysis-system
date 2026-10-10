@@ -6,11 +6,23 @@ import ReviewTimeline from "../components/ReviewTimeline.vue";
 import AnalysisWindow from "../components/workspace/AnalysisWindow.vue";
 import WorkspaceWindow from "../components/workspace/WorkspaceWindow.vue";
 import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
+import OverlayMenu from "../components/overlay/OverlayMenu.vue";
+import VideoOverlay from "../components/overlay/VideoOverlay.vue";
 import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
 import { sameReview, type EvidenceModel } from "../domain/models";
 import { playerName, scoreText } from "../format";
 import { playerShortcutAction, repeatsWhileHeld } from "../interaction/playerShortcuts";
 import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
+import {
+  activeOverlayLayers,
+  overlayAvailability,
+  overlayShortcut,
+  shownShuttleMethods,
+  toggleOverlay,
+  toggleOverlayLayer,
+  type OverlayLayerId,
+  type OverlayShortcut,
+} from "../overlay/overlaySettings";
 import { useMatchContext } from "../state/matchContext";
 import {
   constrainAnalysisDockWidth,
@@ -42,6 +54,10 @@ const SHORTCUT_GROUPS: readonly { title: string; items: readonly { keys: readonl
     { keys: [["Shift", "←"], ["→"]], label: "上一拍／下一拍" },
     { keys: [["Esc"]], label: "取消選取" },
   ] },
+  { title: "疊圖", items: [
+    { keys: [["O"]], label: "疊圖開關" },
+    { keys: [["1 – 7"]], label: "切換圖層" },
+  ] },
   { title: "時間軸", items: [
     { keys: [["雙擊片段"]], label: "放大／回到全場" },
     { keys: [["滾輪"]], label: "平移" },
@@ -63,6 +79,8 @@ const playerControlsHost = ref<HTMLElement | null>(null);
 const fullscreen = ref(false);
 const fullscreenUiHidden = ref(false);
 const panelInteracting = ref<Record<WorkspacePanelId, boolean>>({ timeline: false, analysis: false });
+/** The overlay menu floats outside both windows, so an open menu holds the fullscreen UI by itself. */
+const overlayMenuOpen = ref(false);
 const pointerPressed = ref(false);
 let idleTimer: number | undefined;
 const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
@@ -81,6 +99,10 @@ const activeId = computed(() => workspace.activeRally.value?.id ?? null);
 const currentLabel = computed(() => activeId.value === null ? "比賽空檔" : `片段 ${String(activeId.value + 1).padStart(3, "0")}`);
 const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "選手 A"), b: playerName(match.value.players.b, "選手 B") }));
 const matchTitle = computed(() => !match.value.title || /^(?:match:)?yt[_:-]/i.test(match.value.title) ? "比賽回看" : match.value.title);
+const overlayLayersAvailable = computed(() => overlayAvailability(match.value));
+const overlayLayers = computed(() => activeOverlayLayers(layout.overlay, overlayLayersAvailable.value));
+const overlayMethods = computed(() => match.value.overlay?.methods ?? []);
+const shownOverlayMethods = computed(() => shownShuttleMethods(layout.overlay, overlayMethods.value));
 const headerScore = computed(() => workspace.currentScore.value ? scoreText(workspace.currentScore.value) : null);
 const timelineModes = computed(() => availableTimelineModes(match.value.capabilities));
 const selectedTimelineLabel = computed(() => timelineModes.value.find((item) => item.id === layout.timelineMode)?.label ?? "片段");
@@ -153,10 +175,29 @@ function keyboard(event: KeyboardEvent) {
     return;
   }
   if (!event.repeat && workspace.handleKeyboard(event)) { event.stopPropagation(); return; }
+  const overlayKey = match.value.layoutOnly ? null : overlayShortcut(event);
+  if (overlayKey) {
+    consume(event);
+    if (!event.repeat) applyOverlayShortcut(overlayKey);
+    return;
+  }
   const action = playerShortcutAction(event);
   if (!action) return;
   consume(event);
   if (!event.repeat || repeatsWhileHeld(action)) player.value?.handleShortcut(action);
+}
+function applyOverlayShortcut(shortcut: OverlayShortcut) {
+  if (shortcut.kind === "overlay") toggleOverlay(layout.overlay);
+  else toggleLayer(shortcut.id);
+}
+/** An unavailable layer keeps its stored choice; there is nothing to switch on. */
+function toggleLayer(id: OverlayLayerId) {
+  if (overlayLayersAvailable.value[id] === null) toggleOverlayLayer(layout.overlay, id);
+}
+function overlayMenu(open: boolean) {
+  overlayMenuOpen.value = open;
+  if (open) { fullscreenUiHidden.value = false; clearIdleTimer(); }
+  else scheduleIdle();
 }
 /** A button fires its Space click on keyup, so the matching keyup is swallowed too. */
 function keyboardRelease(event: KeyboardEvent) {
@@ -196,7 +237,7 @@ function clearIdleTimer() {
   idleTimer = undefined;
 }
 function interactionActive() {
-  return pointerPressed.value || panelInteracting.value.analysis || panelInteracting.value.timeline ||
+  return pointerPressed.value || panelInteracting.value.analysis || panelInteracting.value.timeline || overlayMenuOpen.value ||
     // A pointer resting on a window keeps it: hidden windows let presses through to the video,
     // so the next drag would toggle playback instead of moving the window.
     Boolean(stage.value?.querySelector("select:focus, input:focus, [aria-expanded='true']:focus, .workspace-window:hover"));
@@ -320,7 +361,14 @@ onBeforeUnmount(() => {
     </header>
     <main class="review-main review-main--workspace">
       <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
-        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
+        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
+          <template #overlay="{ video }">
+            <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" />
+          </template>
+          <template #controls>
+            <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" />
+          </template>
+        </ReviewPlayer>
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
         <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :fullscreen="fullscreen" toolbar :toolbar-bottom="fullscreen" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('timeline')">

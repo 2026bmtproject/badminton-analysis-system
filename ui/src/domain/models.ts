@@ -137,6 +137,21 @@ export type MatchSource = {
   limitations: string[];
 };
 
+/** Where the per-rally video overlay files live; each Rally in `segments` has one. */
+export type OverlayManifestModel = {
+  schemaVersion: "review-overlay-v1";
+  url: string;
+  segments: number[];
+  /** Shuttle tracking methods, e.g. inpaint and viterbi. */
+  methods: string[];
+  /** The method event detection placed its hits on. */
+  baseMethod: string | null;
+  /** Index pairs into a Rally's 16 projected court points. */
+  courtLines: [number, number][];
+  /** COCO-17 keypoint index pairs. */
+  skeleton: [number, number][];
+};
+
 export type MatchModel = {
   schemaVersion?: "review-export-v1";
   players: { a: string; b: string };
@@ -152,6 +167,7 @@ export type MatchModel = {
   commentaryAvailability: CommentaryAvailabilityModel;
   fps?: number;
   source?: MatchSource;
+  overlay?: OverlayManifestModel;
 };
 
 export type CatalogEntry = {

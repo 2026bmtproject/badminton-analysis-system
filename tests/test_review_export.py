@@ -197,3 +197,41 @@ def test_snapshot_detects_status_change_and_new_optional_artifact(tmp_path: Path
     missing.write_text('{"highlights": []}')
     with pytest.raises(RuntimeError, match="highlights.json"):
         snapshot.verify_unchanged()
+
+
+def test_overlay_files_hold_each_rally_in_video_pixels(tmp_path: Path):
+    match = fixture_match(tmp_path)
+    write_stage(match, "court_detection", {"courts": [
+        {"homography": [[100, 0, 50], [0, 50, 20], [0, 0, 1]], "corners": []}]})
+    keypoints = [[300 + i, 400 + i, .9] for i in range(17)]
+    keypoints[0][2] = .1  # below the pose overlay's threshold
+    write_stage(match, "pose", {"frames": [
+        {"frame": 50, "segment_index": 0, "player": "top", "keypoints": keypoints, "bbox": [290, 390, 330, 460]},
+        {"frame": 51, "segment_index": 0, "player": "bottom", "keypoints": None, "bbox": None}]})
+    write_stage(match, "shuttle_tracking", {"points": [
+        {"frame": 50, "segment_index": 0, "method": "inpaint", "x": 10.04, "y": 20.06, "visible": True},
+        {"frame": 51, "segment_index": 0, "method": "inpaint", "x": None, "y": None, "visible": False},
+        {"frame": 225, "segment_index": 0, "method": "viterbi", "x": 1, "y": 2, "visible": True}]})
+    out = tmp_path / "overlay"
+    model = export_review(match, ExportOptions(duration=44, overlay_dir=out, overlay_url="/matches/overlay/fx"))
+    ReviewExport.model_validate(model)
+    overlay = model["overlay"]
+    assert overlay["url"].startswith("/matches/overlay/fx-") and len(overlay["url"]) == len("/matches/overlay/fx-") + 16
+    assert overlay["methods"] == ["inpaint", "viterbi"]
+    assert overlay["segments"] == [0, 1, 2, 3]  # the whole-match court covers every rally
+    chunk = json.loads((out / "rally-000.json").read_text(encoding="utf-8"))
+    assert (chunk["startFrame"], chunk["frameCount"]) == (50, 176)
+    assert chunk["court"][0] == [50, 20]  # top-left corner of the metric court
+    assert chunk["shuttle"]["inpaint"][:3] == [[10, 20], None, None]
+    assert chunk["shuttle"]["viterbi"][-1] == [1, 2]
+    assert chunk["pose"]["top"][0]["bbox"] == [290, 390, 330, 460]
+    assert chunk["pose"]["top"][0]["keypoints"][:2] == [None, [301, 401]]
+    assert chunk["pose"]["bottom"][1] is None
+
+
+def test_overlay_is_skipped_without_a_directory_or_drawable_data(tmp_path: Path):
+    match = fixture_match(tmp_path)
+    assert "overlay" not in export_review(match, ExportOptions(duration=44))
+    model = export_review(match, ExportOptions(duration=44, overlay_dir=tmp_path / "overlay"))
+    assert "overlay" not in model
+    assert not (tmp_path / "overlay").exists()

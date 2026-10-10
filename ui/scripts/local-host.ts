@@ -95,6 +95,8 @@ export async function startLocalHost(context: LocalRuntime, distDir: string,
         return await file(res, join(context.reviewDir, "catalog.json"), head);
       const review = /^\/matches\/([A-Za-z0-9_-]+-[a-f0-9]{16}\.json)$/.exec(path);
       if (review) return await file(res, join(context.reviewDir, review[1]), head);
+      const overlay = /^\/matches\/overlay\/([A-Za-z0-9_-]+-[a-f0-9]{16})\/(rally-\d{3,}\.json)$/.exec(path);
+      if (overlay) return await file(res, join(context.reviewDir, "overlay", overlay[1], overlay[2]), head);
       if (path.startsWith("/matches/") && path.endsWith(".json"))
         return json(res, 404, { error: "not found" });
       const asset = /^\/assets\/([A-Za-z0-9._-]+)$/.exec(path);

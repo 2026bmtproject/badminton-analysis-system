@@ -20,6 +20,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video-url")
     parser.add_argument("--duration", type=float)
     parser.add_argument("--scenario")
+    parser.add_argument("--overlay-dir", type=Path,
+                        help="write the per-rally video overlay files here")
+    parser.add_argument("--overlay-url", help="published address of --overlay-dir, before its content hash")
     return parser.parse_args()
 
 
@@ -28,7 +31,8 @@ def main() -> None:
     players = ({"a": args.player_a, "b": args.player_b}
                if args.player_a is not None and args.player_b is not None else None)
     result = export_review(args.match_path, ExportOptions(title=args.title, players=players,
-        video_url=args.video_url, duration=args.duration, scenario=args.scenario))
+        video_url=args.video_url, duration=args.duration, scenario=args.scenario,
+        overlay_dir=args.overlay_dir, overlay_url=args.overlay_url))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_name(args.output.name + f".{os.getpid()}.tmp")
     temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -379,6 +379,92 @@
       "title": "ReviewEvidence",
       "type": "object"
     },
+    "ReviewOverlay": {
+      "additionalProperties": false,
+      "description": "Where the per-rally video overlay files live and how to draw them.\n\nPose and shuttle are far too large for the Review model, so each rally's drawable\ngeometry is a separate file under ``url``; only ``segments`` have one.",
+      "properties": {
+        "baseMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Basemethod"
+        },
+        "courtLines": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Courtlines",
+          "type": "array"
+        },
+        "methods": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Methods",
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": "review-overlay-v1",
+          "title": "Schemaversion",
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Segments",
+          "type": "array"
+        },
+        "skeleton": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Skeleton",
+          "type": "array"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "url",
+        "segments",
+        "methods",
+        "baseMethod",
+        "courtLines",
+        "skeleton"
+      ],
+      "title": "ReviewOverlay",
+      "type": "object"
+    },
     "ReviewRally": {
       "properties": {
         "audio": {
@@ -883,6 +969,17 @@
       "exclusiveMinimum": 0,
       "title": "Fps",
       "type": "number"
+    },
+    "overlay": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReviewOverlay"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "players": {
       "additionalProperties": {

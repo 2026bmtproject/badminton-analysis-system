@@ -947,6 +947,81 @@
       "title": "ScoresArtifact",
       "type": "object"
     },
+    "shuttle_tracking": {
+      "$defs": {
+        "ShuttleRecord": {
+          "additionalProperties": true,
+          "properties": {
+            "frame": {
+              "minimum": 0,
+              "title": "Frame",
+              "type": "integer"
+            },
+            "method": {
+              "minLength": 1,
+              "title": "Method",
+              "type": "string"
+            },
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "visible": {
+              "title": "Visible",
+              "type": "boolean"
+            },
+            "x": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X"
+            },
+            "y": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Y"
+            }
+          },
+          "required": [
+            "frame",
+            "segment_index",
+            "method",
+            "x",
+            "y",
+            "visible"
+          ],
+          "title": "ShuttleRecord",
+          "type": "object"
+        }
+      },
+      "additionalProperties": true,
+      "properties": {
+        "points": {
+          "items": {
+            "$ref": "#/$defs/ShuttleRecord"
+          },
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "ShuttleArtifact",
+      "type": "object"
+    },
     "stroke_classification": {
       "$defs": {
         "StrokeRecord": {

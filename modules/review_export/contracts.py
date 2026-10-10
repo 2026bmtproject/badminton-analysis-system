@@ -127,6 +127,19 @@ class PoseArtifact(ContractModel):
     frames: list[PoseRecord]
 
 
+class ShuttleRecord(ContractModel):
+    frame: int = Field(ge=0)
+    segment_index: int = Field(ge=0)
+    method: str = Field(min_length=1)
+    x: float | None
+    y: float | None
+    visible: bool
+
+
+class ShuttleArtifact(ContractModel):
+    points: list[ShuttleRecord]
+
+
 class CommentarySummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
     segment_index: int = Field(ge=0)
@@ -290,6 +303,23 @@ class ReviewCommentaryAvailability(BaseModel):
     totalRallyCount: int = Field(ge=0)
 
 
+class ReviewOverlay(BaseModel):
+    """Where the per-rally video overlay files live and how to draw them.
+
+    Pose and shuttle are far too large for the Review model, so each rally's drawable
+    geometry is a separate file under ``url``; only ``segments`` have one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    schemaVersion: Literal["review-overlay-v1"]
+    url: str = Field(min_length=1)
+    segments: list[int]
+    methods: list[str]
+    baseMethod: str | None
+    courtLines: list[tuple[int, int]]
+    skeleton: list[tuple[int, int]]
+
+
 class ReviewExport(BaseModel):
     """Stable envelope consumed by Vue; presentation state is absent."""
 
@@ -307,6 +337,7 @@ class ReviewExport(BaseModel):
     commentaryAvailability: ReviewCommentaryAvailability
     fps: float = Field(gt=0)
     source: ReviewSource
+    overlay: ReviewOverlay | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def base_shape(self) -> "ReviewExport":
@@ -325,4 +356,5 @@ ARTIFACT_MODELS: dict[str, type[BaseModel]] = {
     "player_identity": IdentityArtifact,
     "court_detection": CourtArtifact,
     "pose": PoseArtifact,
+    "shuttle_tracking": ShuttleArtifact,
 }

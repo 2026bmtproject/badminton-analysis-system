@@ -176,6 +176,17 @@ const source = z.object({
     .optional(),
 });
 
+const indexPair = z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]);
+const overlay = z.object({
+  schemaVersion: z.literal("review-overlay-v1"),
+  url: z.string().regex(/^\/matches\/overlay\/[A-Za-z0-9_-]+-[a-f0-9]{16}$/),
+  segments: z.array(z.number().int().nonnegative()),
+  methods: z.array(z.string().min(1)),
+  baseMethod: z.string().nullable(),
+  courtLines: z.array(indexPair),
+  skeleton: z.array(indexPair),
+});
+
 const TIMELINE_EPSILON_SEC = 1e-6;
 
 const matchEnvelope = z
@@ -192,6 +203,7 @@ const matchEnvelope = z
     layoutOnly: z.boolean().optional(),
     fps: z.number().positive().optional(),
     source: source.optional(),
+    overlay: overlay.optional(),
   })
   .superRefine((match, context) => {
     match.cheerTimeline?.forEach((window, index) => {

@@ -173,6 +173,8 @@ defineExpose({ seek, pause, handleShortcut, currentTime });
         @volumechange="syncMute"
         @error="failed(media($event))"
       ></video>
+      <!-- Drawn over the picture; receives the element so it can follow its frames and letterboxing. -->
+      <slot name="overlay" :video="video" />
     </div>
     <Teleport :to="controlsTarget ?? 'body'" :disabled="!controlsTarget">
       <div class="controls">
@@ -198,7 +200,7 @@ defineExpose({ seek, pause, handleShortcut, currentTime });
             @click="toggleSegmentsOnly"
           >
             <AppIcon name="segments" /></button
-          ><button
+          ><slot name="controls" /><button
             class="player-icon-button"
             type="button"
             :aria-label="muted ? '取消靜音' : '靜音'"
