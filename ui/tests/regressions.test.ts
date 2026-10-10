@@ -369,8 +369,8 @@ test("instrument typography bundles only the compact measurement face", () => {
   assert.equal((tokens.match(/font-display: swap;/g) ?? []).length, 2);
   assert.match(tokens, /--font-interface: "Segoe UI"/);
   assert.match(tokens, /--font-measurement: "IBM Plex Mono"/);
-  assert.match(tokens, /--radius-sm: 8px;/);
-  assert.match(tokens, /--radius-lg: 18px;/);
+  assert.match(tokens, /--radius-sm: 2px;/);
+  assert.match(tokens, /--radius-lg: 4px;/);
 });
 
 test("primary scores use the instrument divider while timeline semantics stay unchanged", () => {
@@ -595,7 +595,7 @@ test("editorial inspector keeps content order and stable measurement columns", (
     inspector,
     /\.hit-row\s*\{[^}]*grid-template-columns:\s*24px minmax\(0, 0\.9fr\) minmax\(0, 1fr\);/s,
   );
-  assert.match(inspector, /\.commentary-summary\s*\{[^}]*border-left:\s*2px solid var\(--color-accent\);/s);
+  assert.match(inspector, /\.commentary-summary\s*\{[^}]*border-left:\s*2px solid var\(--color-commentary\);/s);
 });
 
 test("fit, active, and selected states use the line selection grammar", () => {
@@ -607,16 +607,21 @@ test("fit, active, and selected states use the line selection grammar", () => {
   );
 });
 
-test("foundation controls retain forty-pixel targets and visible keyboard focus", () => {
+test("foundation controls keep VS Code-sized targets and visible keyboard focus", () => {
   const tokens = readFileSync("src/styles/tokens.css", "utf8");
-  assert.match(tokens, /--control-normal: 40px;/);
+  assert.match(tokens, /--control-normal: 28px;/);
   assert.match(
     tokens,
     /button\s*\{[^}]*min-height:\s*var\(--control-normal\);/s,
   );
   assert.match(
     tokens,
-    /button:focus-visible,[\s\S]*outline:\s*2px solid var\(--color-text\);[\s\S]*outline-offset:\s*2px;/,
+    /button:focus-visible,[\s\S]*outline:\s*1px solid var\(--color-focus\);[\s\S]*outline-offset:\s*-1px;/,
+  );
+  // Inside the analysis surfaces the ring stays neutral, clear of the player A blue.
+  assert.match(
+    tokens,
+    /:is\(\.intelligence-timeline, \.rally-court-map, \.hit-list\) :focus-visible \{\s*outline-color: var\(--line-selected\);/,
   );
 });
 

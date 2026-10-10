@@ -269,7 +269,7 @@
   cursor: default;
 }
 .progress-control:has(input:focus-visible) .progress-track-base {
-  outline: 2px solid var(--color-text);
+  outline: 1px solid var(--color-focus);
   outline-offset: 4px;
 }
 .control-row {
@@ -304,10 +304,11 @@
   border-color: var(--color-border-strong);
   background: transparent;
 }
+/* VS Code's toggled input option: a blue frame on a tinted fill. */
 .player-icon-button[aria-pressed="true"] {
-  color: var(--color-accent);
-  border-color: var(--line-strong);
-  background: var(--color-surface-soft);
+  color: var(--color-on-accent);
+  border-color: var(--color-focus);
+  background: rgb(0 120 212 / 25%);
 }
 .player-icon-button:disabled {
   opacity: 0.4;

@@ -43,7 +43,7 @@
 @media (pointer: fine) {
   .detail-scroll {
     scrollbar-width: thin;
-    scrollbar-color: rgb(166 173 179 / 42%) transparent;
+    scrollbar-color: rgb(121 121 121 / 40%) transparent;
   }
   .detail-scroll::-webkit-scrollbar {
     width: 8px;
@@ -53,12 +53,12 @@
     background: transparent;
   }
   .detail-scroll::-webkit-scrollbar-thumb {
-    background: rgb(166 173 179 / 42%);
+    background: rgb(121 121 121 / 40%);
     background-clip: padding-box;
     border: 1px solid transparent;
   }
   .detail-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgb(166 173 179 / 60%);
+    background: rgb(100 100 100 / 70%);
     background-clip: padding-box;
   }
 }
@@ -95,7 +95,7 @@
 .commentary-summary {
   margin: 0;
   padding: var(--space-1) 0 var(--space-1) var(--space-3);
-  border-left: 2px solid var(--color-accent);
+  border-left: 2px solid var(--color-commentary);
 }
 .commentary-summary > p:first-child {
   color: var(--color-text);

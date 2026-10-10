@@ -101,12 +101,12 @@ test("gap state keeps the Rally just played instead of an empty window", () => {
   assert.doesNotMatch(inspector, /等待下一段|保留最新可用比分|不顯示前一段內容/);
 });
 
-test("splitters use neutral structural tokens", () => {
+test("splitters show the VS Code sash, never a state colour", () => {
   const styles = source("src/styles/floating-workspace.css");
   const splitter = styles.slice(
     styles.indexOf(".workspace-window__dock-resize"),
     styles.indexOf(".workspace-window__resize-grip::after"),
   );
-  assert.match(splitter, /--line-strong|--color-border-strong/);
+  assert.match(splitter, /--color-focus/);
   assert.doesNotMatch(splitter, /--color-accent|--line-active/);
 });

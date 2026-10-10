@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, KeepAlive } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch, watchEffect, KeepAlive } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { loadCatalog, loadMatch } from "../data/matchRepository";
 import type { CatalogEntry } from "../domain/models";
 import { createMatchContext, provideMatchContext } from "../state/matchContext";
+import { matchTitle } from "../state/windowTitle";
 
 const route = useRoute();
 const context = createMatchContext();
@@ -69,6 +70,8 @@ async function refreshMatch() {
 context.setRefreshMatch(refreshMatch);
 
 watch(() => route.params.matchId, loadRequestedMatch, { immediate: true });
+watchEffect(() => { matchTitle.value = context.model.value ? displayTitle.value : null; });
+onUnmounted(() => { matchTitle.value = null; });
 </script>
 
 <template>

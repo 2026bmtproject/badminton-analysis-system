@@ -36,7 +36,7 @@
 .review-workspace-stage .controls {
   position: relative;
   z-index: var(--z-sticky);
-  background: rgb(8 10 11 / 96%);
+  background: rgb(24 24 24 / 96%);
 }
 /*
  * A toolbar replaces the header: one 36px row (TIMELINE_TOOLBAR_HEIGHT_PX) of uniform 28px controls, laid
@@ -73,10 +73,10 @@
   flex-direction: column;
   overflow: visible;
   color: var(--color-text);
-  background: rgb(13 16 17 / var(--workspace-panel-alpha));
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 16px 44px rgb(0 0 0 / 48%);
+  background: rgb(24 24 24 / var(--workspace-panel-alpha));
+  border: 1px solid var(--line-widget);
+  border-radius: var(--radius-widget);
+  box-shadow: 0 0 8px 2px rgb(0 0 0 / 36%);
   container-type: inline-size;
   transition: border-color var(--motion-fast) var(--motion-ease);
 }
@@ -104,18 +104,18 @@
   box-shadow: none;
   overflow: visible;
 }
-.workspace-window--docked.workspace-window--timeline { grid-area: timeline; border-top: 1px solid var(--color-border-strong); }
-.workspace-window--docked.workspace-window--analysis { grid-area: analysis; border-left: 1px solid var(--color-border-strong); }
-.workspace-window--docked .workspace-window__header { background: var(--color-surface-raised); cursor: default; }
-.workspace-window--docked.workspace-window--active { border-color: var(--color-border-strong); }
+.workspace-window--docked.workspace-window--timeline { grid-area: timeline; border-top: 1px solid var(--color-border); }
+.workspace-window--docked.workspace-window--analysis { grid-area: analysis; border-left: 1px solid var(--color-border); }
+.workspace-window--docked .workspace-window__header { background: var(--color-chrome); cursor: default; }
+.workspace-window--docked.workspace-window--active { border-color: var(--color-border); }
 .workspace-window__header {
   display: flex;
-  min-height: 42px;
+  min-height: 35px;
   flex: 0 0 auto;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
-  background: rgb(23 28 30 / calc(var(--workspace-panel-alpha) * 0.96));
+  background: rgb(24 24 24 / var(--workspace-panel-alpha));
   border-bottom: 1px solid var(--color-border);
   cursor: grab;
   touch-action: none;
@@ -137,8 +137,10 @@
   flex: 0 0 auto;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--type-meta);
-  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  font-size: var(--type-micro);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0.04em;
 }
 .workspace-window__header-slot {
   display: flex;
@@ -150,14 +152,15 @@
 .workspace-window__actions { display: flex; flex: 0 0 auto; align-items: center; gap: var(--space-1); transition: opacity var(--motion-fast) var(--motion-ease); }
 .workspace-window--chrome-idle:not(:hover):not(:focus-within) .workspace-window__actions { opacity: 0.24; }
 .workspace-window__actions button {
-  width: 32px;
-  min-height: 32px;
+  width: 28px;
+  min-height: 28px;
   padding: 0;
   border: 1px solid transparent;
+  border-radius: var(--radius-widget);
 }
 .workspace-popover-anchor { display: inline-flex; flex: 0 0 auto; }
-.workspace-popover__trigger { display: grid; min-width: 32px; width: auto; min-height: 32px; place-items: center; padding: 0 var(--space-2); color: var(--color-text-secondary); border: 1px solid transparent; }
-.workspace-popover__trigger[aria-expanded="true"] { color: var(--color-text); border-color: var(--color-border-strong); background: var(--color-surface-soft); }
+.workspace-popover__trigger { display: grid; min-width: 28px; width: auto; min-height: 28px; place-items: center; padding: 0 var(--space-2); color: var(--color-text-secondary); border: 1px solid transparent; border-radius: var(--radius-widget); }
+.workspace-popover__trigger[aria-expanded="true"] { color: var(--color-text); background: var(--color-surface-soft); }
 .workspace-popover {
   position: fixed;
   z-index: calc(var(--z-overlay) + 30);
@@ -166,13 +169,16 @@
   gap: var(--space-2);
   padding: var(--space-3);
   color: var(--color-text);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
+  background: var(--color-widget);
+  border: 1px solid var(--line-widget);
+  border-radius: var(--radius-widget);
   box-shadow: var(--shadow-dropdown);
 }
+/* Menu rows as in VS Code: borderless, hovered in the accent blue. */
 .workspace-popover > button,
-.workspace-popover [role="menuitem"] { width: 100%; min-height: 34px; justify-content: flex-start; padding: var(--space-1) var(--space-2); white-space: nowrap; text-align: left; border: 1px solid var(--color-border); }
+.workspace-popover [role="menuitem"] { width: 100%; min-height: 26px; justify-content: flex-start; padding: var(--space-1) var(--space-2); white-space: nowrap; text-align: left; border-radius: var(--radius-lg); }
+.workspace-popover > button:hover,
+.workspace-popover [role="menuitem"]:hover { color: var(--color-on-accent); background: var(--color-accent); }
 .workspace-popover label { display: grid; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--type-meta); white-space: nowrap; }
 .workspace-popover input[type="range"] { width: 100%; min-width: 168px; accent-color: var(--color-accent); }
 .workspace-window__body {
@@ -180,7 +186,7 @@
   flex: 1;
   overflow-x: clip;
   overflow-y: auto;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 0 0 var(--radius-widget) var(--radius-widget);
 }
 .workspace-window__body > .intelligence-timeline,
 .workspace-window__body .rally-panel {
@@ -208,10 +214,11 @@
 .workspace-window--analysis .workspace-window__dock-resize { top: 0; bottom: 0; left: -5px; width: 10px; cursor: ew-resize; }
 /* The strip ends above the toolbar's 28px controls, which start 4px below the top edge. */
 .workspace-window--timeline .workspace-window__dock-resize { top: -6px; right: 0; left: 0; height: 10px; cursor: ns-resize; }
-.workspace-window__dock-resize::after { position: absolute; background: var(--line-strong); content: ""; opacity: 0.28; transition: opacity var(--motion-fast) var(--motion-ease); }
-.workspace-window--analysis .workspace-window__dock-resize::after { top: 0; bottom: 0; left: 4px; width: 1px; }
-.workspace-window--timeline .workspace-window__dock-resize::after { top: 5px; right: 0; left: 0; height: 1px; }
-.workspace-window__dock-resize:hover::after { opacity: 0.72; }
+/* VS Code's sash: invisible until hovered or dragged, then a 4px accent bar over the panel border. */
+.workspace-window__dock-resize::after { position: absolute; background: var(--color-focus); content: ""; opacity: 0; transition: opacity var(--motion-fast) var(--motion-ease) 0.15s; }
+.workspace-window--analysis .workspace-window__dock-resize::after { top: 0; bottom: 0; left: 3px; width: 4px; }
+.workspace-window--timeline .workspace-window__dock-resize::after { top: 3px; right: 0; left: 0; height: 4px; }
+.workspace-window__dock-resize:hover::after { opacity: 1; }
 .workspace-window--resizing .workspace-window__dock-resize::after { opacity: 1; }
 .workspace-window__resize-grip::after {
   content: "";
@@ -229,9 +236,9 @@
 .workspace-window:hover .workspace-window__resize-grip::after,
 .workspace-window:focus-within .workspace-window__resize-grip::after,
 .workspace-window--resizing .workspace-window__resize-grip::after { opacity: 1; }
-.timeline-mode-selector select { min-height: 30px; padding: var(--space-1) var(--space-2); font-size: var(--type-meta); }
+.timeline-mode-selector select { min-height: 26px; padding: var(--space-1) var(--space-2); font-size: var(--type-meta); }
 .workspace-window__mode-label { color: var(--color-text-muted); font-size: var(--type-micro); }
-.header-actions > .workspace-popover-anchor .workspace-popover__trigger { min-height: 30px; color: var(--color-text-muted); font-size: var(--type-meta); }
+.header-actions > .workspace-popover-anchor .workspace-popover__trigger { min-height: 26px; color: var(--color-text-muted); font-size: var(--type-meta); }
 .header-actions > .workspace-popover-anchor .workspace-popover__trigger:hover { color: var(--color-text-secondary); }
 .shortcut-help__content { display: grid; gap: var(--space-3); color: var(--color-text-secondary); font-size: var(--type-meta); }
 .shortcut-help__title { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
@@ -246,21 +253,23 @@
 .shortcut-help__combo { display: inline-flex; align-items: center; gap: 3px; }
 .shortcut-help__or,
 .shortcut-help__plus { color: var(--color-text-muted); font-size: var(--type-micro); }
+/* VS Code's keybinding label. */
 .shortcut-help__content kbd {
   display: inline-grid;
-  min-width: 22px;
-  height: 22px;
+  min-width: 20px;
+  height: 20px;
   place-items: center;
-  padding: 0 6px;
+  padding: 0 5px;
   color: var(--color-text);
-  font-family: var(--font-measurement);
+  font-family: var(--font-interface);
   font-size: var(--type-micro);
   line-height: 1;
   white-space: nowrap;
-  background: var(--color-surface-soft);
-  border: 1px solid var(--color-border-strong);
-  border-bottom-width: 2px;
-  border-radius: 5px;
+  background: rgb(128 128 128 / 17%);
+  border: 1px solid rgb(51 51 51 / 60%);
+  border-bottom-color: rgb(68 68 68 / 60%);
+  border-radius: 3px;
+  box-shadow: inset 0 -1px 0 rgb(68 68 68 / 60%);
 }
 .analysis-window-content { display: flex; height: 100%; min-height: 0; flex-direction: column; }
 .analysis-window-content[data-density="compact"] .analysis-context-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
@@ -285,8 +294,9 @@
 .analysis-context-header > p { display: flex; min-width: 0; justify-content: flex-end; gap: var(--space-2); color: var(--color-text-secondary); font-family: var(--font-measurement); font-size: var(--type-micro); font-variant-numeric: tabular-nums; }
 .analysis-context-header > p span + span::before { margin-right: var(--space-2); color: var(--color-text-muted); content: "·"; }
 .analysis-tabs { display: flex; flex: 0 0 auto; border-bottom: 1px solid var(--color-border); }
-.analysis-tabs button { min-height: 38px; flex: 1; border-bottom: 2px solid transparent; border-radius: 0; }
-.analysis-tabs button[aria-pressed="true"] { border-bottom-color: var(--line-selected); background: rgb(255 255 255 / 5%); }
+.analysis-tabs button { min-height: 35px; flex: 1; color: var(--color-text-secondary); border-bottom: 1px solid transparent; border-radius: 0; }
+.analysis-tabs button:hover { color: var(--color-text); background: transparent; }
+.analysis-tabs button[aria-pressed="true"] { color: var(--color-text); border-bottom-color: var(--color-focus); }
 .analysis-window-content > .rally-panel { flex: 1; }
 .analysis-court-view { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; padding: var(--space-3); }
 .analysis-court-view .rally-court-map { flex: 1; min-height: 0; padding: 0; background: transparent; border: 0; }

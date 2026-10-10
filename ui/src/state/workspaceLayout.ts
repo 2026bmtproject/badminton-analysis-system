@@ -1,4 +1,4 @@
-import { reactive, watch } from "vue";
+import { effectScope, reactive, watch } from "vue";
 
 export type WorkspacePanelId = "timeline" | "analysis";
 export type TimelineMode = "rally" | "stroke" | "score" | "cheer";
@@ -155,12 +155,30 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
   }
 }
 
+let shared: { layout: WorkspaceLayout } | null = null;
+
+/**
+ * One layout for the whole app, so the settings page and a kept-alive Review edit the same values. Its saving watcher
+ * lives in a detached scope: it must outlast whichever view asked first.
+ */
 export function useWorkspaceLayout() {
+  if (shared) return shared;
   const stored = typeof localStorage === "undefined" ? null : localStorage.getItem(WORKSPACE_STORAGE_KEY);
   const layout = reactive(parseWorkspaceLayout(stored));
 
   if (typeof localStorage !== "undefined") {
-    watch(layout, (value) => localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(value)), { deep: true });
+    effectScope(true).run(() => {
+      watch(layout, (value) => localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(value)), { deep: true });
+    });
   }
-  return { layout };
+  shared = { layout };
+  return shared;
+}
+
+/** Docked sizes and the fullscreen windows' places, sizes and transparency go back to their defaults. */
+export function resetWorkspaceWindows(layout: WorkspaceLayout) {
+  const defaults = defaultWorkspaceLayout();
+  layout.analysisDockWidth = defaults.analysisDockWidth;
+  layout.timelineDockHeight = defaults.timelineDockHeight;
+  layout.fullscreenPanels = defaults.fullscreenPanels;
 }

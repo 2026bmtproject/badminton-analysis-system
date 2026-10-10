@@ -20,32 +20,49 @@
   --font-measurement: "IBM Plex Mono", monospace;
   font-family: var(--font-interface);
   font-synthesis: none;
-  --color-bg: #08090a;
-  --color-surface: #17191c;
-  --color-surface-raised: #202328;
-  --color-surface-soft: #1b1e22;
-  --color-chrome: #101113;
-  --color-library: #17191c;
-  --color-media: #080a0b;
+  /*
+   * Interface chrome follows VS Code Dark Modern: #181818 bars around a #1F1F1F editor, #2B2B2B dividers and
+   * #0078D4 for interactive emphasis. The accent blue stays out of the analysis surfaces, where player A is blue;
+   * selection there keeps the neutral --line-selected.
+   */
+  --color-bg: #181818;
+  --color-surface: #1f1f1f;
+  --color-surface-raised: #313131;
+  --color-surface-soft: #2a2d2e;
+  --color-chrome: #181818;
+  --color-library: #1f1f1f;
+  --color-media: #181818;
   --color-video: #020303;
-  --line-structure: rgb(242 243 240 / 8%);
-  --line-strong: rgb(242 243 240 / 16%);
+  --line-structure: #2b2b2b;
+  --line-strong: #3c3c3c;
   --line-selected: #d4d8da;
   --line-active: #78c58b;
   --color-border: var(--line-structure);
   --color-border-strong: var(--line-strong);
-  --color-text: #f2f3f0;
-  --color-text-secondary: #a6adb3;
-  --color-text-muted: #737c83;
-  --color-accent: #92b89d;
+  --color-text: #cccccc;
+  --color-text-strong: #e7e7e7;
+  --color-text-secondary: #9d9d9d;
+  --color-text-muted: #8b8b8b;
+  --color-accent: #0078d4;
+  --color-accent-hover: #026ec1;
+  --color-on-accent: #ffffff;
+  --color-focus: #0078d4;
+  /* Links and running-state text: the accent blue is too dark to read as text on #181818. */
+  --color-link: #4daafc;
+  --color-success: #73c991;
+  /* Commentary keeps its own green: the chrome blue would read as player A on the rally lane. */
+  --color-commentary: #92b89d;
   --color-selected: #d4d8da;
+  /* Hover cards, menus and floating widgets. */
+  --color-widget: #202020;
+  --line-widget: #454545;
   --color-cheer: #b58d4a;
   /* Brighter than the cheer wave and the warning amber, so a peak never reads as a review flag. */
   --color-cheer-peak: #f0d04a;
   --color-warning: #d9a84e;
-  --color-error: #ff938b;
-  --color-error-bg: #281516;
-  --color-error-border: #57302f;
+  --color-error: #f85149;
+  --color-error-bg: #2b1717;
+  --color-error-border: #6e2a2a;
   --color-rally: #566168;
   --color-rally-hover: #98a3a9;
   --color-score: #d3d7d8;
@@ -72,6 +89,7 @@
   --space-5: 24px;
   --type-micro: 11px;
   --type-meta: 13px;
+  --type-ui: 13px;
   --type-body: 15px;
   --type-control: 14px;
   --type-section: 17px;
@@ -94,13 +112,17 @@
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
-  --radius-sm: 8px;
-  --radius-lg: 18px;
-  --radius-panel: 20px;
-  --shadow-panel: 0 12px 30px rgb(0 0 0 / 15%);
-  --shadow-dropdown: 0 18px 50px rgb(0 0 0 / 55%);
+  --radius-sm: 2px;
+  --radius-lg: 4px;
+  --radius-widget: 6px;
+  /* VS Code's workbench parts: cards with a small radius, a small gap apart on the chrome. */
+  --radius-part: 6px;
+  --part-gap: 4px;
+  --radius-panel: 0;
+  --shadow-panel: none;
+  --shadow-dropdown: 0 2px 8px rgb(0 0 0 / 36%);
   --control-compact: 36px;
-  --control-normal: 40px;
+  --control-normal: 28px;
   --z-sticky: 10;
   --z-dropdown: 20;
   --z-overlay: 30;
@@ -126,8 +148,8 @@ body {
   min-width: 320px;
   color: var(--color-text);
   background: var(--color-bg);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
+  font-size: var(--type-ui);
+  line-height: var(--leading-meta);
 }
 button,
 input,
@@ -145,7 +167,7 @@ button {
   justify-content: center;
   gap: var(--space-1);
   min-height: var(--control-normal);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3);
   color: inherit;
   background: transparent;
   border: 0;
@@ -164,17 +186,25 @@ button:focus-visible,
 select:focus-visible,
 input:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--color-text);
-  outline-offset: 2px;
+  outline: 1px solid var(--color-focus);
+  outline-offset: -1px;
+}
+/* Analysis surfaces keep a neutral focus ring: the chrome blue would read as a player A mark. */
+:is(.intelligence-timeline, .rally-court-map, .hit-list) :focus-visible {
+  outline-color: var(--line-selected);
 }
 select {
-  min-height: var(--control-compact);
+  min-height: var(--control-normal);
   max-width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: 2px var(--space-2);
   color: var(--color-text);
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
+}
+option {
+  color: var(--color-text);
+  background: var(--color-surface-raised);
 }
 h1,
 h2,
@@ -242,6 +272,14 @@ small,
   padding: var(--space-4);
   color: var(--color-text-secondary);
   text-align: center;
+}
+/* VS Code's scrollbars: square, no track, no arrows. */
+@media (pointer: fine) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgb(121 121 121 / 40%); }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(100 100 100 / 70%); }
+  ::-webkit-scrollbar-thumb:active { background: rgb(191 191 191 / 40%); }
 }
 .sr-only {
   position: absolute;

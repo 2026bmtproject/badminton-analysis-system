@@ -125,8 +125,10 @@ else {
     ipcMain.handle("desktop:choose-uv", async event => { verifySender(event); return choose("uv"); });
     // The default menu has nothing the app needs, but its accelerators (reload,
     // devtools, zoom) still work while it is hidden; Alt shows it.
+    // The page draws its own 35px title bar (as VS Code does); Windows keeps its native caption buttons over it.
     window = new BrowserWindow({ width: 1280, height: 850, minWidth: 720, minHeight: 560,
-      title: "Badminton Review", autoHideMenuBar: true, webPreferences: { preload: join(appRoot, "desktop", "preload.cjs"),
+      title: "Badminton Review", autoHideMenuBar: true, backgroundColor: "#1f1f1f", titleBarStyle: "hidden",
+      titleBarOverlay: { color: "#181818", symbolColor: "#cccccc", height: 35 }, webPreferences: { preload: join(appRoot, "desktop", "preload.cjs"),
         contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false } });
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     window.webContents.on("will-navigate", (event, url) => {

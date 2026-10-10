@@ -99,7 +99,7 @@ onMounted(() => { void loadReviews(); });
 <template>
   <main class="section-page tasks-page">
     <header class="section-page-header"><h1>任務</h1></header>
-    <p v-if="error" class="error" role="alert">{{ error }} <RouterLink :to="{ name: 'settings', query: { advanced: '1' } }">檢查服務設定</RouterLink></p>
+    <p v-if="error" class="error" role="alert">{{ error }} <RouterLink :to="{ name: 'settings', hash: '#analysis-environment' }">檢查服務設定</RouterLink></p>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
     <p v-if="!loaded" role="status">載入任務中…</p>
 

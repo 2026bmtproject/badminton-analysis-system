@@ -103,7 +103,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener(
   <main class="section-page library-page">
     <header class="section-page-header"><div><h1>比賽庫</h1></div><button type="button" class="button-primary" :disabled="scanning" @click="scan"><AppIcon name="refresh" />{{ scanning ? '掃描中…' : '掃描 matches 資料夾' }}</button></header>
     <div class="library-toolbar"><label class="library-search"><AppIcon name="search" /><span class="sr-only">搜尋比賽</span><input v-model="query" type="search" placeholder="搜尋比賽名稱或 ID" /></label><label class="library-filter"><span>狀態</span><select v-model="filter"><option value="all">全部</option><option value="review">可回看</option><option value="active">分析中</option><option value="attention">需要處理</option></select></label></div>
-    <p v-if="serviceError" class="inline-notice" role="status">{{ serviceError }} <RouterLink :to="{ name: 'settings', query: { advanced: '1' } }">前往設定</RouterLink></p>
+    <p v-if="serviceError" class="inline-notice" role="status">{{ serviceError }} <RouterLink :to="{ name: 'settings', hash: '#analysis-environment' }">前往設定</RouterLink></p>
     <p v-if="catalogError || candidateError" class="inline-notice" role="status">{{ catalogError }} {{ candidateError }}</p>
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
     <p v-if="loading" role="status">正在讀取比賽…</p>
