@@ -85,12 +85,12 @@ const timelineModes = computed(() => availableTimelineModes(match.value.capabili
 const selectedTimelineLabel = computed(() => timelineModes.value.find((item) => item.id === layout.timelineMode)?.label ?? "片段");
 const adaptiveSizes = computed(() => adaptiveDefaultPanelSizes(viewportWidth.value, viewportHeight.value));
 const effectiveAnalysisDockWidth = computed(() =>
-  layout.analysisDockWidth === DEFAULT_ANALYSIS_DOCK_WIDTH && !layout.panels.analysis.collapsed
+  layout.analysisDockWidth === DEFAULT_ANALYSIS_DOCK_WIDTH
     ? adaptiveSizes.value.analysisWidth
     : layout.analysisDockWidth,
 );
 const effectiveTimelineDockHeight = computed(() =>
-  layout.timelineDockHeight === DEFAULT_TIMELINE_DOCK_HEIGHT && !layout.panels.timeline.collapsed
+  layout.timelineDockHeight === DEFAULT_TIMELINE_DOCK_HEIGHT
     ? adaptiveSizes.value.timelineHeight
     : layout.timelineDockHeight,
 );
@@ -102,9 +102,6 @@ const panels = computed(() => fullscreen.value ? fullscreenPanels.value : layout
 /** Writable panel layouts; `panels` may present a fitted copy. */
 const storedPanels = () => fullscreen.value ? layout.fullscreenPanels : layout.panels;
 const timelineClock = () => player.value?.currentTime() ?? workspace.currentTimeSec.value;
-/** Normal mode always docks both windows; fullscreen always floats them, so the dock collapse classes apply only outside fullscreen. */
-const analysisDockCollapsed = computed(() => !fullscreen.value && layout.panels.analysis.collapsed);
-const timelineDockCollapsed = computed(() => !fullscreen.value && layout.panels.timeline.collapsed);
 
 watch(player, (value) => { context.player.value = value; }, { flush: "sync" });
 watch([() => route.query.segment, () => route.query.stroke, model, player], (next, previous) => {
@@ -284,7 +281,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="review-page">
-    <header class="topbar review-matchbar" :class="{ 'review-matchbar--video-wide': analysisDockCollapsed }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px` }">
+    <header class="topbar review-matchbar" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px` }">
       <div class="review-video-heading">
         <h2 class="review-match-title">{{ matchTitle }}</h2>
         <div class="match-identity">
@@ -315,7 +312,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
     <main class="review-main review-main--workspace">
-      <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--analysis-collapsed': analysisDockCollapsed, 'review-workspace-stage--timeline-collapsed': timelineDockCollapsed, 'review-workspace-stage--ui-hidden': fullscreenUiHidden }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
+      <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
         <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen" />
         <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 

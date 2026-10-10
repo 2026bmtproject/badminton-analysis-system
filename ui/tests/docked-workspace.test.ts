@@ -37,20 +37,27 @@ test("3. Timeline dock height changes independently of temporal viewport", () =>
   assert.doesNotMatch(resizeBody, /renderViewport|seek|currentTime/);
 });
 
-test("4. collapsed Analysis releases its dock width and preserves stored size", () => {
-  assert.match(styles, /review-workspace-stage--analysis-collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
-  assert.match(windowComponent, /class="workspace-window__edge-tab"/);
-  assert.doesNotMatch(styles, /writing-mode:\s*vertical-rl/);
-  assert.match(review, /layout\.panels\.analysis\.collapsed/);
-  assert.doesNotMatch(windowComponent.slice(windowComponent.indexOf("function toggleCollapsed"), windowComponent.indexOf("function handleResize")), /dockSize/);
+test("4. docked windows cannot collapse; only fullscreen windows fold away", () => {
+  assert.match(windowComponent, /<div v-if="fullscreen" class="workspace-window__actions">[\s\S]*class="workspace-window__collapse"/);
+  assert.doesNotMatch(windowComponent, /workspace-window__edge-tab|analysisEdgeCollapsed/);
+  assert.doesNotMatch(styles, /review-workspace-stage--(analysis|timeline)-collapsed|workspace-window--docked[^{]*workspace-window--collapsed/);
+  assert.doesNotMatch(review, /layout\.panels\.(analysis|timeline)\.collapsed|DockCollapsed/);
+  // A docked collapse stored by an earlier version must not trap a window closed with no control to reopen it.
+  const stored = defaultWorkspaceLayout();
+  stored.panels.analysis.collapsed = true;
+  stored.panels.timeline.collapsed = true;
+  stored.fullscreenPanels.analysis.collapsed = true;
+  const parsed = parseWorkspaceLayout(JSON.stringify(stored));
+  assert.equal(parsed.panels.analysis.collapsed, false);
+  assert.equal(parsed.panels.timeline.collapsed, false);
+  assert.equal(parsed.fullscreenPanels.analysis.collapsed, true);
 });
 
-test("5. collapsed Timeline shrinks to its header with a single expand control", () => {
-  assert.match(styles, /review-workspace-stage--timeline-collapsed\s*\{[^}]*grid-template-rows:\s*minmax\(320px, 1fr\) auto/);
+test("5. a collapsed fullscreen window keeps its header with a single expand control", () => {
   assert.doesNotMatch(review, /compact-rail|expandTimeline/);
   assert.doesNotMatch(source("src/components/ReviewTimeline.vue"), /compactRail|timeline-rail-expand|emit\("expand"\)/);
   assert.match(windowComponent, /<div v-show="!panel\.collapsed" class="workspace-window__body">/);
-  assert.equal((windowComponent.match(/@click="toggleCollapsed"/g) ?? []).length, 2, "header button plus the docked Analysis edge tab");
+  assert.equal((windowComponent.match(/@click="toggleCollapsed"/g) ?? []).length, 1, "the header button only");
 });
 
 test("5b. Timeline merges mode, player controls and window actions into one toolbar, at the bottom in fullscreen", () => {
@@ -65,10 +72,8 @@ test("5b. Timeline merges mode, player controls and window actions into one tool
   assert.doesNotMatch(source("src/styles/desktop-shell.css"), /:fullscreen \.controls/);
 });
 
-test("5d. a collapsed docked Timeline keeps the player controls in its toolbar", () => {
-  assert.match(styles, /\.workspace-window--docked\.workspace-window--toolbar\.workspace-window--collapsed \.workspace-window__header-slot \{ display: flex; \}/);
-  assert.match(styles, /\.workspace-window--docked\.workspace-window--toolbar\.workspace-window--collapsed \.workspace-window__header-slot > :not\(\.workspace-window__player-controls\) \{ display: none; \}/);
-  assert.match(windowComponent, /closest\("button,select,input,label,a,\.workspace-window__header-slot"\)/, "clicking the controls must not expand the collapsed timeline");
+test("5d. the docked Timeline toolbar keeps its dock resize strip clear of the controls", () => {
+  assert.match(windowComponent, /closest\("button,select,input,label,a,\.workspace-window__header-slot"\)/, "clicking the controls must not expand a collapsed timeline");
   assert.match(styles, /\.workspace-window--timeline \.workspace-window__dock-resize \{ top: -6px;[^}]*height: 10px;/, "the dock resize strip clears the 28px toolbar controls");
 });
 
@@ -93,7 +98,7 @@ test("7. docked windows ignore floating geometry and opacity", () => {
 
 test("8. window settings exist only in fullscreen and hold just transparency and restore", () => {
   assert.equal((review.match(/<ReviewTimeline /g) ?? []).length, 1);
-  assert.match(windowComponent, /<WorkspacePopover v-if="fullscreen && !capsule"/);
+  assert.match(windowComponent, /<div v-if="fullscreen" class="workspace-window__actions">\s*<WorkspacePopover v-if="!capsule"/);
   const menu = windowComponent.slice(windowComponent.indexOf("<WorkspacePopover"), windowComponent.indexOf("</WorkspacePopover>"));
   assert.equal((menu.match(/<button /g) ?? []).length, 1);
   assert.match(menu, /回復全螢幕預設位置/);

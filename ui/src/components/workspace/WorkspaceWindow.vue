@@ -59,16 +59,9 @@ let suppressHeaderClick = false;
 
 const visiblePanel = computed(() => draft.value ?? props.panel);
 const presentation = computed(() => props.fullscreen ? "detached" : "docked");
-const analysisEdgeCollapsed = computed(
-  () => props.panelId === "analysis" && !props.fullscreen && props.panel.collapsed,
-);
 /** A collapsed floating window shrinks to a movable capsule instead of a full-width strip. */
 const capsule = computed(() => props.fullscreen && props.panel.collapsed);
-const collapseIcon = computed(() => {
-  if (props.panel.collapsed) return "chevron-up";
-  if (props.panelId === "analysis" && !props.fullscreen) return "chevron-right";
-  return "chevron-down";
-});
+const collapseIcon = computed(() => props.panel.collapsed ? "chevron-up" : "chevron-down");
 const maxTransparency = Number((1 - MIN_PANEL_ALPHA).toFixed(2));
 const transparency = computed(() => Number((1 - props.panel.alpha).toFixed(2)));
 const style = computed(() => props.fullscreen ? ({
@@ -256,7 +249,7 @@ async function toggleCollapsed() {
 }
 function handleHeaderClick(event: MouseEvent) {
   if (suppressHeaderClick) { suppressHeaderClick = false; return; }
-  // A collapsed docked toolbar keeps its slot (the player controls); a click there must not expand the window.
+  // A collapsed toolbar keeps its slot; a click there must not expand the window.
   if (!props.panel.collapsed || (event.target as Element).closest("button,select,input,label,a,.workspace-window__header-slot")) return;
   toggleCollapsed();
 }
@@ -282,15 +275,12 @@ onBeforeUnmount(() => {
 <template>
   <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle, 'workspace-window--fit': fullscreen && fitContent } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
     <div v-if="!fullscreen && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
-    <button v-if="analysisEdgeCollapsed" type="button" class="workspace-window__edge-tab" aria-label="展開分析" title="展開分析" @click="toggleCollapsed">
-      <AppIcon name="chevron-left" :size="18" />
-      <span>分析</span>
-    </button>
-    <header v-else class="workspace-window__header" @click="handleHeaderClick" @pointerdown="startDrag" @pointermove="drag" @pointerup="endGesture" @pointercancel="endGesture">
+    <header class="workspace-window__header" @click="handleHeaderClick" @pointerdown="startDrag" @pointermove="drag" @pointerup="endGesture" @pointercancel="endGesture">
       <strong>{{ title }}</strong>
       <div class="workspace-window__header-slot"><slot name="header" /></div>
-      <div class="workspace-window__actions">
-        <WorkspacePopover v-if="fullscreen && !capsule" ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
+      <!-- Window settings and folding exist only while floating; docked, the actions (and their divider) go. -->
+      <div v-if="fullscreen" class="workspace-window__actions">
+        <WorkspacePopover v-if="!capsule" ref="menu" :label="`${title}視窗設定`" @open="handleMenuToggle">
           <template #trigger><AppIcon name="sliders" :size="17" /></template>
           <label><span>背景透明度 <output>{{ Math.round(transparency * 100) }}%</output></span><input aria-label="背景透明度" type="range" min="0" :max="maxTransparency" step="0.05" :value="transparency" @input="setTransparency(Number(($event.target as HTMLInputElement).value))" /></label>
           <button type="button" role="menuitem" @click="closeMenu(); emit('restore')">回復全螢幕預設位置</button>

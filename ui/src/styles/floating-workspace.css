@@ -16,12 +16,6 @@
   background: var(--color-video);
   border: 1px solid var(--color-border);
 }
-.review-workspace-stage--analysis-collapsed {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "player" "timeline";
-}
-/* A collapsed timeline keeps only its header, so the dock row shrinks to fit it. */
-.review-workspace-stage--timeline-collapsed { grid-template-rows: minmax(320px, 1fr) auto; }
 .review-workspace-stage > .player {
   grid-area: player;
   display: grid;
@@ -62,10 +56,6 @@
 .workspace-window--toolbar .workspace-window__actions::before,
 .workspace-window__player-controls::before { width: 1px; height: 18px; flex: 0 0 auto; align-self: center; background: var(--color-border-strong); content: ""; }
 .workspace-window--toolbar .workspace-window__actions::before { margin-right: var(--space-1); }
-/* A collapsed docked toolbar keeps the player controls; only the timeline's mode select goes with the lanes. */
-.workspace-window--docked.workspace-window--toolbar.workspace-window--collapsed .workspace-window__header-slot { display: flex; }
-.workspace-window--docked.workspace-window--toolbar.workspace-window--collapsed .workspace-window__header-slot > :not(.workspace-window__player-controls) { display: none; }
-.workspace-window--docked.workspace-window--toolbar.workspace-window--collapsed .workspace-window__player-controls::before { display: none; }
 .workspace-window__player-controls { display: flex; min-width: 0; flex: 1; gap: var(--space-2); }
 .workspace-window__player-controls .controls { display: flex; min-width: 0; flex: 1; align-items: center; padding: 0; background: transparent; border-top: 0; }
 .workspace-window__player-controls .control-row { flex: 1; min-width: 0; gap: var(--space-1); }
@@ -100,25 +90,6 @@
 .workspace-window--fit .workspace-window__body { flex: 0 1 auto; }
 .workspace-window--fit :is(.analysis-window-content, .rally-panel) { height: auto; }
 .workspace-window--fit .rally-detail { position: relative; inset: auto; }
-.workspace-window__edge-tab {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  place-items: center;
-  padding: 0;
-  color: var(--color-text-secondary);
-  background: var(--color-surface-raised);
-  border: 0;
-  border-radius: 0;
-  box-shadow: 0 4px 18px rgb(0 0 0 / 34%);
-}
-.workspace-window__edge-tab:hover,
-.workspace-window__edge-tab:focus-visible {
-  color: var(--color-text);
-  background: var(--color-surface-soft);
-}
-.workspace-window__edge-tab > span { display: none; }
 .workspace-window--docked {
   position: relative;
   inset: auto;
@@ -321,20 +292,6 @@
 .analysis-court-view .rally-court-map { flex: 1; min-height: 0; padding: 0; background: transparent; border: 0; }
 .analysis-court-view .rally-court-map__court { flex: 1; width: 100%; max-width: 100%; min-height: 240px; height: auto; }
 
-.workspace-window--docked.workspace-window--analysis.workspace-window--collapsed {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: auto;
-  z-index: 10 !important;
-  width: 32px;
-  height: 56px;
-  border: 1px solid var(--color-border-strong);
-  border-right: 0;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  transform: translateY(-50%);
-  overflow: hidden;
-}
 
 @container (max-width: 420px) {
   .workspace-window__mode-label { display: none; }
@@ -375,15 +332,6 @@
   .workspace-window__body > .intelligence-timeline { min-width: 0; }
   .workspace-window__resize-grip { display: none; }
   .workspace-window__dock-resize { display: none; }
-  .workspace-window--docked.workspace-window--analysis.workspace-window--collapsed {
-    width: 100%;
-    height: 36px !important;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    transform: none;
-  }
-  .workspace-window__edge-tab { display: flex; gap: var(--space-2); }
-  .workspace-window__edge-tab > span { display: inline; font-size: var(--type-meta); }
 }
 @media (max-width: 560px) {
   .review-main--workspace { padding: var(--space-2); }

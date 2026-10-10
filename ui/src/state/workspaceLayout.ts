@@ -39,8 +39,8 @@ export const MIN_PANEL_ALPHA = 0.2;
 export const MAX_PANEL_ALPHA = 1;
 
 /**
- * Normal mode always docks both panels and keeps only their collapsed state;
- * fullscreen always floats them with these geometries and alphas.
+ * Normal mode always docks both panels, fully open: only fullscreen windows collapse.
+ * Fullscreen always floats them with these geometries and alphas.
  */
 const panelDefaults: Record<WorkspacePanelId, PanelLayout> = {
   timeline: { x: 0.025, y: 0.64, width: 0.70, height: 0.32, collapsed: false, alpha: 0.94 },
@@ -130,8 +130,8 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
       analysisDockWidth: constrainAnalysisDockWidth(finite(value.analysisDockWidth, DEFAULT_ANALYSIS_DOCK_WIDTH)),
       timelineDockHeight: constrainTimelineDockHeight(finite(value.timelineDockHeight, DEFAULT_TIMELINE_DOCK_HEIGHT)),
       panels: {
-        timeline: sanitizePanel(value.panels?.timeline, fallback.panels.timeline),
-        analysis: sanitizePanel(value.panels?.analysis, fallback.panels.analysis),
+        timeline: { ...sanitizePanel(value.panels?.timeline, fallback.panels.timeline), collapsed: false },
+        analysis: { ...sanitizePanel(value.panels?.analysis, fallback.panels.analysis), collapsed: false },
       },
       fullscreenPanels: {
         timeline: fullscreenTimeline,
