@@ -1,385 +1,176 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type {
   EvidenceModel,
   MatchModel,
   RallyModel,
   StrokeModel,
 } from "../../domain/models";
-import {
-  formatPreciseTime,
-  formatPreciseTimeParts,
-  formatTime,
-  playerName,
-  scoreText,
-} from "../../format";
-import { hitStatus, relatedCommentaryEvents } from "../../review";
+import { formatPreciseTime, formatTime, playerName, scoreText } from "../../format";
+import { hitStatus } from "../../review";
+import type { CommentaryRequestState } from "../../state/segmentCommentary";
+import { strokeFamily, strokeGlyph } from "../../temporal/strokeRhythm";
 import AppIcon from "../ui/AppIcon.vue";
 
-const props = withDefaults(
-  defineProps<{
-    model: MatchModel;
-    rally: RallyModel;
-    activeId: number | null;
-    selectedStrokeIndex: number | null;
-    showStrokeList?: boolean;
-    followPlayback?: boolean;
-  }>(),
-  { showStrokeList: true, followPlayback: false },
-);
-const emit = defineEmits<{
-  back: [];
-  previous: [];
-  next: [];
-  stroke: [stroke: StrokeModel];
-  previousStroke: [];
-  nextStroke: [];
-  evidence: [evidence: EvidenceModel];
+const props = defineProps<{
+  model: MatchModel;
+  rally: RallyModel;
+  /** The playhead has left this Rally; it stays on show until the next one starts. */
+  previous: boolean;
+  selectedStrokeIndex: number | null;
+  commentaryRequest: CommentaryRequestState;
+  strokesCollapsed: boolean;
 }>();
-const position = computed(() =>
-  props.model.rallies.findIndex((item) => item.id === props.rally.id),
-);
-const selectedStroke = computed(
-  () =>
-    props.rally.hits?.find(
-      (stroke) => stroke.eventIndex === props.selectedStrokeIndex,
-    ) ?? null,
-);
-const selectedStrokePosition = computed(
-  () =>
-    props.rally.hits?.findIndex(
-      (stroke) => stroke.eventIndex === props.selectedStrokeIndex,
-    ) ?? -1,
-);
-const related = computed(() =>
-  selectedStroke.value
-    ? relatedCommentaryEvents(
-        props.rally.commentary.events,
-        selectedStroke.value.eventIndex,
-      )
-    : [],
-);
-const summary = computed(() => props.rally.commentary.summary);
-const commentaryStatus = computed(() => {
-  if (props.rally.commentary.status === "unsupported") {
-    return (
-      {
-        player_identity_unavailable: "此片段缺少可用的球員身分，無法提供賽評。",
-        multiple_recovered_rallies_unsupported:
-          "此片段含多個回合，暫不支援賽評。",
-      }[props.rally.commentary.unsupportedReason ?? ""] ??
-      "此片段目前不支援賽評。"
-    );
-  }
-  if (
-    props.model.states.commentary?.status === "error" ||
-    props.model.states.commentary_segments?.status === "error"
-  )
-    return "部分賽評資料讀取失敗";
-  return "此片段尚無賽評";
-});
-const backButton = ref<HTMLButtonElement | null>(null);
+const emit = defineEmits<{
+  strokesCollapsed: [value: boolean];
+  stroke: [stroke: StrokeModel];
+  evidence: [evidence: EvidenceModel];
+  requestCommentary: [rally: RallyModel];
+}>();
+
+/** Below this the classifier's shot label is a guess; it is shown, but marked as one. */
+const LOW_CONFIDENCE = 0.5;
+/** A highlight badge marks only the top tenth of the match's Rallies. */
+const HIGHLIGHT_SHARE = 0.1;
+
 const scroll = ref<HTMLElement | null>(null);
-const stageLabels: Record<string, string> = {
-  segments: "片段",
-  scores: "比分",
-  events: "擊球",
-  strokes: "球種",
-  identity: "球員身分",
-  audio_signals: "歡呼訊號",
-  highlights: "精華",
-  commentary: "賽評",
-  commentary_segments: "隨選賽評",
-  court: "場地",
-  pose: "姿態",
-  shuttle: "羽球軌跡",
+const summary = computed(() =>
+  props.rally.commentary.status === "available" ? props.rally.commentary.summary : null,
+);
+const commentByStroke = computed(
+  () => new Map(props.rally.commentary.events.map((event) => [event.strokeIndex, event])),
+);
+const ordinalByEvent = computed(
+  () => new Map((props.rally.hits ?? []).map((stroke) => [stroke.eventIndex, stroke.ordinal])),
+);
+/** The summary's grounding, as the shots it cites; facts that are not a shot of this Rally are not linkable. */
+const summaryRefs = computed(() => {
+  const seen = new Set<number>();
+  return (summary.value?.evidence ?? []).flatMap((evidence) => {
+    const ordinal = evidence.eventIndex === null ? undefined : ordinalByEvent.value.get(evidence.eventIndex);
+    if (ordinal === undefined || seen.has(ordinal)) return [];
+    seen.add(ordinal);
+    return [{ evidence, ordinal }];
+  }).sort((a, b) => a.ordinal - b.ordinal);
+});
+
+const highlightRank = computed(() => {
+  const own = props.rally.highlight;
+  if (own === null) return null;
+  const ranked = props.model.rallies.filter((rally) => rally.highlight !== null);
+  const rank = 1 + ranked.filter((rally) => rally.highlight! > own).length;
+  return rank <= Math.max(1, Math.ceil(ranked.length * HIGHLIGHT_SHARE)) ? { rank, total: ranked.length } : null;
+});
+const stageNames: Record<string, string> = {
+  events: "擊球", strokes: "球種", identity: "球員身分", court: "場地", pose: "姿態",
+  commentary: "賽評", commentary_segments: "單回合賽評",
 };
-const stageStatuses = {
-  available: "可用",
-  missing: "未提供",
-  error: "讀取失敗",
-  stale: "輸入已過期",
-  unknown: "舊資料（指紋未知）",
-} as const;
+const dataIssues = computed(() =>
+  Object.entries(stageNames).flatMap(([name, label]) => {
+    const status = props.model.states[name]?.status;
+    return status === "error" ? [`${label}讀取失敗`] : status === "stale" ? [`${label}已過期`] : [];
+  }),
+);
 
-function focusBack() {
-  backButton.value?.focus();
+function playerSide(stroke: StrokeModel) {
+  return stroke.hitter ?? "unknown";
 }
-function resetScroll() {
-  if (scroll.value) scroll.value.scrollTop = 0;
+function lowConfidence(stroke: StrokeModel) {
+  return stroke.type !== null && stroke.confidence !== null && stroke.confidence < LOW_CONFIDENCE;
 }
-defineExpose({ focusBack, resetScroll });
 
-function status(name: string) {
-  const state = props.model.states[name];
-  return state?.status === "error"
-    ? "讀取失敗"
-    : state?.status === "stale"
-      ? "資料已過期"
-    : state?.status === "missing"
-      ? "未提供"
-      : "此片段未提供";
-}
-function gameSourceLabel(source: RallyModel["gameSource"]) {
-  return source === "identity" ? "身分推導" : "比分資料";
-}
-function openEvidence(evidence: EvidenceModel) {
-  emit("evidence", evidence);
-}
-function evidenceNavigable(evidence: EvidenceModel) {
-  return (
-    evidence.eventIndex !== null &&
-    props.model.rallies.some((rally) =>
-      rally.hits?.some((stroke) => stroke.eventIndex === evidence.eventIndex),
-    )
-  );
-}
+/** Keeps the playing shot in view inside the list, without scrolling anything outside the window. */
+watch(
+  () => [props.selectedStrokeIndex, props.strokesCollapsed] as const,
+  async ([index, collapsed]) => {
+    if (index === null || collapsed) return;
+    await nextTick();
+    const container = scroll.value;
+    const row = container?.querySelector<HTMLElement>(`[data-hit="${index}"]`)?.closest("li");
+    if (!container || !row) return;
+    const box = container.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    // Out of view, the shot lands a third of the way down so the ones after it (and its comment) show too.
+    if (rowBox.top < box.top || rowBox.bottom > box.bottom)
+      container.scrollTop += rowBox.top - box.top - box.height / 3;
+  },
+  // A remount (switching back from the court tab) or reopening the list lands on the playing shot too.
+  { flush: "post", immediate: true },
+);
+watch(() => props.rally.id, () => { if (scroll.value) scroll.value.scrollTop = 0; });
 </script>
 
 <template>
-  <div class="rally-detail">
-    <nav v-if="!followPlayback" class="detail-nav" aria-label="片段切換">
-      <button ref="backButton" @click="emit('back')">
-        <AppIcon name="arrow-left" />返回清單
-      </button>
-      <div>
-        <button :disabled="position === 0" @click="emit('previous')">
-          <AppIcon name="chevron-left" />上一段
-        </button>
-        <button
-          :disabled="position === model.rallies.length - 1"
-          @click="emit('next')"
-        >
-          下一段<AppIcon name="chevron-right" />
-        </button>
-      </div>
-    </nav>
+  <div class="rally-detail" :class="{ 'rally-detail--previous': previous }">
     <div ref="scroll" class="detail-scroll">
-      <header v-if="!followPlayback" class="detail-title">
-        <div>
-          <span class="detail-kicker">片段分析</span>
-          <h2>
-            <span>片段</span>
-            <span class="detail-rally-index">{{
-              String(rally.id + 1).padStart(3, "0")
-            }}</span>
-          </h2>
-        </div>
-        <span>{{ activeId === rally.id ? "目前播放" : "已選取" }}</span>
-      </header>
+      <ul v-if="highlightRank || rally.multi || rally.gameConflict || rally.scoreIssue || dataIssues.length" class="rally-flags" aria-label="回合標記">
+        <li v-if="highlightRank" class="rally-flag rally-flag--highlight" :title="`全場 ${highlightRank.total} 個片段中排第 ${highlightRank.rank}`">精華第 {{ highlightRank.rank }} 名</li>
+        <li v-if="rally.multi" class="rally-flag rally-flag--warning" :title="`比分依序為 ${rally.subScores.map(scoreText).join(' → ')}，約在 ${rally.splits.map(formatTime).join('、')} 變動`">含多個回合</li>
+        <li v-if="rally.gameConflict" class="rally-flag rally-flag--warning" :title="rally.gameConflict">局數待確認</li>
+        <li v-if="rally.scoreIssue" class="rally-flag rally-flag--warning" :title="rally.scoreIssue">比分待確認</li>
+        <li v-if="dataIssues.length" class="rally-flag rally-flag--warning" :title="dataIssues.join('、')">資料不完整</li>
+      </ul>
 
-      <section class="score-section" :class="{ 'score-section--contextual': followPlayback }">
-        <div v-if="!followPlayback">
-          <small>片段比分觀察</small
-          ><strong
-            v-if="rally.score"
-            class="score-state detail-score"
-            :aria-label="scoreText(rally.score)"
-          >
-            <span>{{ rally.score[0] }}</span>
-            <span class="score-state-divider" aria-hidden="true" />
-            <span>{{ rally.score[1] }}</span>
-          </strong>
-          <strong v-else class="detail-score">{{ status("scores") }}</strong>
-        </div>
-        <div class="score-names">
-          <span
-            >{{ playerName(model.players.a, "選手 A") }} /
-            {{ playerName(model.players.b, "選手 B") }}</span
-          >
-          <small
-            >{{
-              rally.game === null ? "局數未提供" : `第 ${rally.game + 1} 局`
-            }}
-            · {{ rally.duration.toFixed(2) }} 秒</small
-          >
-        </div>
-      </section>
-      <section class="rally-facts" aria-label="片段事實">
-        <div>
-          <small>時間</small>
-          <strong
-            >{{ formatTime(rally.start) }}–{{ formatTime(rally.end) }}</strong
-          >
-        </div>
-        <div>
-          <small>擊球</small>
-          <strong>{{
-            hitStatus(model.states.events?.status, rally.hits?.length ?? null)
-          }}</strong>
-        </div>
-      </section>
-      <p v-if="rally.gameConflict" class="notice">{{ rally.gameConflict }}</p>
-      <p v-if="rally.multi" class="notice">
-        此片段有多筆比分觀察 ·
-        {{ rally.subScores.map(scoreText).join(" → ") }}；約
-        {{ rally.splits.map(formatTime).join("、") }} 變動，非精確回合邊界。
-      </p>
-
-      <section
-        v-if="model.capabilities.cheer || model.capabilities.highlight"
-        class="derived-signals"
-        aria-label="片段分析訊號"
-      >
-        <h3>分析訊號</h3>
-        <dl>
-          <div v-if="model.capabilities.cheer">
-            <dt>歡呼訊號</dt>
-            <dd>
-              {{ rally.audio ? rally.audio.confidence.toFixed(2) : "未提供" }}
-            </dd>
-          </div>
-          <div v-if="model.capabilities.highlight">
-            <dt>精華分數</dt>
-            <dd>{{ rally.highlight?.toFixed(3) ?? "未提供" }}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section
-        v-if="rally.commentary.status !== 'available'"
-        class="commentary-empty"
-        aria-label="賽評狀態"
-      >
-        <h3>賽評</h3>
-        <p>{{ commentaryStatus }}</p>
-      </section>
-      <section
-        v-else-if="!summary"
-        class="commentary-empty"
-        aria-label="賽評摘要狀態"
-      >
-        <h3>賽評摘要</h3>
-        <p>此片段有賽評事件，但未提供賽評摘要。</p>
-      </section>
-      <details v-if="summary" class="rally-summary">
-        <summary>
-          <span>回合摘要</span
-          ><span class="summary-preview">{{ summary.text }}</span>
-        </summary>
-        <p>{{ summary.text }}</p>
-        <div
-          v-for="evidence in summary.evidence"
-          :key="evidence.id"
-          class="evidence"
-        >
-          <button
-            v-if="evidenceNavigable(evidence)"
-            @click="openEvidence(evidence)"
-          >
-            {{ evidence.text }}<span aria-hidden="true"> ↗</span>
-          </button>
-          <span v-else class="warning">{{ evidence.id }} · 無法取得依據</span>
-        </div>
-      </details>
-      <div class="section-heading hit-heading">
-        <h3>擊球序列</h3>
-        <div class="stroke-navigation" aria-label="逐拍導覽">
-          <span>全場時間</span>
-          <button
-            type="button"
-            :disabled="!rally.hits?.length || selectedStrokePosition === 0"
-            @click="emit('previousStroke')"
-          >
-            上一拍
-          </button>
-          <button
-            type="button"
-            :disabled="
-              !rally.hits?.length ||
-              selectedStrokePosition === (rally.hits?.length ?? 0) - 1
-            "
-            @click="emit('nextStroke')"
-          >
-            下一拍
-          </button>
-        </div>
-      </div>
-      <section v-if="selectedStroke" class="hit-reading">
-        <h3>選中擊球</h3>
-        <p>
-          {{ formatPreciseTime(selectedStroke.time) }} ·
-          {{ playerName(selectedStroke.player) }} ·
-          {{ selectedStroke.type ?? "球種未提供"
-          }}<template v-if="selectedStroke.confidence !== null">
-            · 信心 {{ selectedStroke.confidence.toFixed(3) }}</template
-          >
-        </p>
-        <article v-for="comment in related" :key="comment.strokeIndex">
-          <small>賽評 · {{ playerName(model.players[comment.player]) }}</small>
-          <p>{{ comment.text }}</p>
-          <div
-            v-for="evidence in comment.evidence"
-            :key="evidence.id"
-            class="evidence"
-          >
-            <button
-              v-if="evidenceNavigable(evidence)"
-              @click="openEvidence(evidence)"
-            >
-              {{ evidence.text }}<span aria-hidden="true"> ↗</span>
+      <section class="commentary-block" aria-label="賽評">
+        <blockquote v-if="summary" class="commentary-summary">
+          <p>{{ summary.text }}</p>
+          <p v-if="summaryRefs.length" class="commentary-refs">
+            <span>依據</span>
+            <button v-for="item in summaryRefs" :key="item.ordinal" type="button" :title="item.evidence.text" @click="emit('evidence', item.evidence)">#{{ item.ordinal }}</button>
+          </p>
+        </blockquote>
+        <template v-else-if="rally.commentary.status !== 'available'">
+          <div v-if="commentaryRequest.kind === 'ready' || commentaryRequest.kind === 'starting'" class="commentary-request">
+            <p>這回合還沒有賽評。</p>
+            <button type="button" class="button-primary" :disabled="commentaryRequest.kind === 'starting'" @click="emit('requestCommentary', rally)">
+              {{ commentaryRequest.kind === "starting" ? "送出中…" : "產生這回合的賽評" }}
             </button>
-            <span v-else class="warning">{{ evidence.id }} · 無法取得依據</span>
+            <small>約使用 3–4 次 Gemini 請求</small>
           </div>
-        </article>
-        <p
-          v-if="rally.commentary.status === 'available' && !related.length"
-          class="secondary"
-        >
-          此拍沒有賽評。
-        </p>
+          <p v-else-if="commentaryRequest.kind === 'running'" class="commentary-pending" role="status">
+            <span class="loading-indicator" aria-hidden="true" />正在產生賽評，可以繼續觀看，完成後會自動顯示。
+          </p>
+          <p v-else-if="commentaryRequest.kind === 'publishing'" class="commentary-pending" role="status">
+            <span class="loading-indicator" aria-hidden="true" />正在更新回看…
+          </p>
+          <div v-else-if="commentaryRequest.kind === 'failed'" class="commentary-request">
+            <p class="error" role="alert">{{ commentaryRequest.error }}</p>
+            <button type="button" class="button-secondary" @click="emit('requestCommentary', rally)">重試</button>
+          </div>
+          <p v-else-if="commentaryRequest.kind === 'blocked'" class="commentary-note">{{ commentaryRequest.reason }}</p>
+          <p v-else class="commentary-note">此回合尚無賽評。</p>
+        </template>
       </section>
-      <div v-if="showStrokeList && rally.hits !== null" class="hit-list">
-        <template v-for="stroke in rally.hits" :key="stroke.eventIndex">
+
+      <template v-if="rally.hits?.length">
+      <button type="button" class="hit-list-toggle" :aria-expanded="!strokesCollapsed" aria-controls="analysis-hit-list" @click="emit('strokesCollapsed', !strokesCollapsed)">
+        <AppIcon :name="strokesCollapsed ? 'chevron-right' : 'chevron-down'" />
+        <span>擊球序列</span>
+        <small>{{ rally.hits.length }} 拍</small>
+      </button>
+      <ol v-show="!strokesCollapsed" id="analysis-hit-list" class="hit-list" aria-label="擊球序列">
+        <li v-for="stroke in rally.hits" :key="stroke.eventIndex" :class="{ 'hit-item--selected': selectedStrokeIndex === stroke.eventIndex }">
           <button
+            type="button"
+            class="hit-row"
             :data-hit="stroke.eventIndex"
             :data-testid="`hit-${stroke.eventIndex}`"
+            :data-family="strokeFamily(stroke.type)"
             :aria-pressed="selectedStrokeIndex === stroke.eventIndex"
-            :class="{ selected: selectedStrokeIndex === stroke.eventIndex }"
+            :title="formatPreciseTime(stroke.time)"
             @click="emit('stroke', stroke)"
           >
-            <span class="hit-ordinal">{{
-              String(stroke.ordinal).padStart(2, "0")
-            }}</span>
-            <time
-              >{{ formatPreciseTimeParts(stroke.time).whole
-              }}<small
-                >.{{ formatPreciseTimeParts(stroke.time).fraction }}</small
-              ></time
-            >
-            <strong>{{ stroke.type ?? "球種未提供" }}</strong>
-            <span class="hit-player">{{ playerName(stroke.player) }}</span>
+            <span class="hit-ordinal">{{ String(stroke.ordinal).padStart(2, "0") }}</span>
+            <span class="hit-player" :data-side="playerSide(stroke)"><span class="hit-player__name">{{ playerName(stroke.player) }}</span></span>
+            <strong class="hit-type" :class="{ 'hit-type--uncertain': lowConfidence(stroke) }">
+              <i aria-hidden="true">{{ strokeGlyph(stroke.type) }}</i>{{ stroke.type ?? "球種未知" }}<template v-if="lowConfidence(stroke)">?</template>
+            </strong>
           </button>
-        </template>
-        <p v-if="rally.hits.length === 0" class="empty-state">未偵測到擊球</p>
-      </div>
-      <p v-else-if="showStrokeList" class="empty-state">
-        {{ hitStatus(model.states.events?.status, null) }}
-      </p>
-
-      <details class="source-details">
-        <summary>資料來源與限制</summary>
-        <p v-if="rally.game !== null && rally.gameSource">
-          局數來源：{{ gameSourceLabel(rally.gameSource) }}
-        </p>
-        <p v-if="rally.identity">
-          畫面上方：{{
-            playerName(model.players[rally.identity.top])
-          }}；畫面下方：{{ playerName(model.players[rally.identity.bottom]) }}
-        </p>
-        <p v-if="rally.audio">
-          歡呼訊號：{{ rally.audio.confidence }}；相對強度：{{
-            rally.audio.intensity === null
-              ? "不適用（null）"
-              : rally.audio.intensity
-          }}；訊號窗數：{{ rally.audio.windowCount }}
-        </p>
-        <p>精華分數：{{ rally.highlight ?? status("highlights") }}</p>
-        <p v-for="(state, name) in model.states" :key="name">
-          {{ stageLabels[name] ?? name }}：{{ stageStatuses[state.status]
-          }}{{ state.message ? `（${state.message}）` : "" }}
-        </p>
-      </details>
+          <p v-if="commentByStroke.get(stroke.eventIndex)" class="hit-comment">{{ commentByStroke.get(stroke.eventIndex)!.text }}</p>
+        </li>
+      </ol>
+      </template>
+      <p v-else class="empty-state">{{ hitStatus(model.states.events?.status, rally.hits?.length ?? null) }}</p>
     </div>
   </div>
 </template>

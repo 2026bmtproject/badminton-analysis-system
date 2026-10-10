@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel } from "../src/state/workspaceLayout";
 import { availableTimelineModes } from "../src/components/timeline/timelineModeRegistry";
 import type { MatchCapabilities } from "../src/domain/models";
@@ -101,4 +102,25 @@ test("main Review consolidates audio-derived Highlight into Cheer", () => {
   const modes = availableTimelineModes(capabilities).map((mode) => mode.id);
   assert.deepEqual(modes, ["rally", "stroke", "score", "commentary", "cheer"]);
   assert.equal(modes.some((mode) => String(mode) === "highlight"), false);
+});
+
+test("the Analysis stroke list fold persists and defaults open", () => {
+  assert.equal(defaultWorkspaceLayout().strokeListCollapsed, false);
+  const folded = { ...defaultWorkspaceLayout(), strokeListCollapsed: true };
+  assert.equal(parseWorkspaceLayout(JSON.stringify(folded)).strokeListCollapsed, true);
+  assert.equal(parseWorkspaceLayout(JSON.stringify({ ...folded, strokeListCollapsed: "yes" })).strokeListCollapsed, false);
+  const detail = readFileSync("src/components/inspector/RallyDetail.vue", "utf8");
+  assert.match(detail, /:aria-expanded="!strokesCollapsed"/);
+  assert.match(detail, /v-show="!strokesCollapsed"/);
+});
+
+test("folding the stroke list shrinks the floating Analysis window to its content", () => {
+  const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
+  const windowSource = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
+  const styles = readFileSync("src/styles/floating-workspace.css", "utf8");
+  assert.match(review, /:fit-content="layout\.analysisView === 'analysis' && layout\.strokeListCollapsed"/);
+  // The stored height stays the cap, so unfolding returns the window to the size the user set.
+  assert.match(windowSource, /height: visiblePanel\.value\.collapsed \|\| props\.fitContent \? "auto"/);
+  assert.match(windowSource, /maxHeight: props\.fitContent && !visiblePanel\.value\.collapsed/);
+  assert.match(styles, /\.workspace-window--fit \.rally-detail \{ position: relative; inset: auto; \}/);
 });

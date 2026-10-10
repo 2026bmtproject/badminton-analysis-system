@@ -179,3 +179,16 @@ export const capabilityFromStates = (
   shuttle: usable(states.shuttle),
   });
 };
+
+/**
+ * A fresh export of the Review already open (e.g. after commentary for one Rally lands): same video and the
+ * same Rallies, so the playhead and selection carry over instead of resetting to the start.
+ */
+export function sameReview(previous: MatchModel | null | undefined, next: MatchModel | null | undefined) {
+  return !!previous && !!next && previous !== next && previous.video === next.video &&
+    previous.rallies.length === next.rallies.length &&
+    previous.rallies.every((rally, index) => {
+      const other = next.rallies[index]!;
+      return rally.id === other.id && rally.start === other.start && rally.end === other.end;
+    });
+}

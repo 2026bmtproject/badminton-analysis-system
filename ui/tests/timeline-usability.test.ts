@@ -89,14 +89,16 @@ test("10. hover preview is teleported above overlapping windows, into the fullsc
   assert.match(source("src/styles/timeline.css"), /\.timeline-hover-tooltip\s*\{[\s\S]*z-index: calc\(var\(--z-overlay\) \+ 20\)/);
 });
 test("11. analysis header distinguishes rally and active stroke context", () => {
-  assert.deepEqual(analysisContextSummary(rally, 12, rally.score, 42).state, "stroke");
-  assert.match(analysisContextSummary(rally, 12, rally.score, 42).details.join(" "), /第 1\/1 拍/);
+  const context = analysisContextSummary(rally, false, 12);
+  assert.equal(context.state, "stroke");
+  assert.equal(context.status, "第 1/1 拍");
+  assert.equal(analysisContextSummary(rally, false, null).state, "rally");
 });
-test("12. analysis header explicitly represents a real playback gap", () => {
-  const context = analysisContextSummary(null, null, [8, 7], 50);
-  assert.equal(context.state, "gap");
-  assert.equal(context.title, "比賽空檔");
-  assert.match(context.details.join(" "), /比分 8:7/);
+test("12. analysis header labels the Rally kept on show during a gap", () => {
+  const context = analysisContextSummary(rally, true, 12);
+  assert.equal(context.state, "previous");
+  assert.equal(context.status, "上一回合");
+  assert.equal(analysisContextSummary(null, false, null).state, "empty");
 });
 test("13. window focus is transient stacking state, not persisted layout", () => {
   const review = source("src/pages/ReviewPage.vue");
@@ -106,8 +108,9 @@ test("13. window focus is transient stacking state, not persisted layout", () =>
   assert.doesNotMatch(layout, /activeWindow|zIndex/);
 });
 test("14. court geometry keeps its canonical aspect ratio while resizing", () => {
+  // The SVG fills the window; the viewBox and `meet` keep the court's real proportions inside it.
   assert.match(source("src/components/inspector/RallyCourtMap.vue"), /viewBox="-32 -32 284 524" preserveAspectRatio="xMidYMid meet"/);
-  assert.match(source("src/styles/floating-workspace.css"), /aspect-ratio: 284 \/ 524/);
+  assert.match(source("src/styles/floating-workspace.css"), /\.analysis-court-view \.rally-court-map__court \{[^}]*width: 100%;/);
 });
 test("15. passive playback only fades management chrome and restores on interaction", () => {
   const window = source("src/components/workspace/WorkspaceWindow.vue");

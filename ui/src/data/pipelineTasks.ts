@@ -20,6 +20,8 @@ export type PipelineTask = {
   plan: PipelinePlan; stageStates: Record<string, TaskStage>; currentStage: string | null;
   createdAt: string; startedAt: string | null; finishedAt: string | null;
   error: string | null; exitCode: number | null;
+  /** Set on an on-demand commentary task: the one segment it generates. */
+  segmentIndex?: number;
 };
 export type LocalAnalysisMatch = {
   id: string; completedStages: string[]; hasSegments: boolean;
@@ -40,6 +42,11 @@ export function taskStatusLabel(status: string): string {
 
 export function isActiveTask(task: PipelineTask): boolean {
   return task.status === "queued" || task.status === "running";
+}
+
+/** Segment index as the three-digit, one-based label the Review shows. */
+export function segmentLabel(index: number): string {
+  return String(index + 1).padStart(3, "0");
 }
 
 /** Seconds as m:ss, or h:mm:ss past an hour. */
@@ -84,6 +91,7 @@ export function taskProgress(task: PipelineTask) {
 
 /** "擊球偵測、球種辨識 +2": what a task worked on, short enough for one row. */
 export function ranStagesSummary(task: PipelineTask, label: (name: string) => string, shown = 2): string {
+  if (task.segmentIndex !== undefined) return `${label("commentary")}（片段 ${segmentLabel(task.segmentIndex)}）`;
   const names = ranStages(task).map(([name]) => label(name));
   const rest = names.length - shown;
   return names.slice(0, shown).join("、") + (rest > 0 ? ` +${rest}` : "");
@@ -150,8 +158,14 @@ export function startPipeline(plan: PipelinePlan) {
   });
 }
 export function getPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}`); }
+/** Generates commentary for one segment only; the whole-match commentary stage is left alone. */
+export function startSegmentCommentary(matchId: string, segmentIndex: number) {
+  return request<PipelineTask>("commentary", { matchId, segmentIndex });
+}
 /** Starts the same request again against a fresh plan, since the old plan's ID is stale by now. */
 export async function retryTask(task: PipelineTask) {
+  // A segment task's plan names the whole commentary stage; replanning it would generate every rally.
+  if (task.segmentIndex !== undefined) return startSegmentCommentary(task.matchId, task.segmentIndex);
   return startPipeline(await previewPipeline(task.matchId, task.plan.requestedStages, task.plan.mode));
 }
 export const LOG_PAGE_SIZE = 100;

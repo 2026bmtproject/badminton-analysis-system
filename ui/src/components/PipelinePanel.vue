@@ -8,7 +8,7 @@ import { useTaskFeed } from "../composables/useTaskFeed";
 import { importLocalMatch } from "../data/matchRepository";
 import {
   LOG_PAGE_SIZE, getPipelineLogs, getPipelineTask, listPipelineStages, planReasonLabel, previewPipeline,
-  startPipeline, taskElapsed, taskProgress, taskStatusLabel,
+  retryTask, startPipeline, taskElapsed, taskProgress, taskStatusLabel,
   type LocalAnalysisMatch, type PipelinePlan, type PipelineStage, type PipelineTask,
 } from "../data/pipelineTasks";
 
@@ -103,6 +103,18 @@ async function begin() {
 
 async function retry() {
   if (!task.value) return;
+  if (task.value.segmentIndex !== undefined) {
+    error.value = ""; busy.value = true;
+    try {
+      task.value = await retryTask(task.value);
+      lines.value = []; logOffset.value = 0;
+      void refreshTasks();
+      emit("updated");
+    }
+    catch (cause) { error.value = cause instanceof Error ? cause.message : "無法重新產生賽評"; }
+    finally { busy.value = false; }
+    return;
+  }
   const { requestedStages, mode: previousMode } = task.value.plan;
   selected.value = [...requestedStages]; mode.value = previousMode;
   error.value = ""; busy.value = true;

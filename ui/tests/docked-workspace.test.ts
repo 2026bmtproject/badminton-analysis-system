@@ -140,7 +140,7 @@ test("13. docked and detached Timeline retain zoom, pan and hover implementation
 test("14. docked and detached Analysis share active context, Court and score", () => {
   assert.equal((review.match(/<AnalysisWindow /g) ?? []).length, 1);
   assert.match(review, /:active-id="activeId"/);
-  assert.match(review, /:current-score="workspace\.currentScore\.value"/);
+  assert.match(review, /:current-time="workspace\.currentTimeSec\.value"/);
   assert.match(source("src/components/workspace/AnalysisWindow.vue"), /RallyCourtMap/);
 });
 

@@ -258,7 +258,7 @@ test("5. all active consumers are wired to the same authoritative context", () =
   assert.match(page, /@time="workspace\.updateTime"/);
   assert.match(page, /:active-id="activeId"/);
   assert.match(page, /:active-stroke-index="workspace\.activeStroke\.value\?\.eventIndex \?\? null"/);
-  assert.match(page, /:current-score="workspace\.currentScore\.value"/);
+  assert.match(page, /:current-time="workspace\.currentTimeSec\.value"/);
   assert.match(page, /:score-context-id="workspace\.activeScoreRally\.value\?\.id \?\? null"/);
 });
 

@@ -1,9 +1,10 @@
 import { computed, ref, watch, type Ref } from "vue";
-import type {
-  CommentaryEventModel,
-  MatchModel,
-  RallyModel,
-  StrokeModel,
+import {
+  sameReview,
+  type CommentaryEventModel,
+  type MatchModel,
+  type RallyModel,
+  type StrokeModel,
 } from "../domain/models";
 import {
   rallyAtOrBefore,
@@ -53,7 +54,11 @@ export function useReviewWorkspace<T extends PlayerController>(
   let lastOwnerId: number | null = null;
   watch(
     model,
-    () => {
+    (next, previous) => {
+      if (sameReview(previous, next)) {
+        if (selectedStrokeIndex.value !== null && !selectedStroke.value) selectedStrokeIndex.value = null;
+        return;
+      }
       currentTimeSec.value = 0;
       selectionLanding = false;
       lastOwnerId = null;

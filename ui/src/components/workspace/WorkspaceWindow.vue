@@ -24,7 +24,9 @@ const props = withDefaults(defineProps<{
   /** Moves the toolbar below the body, e.g. the fullscreen timeline floating along the screen edge. */
   toolbarBottom?: boolean;
   dockSize?: number;
-}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSize: 0 });
+  /** Floating, the window shrinks to its content; its stored height becomes the most it grows to. */
+  fitContent?: boolean;
+}>(), { passive: false, fullscreen: false, toolbar: false, toolbarBottom: false, dockSize: 0, fitContent: false });
 const emit = defineEmits<{
   change: [value: PanelLayout];
   activate: [];
@@ -73,7 +75,8 @@ const style = computed(() => props.fullscreen ? ({
   left: `${visiblePanel.value.x * 100}%`,
   top: `${visiblePanel.value.y * 100}%`,
   width: capsule.value ? "auto" : `${visiblePanel.value.width * 100}%`,
-  height: visiblePanel.value.collapsed ? "auto" : `${visiblePanel.value.height * 100}%`,
+  height: visiblePanel.value.collapsed || props.fitContent ? "auto" : `${visiblePanel.value.height * 100}%`,
+  maxHeight: props.fitContent && !visiblePanel.value.collapsed ? `${visiblePanel.value.height * 100}%` : undefined,
   "--workspace-panel-alpha": visiblePanel.value.alpha,
   zIndex: props.active ? 32 : 31,
 }) : {});
@@ -277,7 +280,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
+  <section ref="root" class="workspace-window" :class="[`workspace-window--${presentation}`, `workspace-window--${panelId}`, { 'workspace-window--collapsed': panel.collapsed, 'workspace-window--capsule': capsule, 'workspace-window--toolbar': toolbar, 'workspace-window--toolbar-bottom': toolbarBottom, 'workspace-window--active': active, 'workspace-window--dragging': operation === 'drag', 'workspace-window--resizing': operation === 'resize', 'workspace-window--chrome-idle': chromeIdle, 'workspace-window--fit': fullscreen && fitContent } ]" :data-active="active" :data-presentation="presentation" :style="style" @pointerdown="emit('activate')" @pointerenter="handlePointerEnter" @pointerleave="handlePointerLeave" @focusin="handleFocusIn" @focusout="handleFocusOut">
     <div v-if="!fullscreen && !panel.collapsed" class="workspace-window__dock-resize" :aria-label="panelId === 'analysis' ? '調整分析寬度' : '調整時間軸高度'" role="separator" :aria-orientation="panelId === 'analysis' ? 'vertical' : 'horizontal'" data-no-window-drag @pointerdown.stop="startDockResize" @pointermove="resizeDock" @pointerup="endDockResize" @pointercancel="endDockResize" />
     <button v-if="analysisEdgeCollapsed" type="button" class="workspace-window__edge-tab" aria-label="展開分析" title="展開分析" @click="toggleCollapsed">
       <AppIcon name="chevron-left" :size="18" />

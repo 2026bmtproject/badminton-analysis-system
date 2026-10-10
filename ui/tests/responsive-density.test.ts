@@ -93,10 +93,12 @@ test("shared teleported popover has independent width and viewport collision pla
   assert.ok(placed.top < 680);
 });
 
-test("gap state uses concise product copy", () => {
+test("gap state keeps the Rally just played instead of an empty window", () => {
+  const analysis = source("src/components/workspace/AnalysisWindow.vue");
   const inspector = source("src/components/inspector/RallyInspector.vue");
-  assert.match(inspector, /等待下一段/);
-  assert.doesNotMatch(inspector, /保留最新可用比分|不顯示前一段內容/);
+  assert.match(analysis, /activeRally\.value \?\? rallyAtOrBefore\(props\.model\.rallies, props\.currentTime\)/);
+  assert.match(inspector, /:previous="previous"/);
+  assert.doesNotMatch(inspector, /等待下一段|保留最新可用比分|不顯示前一段內容/);
 });
 
 test("splitters use neutral structural tokens", () => {

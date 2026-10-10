@@ -1,44 +1,44 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { AnalysisView } from "../../state/workspaceLayout";
-import type { EvidenceModel, MatchModel, RallyModel, ScoreModel, StrokeModel } from "../../domain/models";
+import type { EvidenceModel, MatchModel, StrokeModel } from "../../domain/models";
 import RallyInspector from "../inspector/RallyInspector.vue";
 import RallyCourtMap from "../inspector/RallyCourtMap.vue";
 import { analysisContextSummary } from "./analysisContext";
 import { resolveAnalysisDensity } from "../../presentation/workspaceDensity";
+import { rallyAtOrBefore } from "../../temporal/activeContext";
+import { useMatchContext } from "../../state/matchContext";
+import { useSegmentCommentary } from "../../state/segmentCommentary";
 
 const props = defineProps<{
   model: MatchModel;
-  selectedId: number | null;
   activeId: number | null;
-  selectedStrokeIndex: number | null;
   activeStrokeIndex: number | null;
-  currentScore: ScoreModel | null;
   currentTime: number;
   view: AnalysisView;
+  strokesCollapsed: boolean;
 }>();
 const emit = defineEmits<{
   view: [value: AnalysisView];
-  rally: [rally: RallyModel];
+  strokesCollapsed: [value: boolean];
   stroke: [stroke: StrokeModel];
   evidence: [evidence: EvidenceModel];
-  previousStroke: [];
-  nextStroke: [];
-  back: [];
 }>();
 const root = ref<HTMLElement | null>(null);
 const density = ref<"full" | "compact">("full");
 let observer: ResizeObserver | undefined;
-const contextRally = computed(() =>
+const activeRally = computed(() =>
   props.model.rallies.find((rally) => rally.id === props.activeId) ?? null,
 );
+/** In a gap the window keeps the Rally just played, so its commentary can still be read. */
+const shownRally = computed(() => activeRally.value ?? rallyAtOrBefore(props.model.rallies, props.currentTime));
+const previous = computed(() => !activeRally.value && shownRally.value !== null);
 const context = computed(() =>
-  analysisContextSummary(
-    contextRally.value,
-    props.activeStrokeIndex,
-    props.currentScore,
-    props.currentTime,
-  ),
+  analysisContextSummary(shownRally.value, previous.value, props.activeStrokeIndex),
+);
+const commentary = useSegmentCommentary(computed(() => props.model), useMatchContext().refreshMatch);
+const commentaryRequest = computed(() =>
+  shownRally.value ? commentary.state(shownRally.value) : { kind: "none" as const },
 );
 function measureDensity() {
   if (root.value) density.value = resolveAnalysisDensity(root.value.clientWidth);
@@ -56,7 +56,7 @@ onBeforeUnmount(() => observer?.disconnect());
     <header
       class="analysis-context-header"
       :data-context-state="context.state"
-      :aria-label="[context.title, ...context.details, context.status].join(' · ')"
+      :aria-label="[context.title, context.status, ...context.details].join(' · ')"
     >
       <div class="analysis-context-header__identity">
         <strong>{{ context.title }}</strong>
@@ -65,33 +65,32 @@ onBeforeUnmount(() => observer?.disconnect());
       <p><span v-for="detail in context.details" :key="detail">{{ detail }}</span></p>
     </header>
     <nav class="analysis-tabs" aria-label="分析檢視">
-      <button type="button" :aria-pressed="view === 'analysis'" @click="emit('view', 'analysis')">摘要</button>
-      <button type="button" :aria-pressed="view === 'court'" :disabled="!contextRally" @click="emit('view', 'court')">球場</button>
+      <button type="button" :aria-pressed="view === 'analysis'" @click="emit('view', 'analysis')">回合</button>
+      <button type="button" :aria-pressed="view === 'court'" :disabled="!shownRally" @click="emit('view', 'court')">擊球點</button>
     </nav>
     <RallyInspector
       v-if="view === 'analysis'"
       :model="model"
-      :selected-id="selectedId"
-      :active-id="activeId"
-      :selected-stroke-index="selectedStrokeIndex"
-      :active-stroke-index="activeStrokeIndex"
-      @rally="emit('rally', $event)"
+      :rally="shownRally"
+      :previous="previous"
+      :selected-stroke-index="activeStrokeIndex"
+      :commentary-request="commentaryRequest"
+      :strokes-collapsed="strokesCollapsed"
+      @strokes-collapsed="emit('strokesCollapsed', $event)"
       @stroke="emit('stroke', $event)"
       @evidence="emit('evidence', $event)"
-      @previous-stroke="emit('previousStroke')"
-      @next-stroke="emit('nextStroke')"
-      @back="emit('back')"
+      @request-commentary="commentary.request"
     />
     <div v-else class="analysis-court-view">
       <RallyCourtMap
-        v-if="contextRally"
-        :rally="contextRally"
+        v-if="shownRally"
+        :rally="shownRally"
         :players="model.players"
         :selected-stroke-index="activeStrokeIndex"
         :calibration-unconfirmed="model.source?.limitations.some((item) => item.includes('球場為自動校正'))"
         @stroke="emit('stroke', $event)"
       />
-      <p v-else class="empty-state">播放或選取片段後即可檢視球場位置。</p>
+      <p v-else class="empty-state">比賽開始後即可檢視擊球點。</p>
     </div>
   </div>
 </template>

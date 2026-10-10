@@ -7,7 +7,7 @@ import AnalysisWindow from "../components/workspace/AnalysisWindow.vue";
 import WorkspaceWindow from "../components/workspace/WorkspaceWindow.vue";
 import WorkspacePopover from "../components/workspace/WorkspacePopover.vue";
 import { availableTimelineModes } from "../components/timeline/timelineModeRegistry";
-import type { EvidenceModel } from "../domain/models";
+import { sameReview, type EvidenceModel } from "../domain/models";
 import { playerName, scoreText } from "../format";
 import { playerShortcutAction, repeatsWhileHeld } from "../interaction/playerShortcuts";
 import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
@@ -107,7 +107,9 @@ const analysisDockCollapsed = computed(() => !fullscreen.value && layout.panels.
 const timelineDockCollapsed = computed(() => !fullscreen.value && layout.panels.timeline.collapsed);
 
 watch(player, (value) => { context.player.value = value; }, { flush: "sync" });
-watch([() => route.query.segment, () => route.query.stroke, model, player], () => {
+watch([() => route.query.segment, () => route.query.stroke, model, player], (next, previous) => {
+  // A refreshed export of this same Review keeps the playhead; only a new route or Review re-targets it.
+  if (next[0] === previous?.[0] && next[1] === previous?.[1] && next[3] === previous?.[3] && sameReview(previous?.[2], next[2])) return;
   const segment = route.query.segment;
   if (segment === undefined || !model.value || !player.value) return;
   const rally = resolveRouteRally(model.value, segment);
@@ -326,8 +328,8 @@ onBeforeUnmount(() => {
           <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @commentary="workspace.selectCommentary" @seek="workspace.seek" />
         </WorkspaceWindow>
 
-        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">
-          <AnalysisWindow :model="match" :selected-id="workspace.selectedRallyIndex.value" :active-id="activeId" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-score="workspace.currentScore.value" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" @view="layout.analysisView = $event" @rally="workspace.selectRally" @stroke="workspace.selectStroke" @evidence="openEvidence" @previous-stroke="workspace.moveStroke(-1)" @next-stroke="workspace.moveStroke(1)" @back="workspace.clearSelection" />
+        <WorkspaceWindow title="分析" panel-id="analysis" :panel="panels.analysis" :fit-content="layout.analysisView === 'analysis' && layout.strokeListCollapsed" :active="activeWindow === 'analysis'" :passive="playing" :fullscreen="fullscreen" :dock-size="effectiveAnalysisDockWidth" @activate="activeWindow = 'analysis'" @change="updatePanel('analysis', $event)" @dock-size="setDockSize('analysis', $event)" @interaction="panelInteraction('analysis', $event)" @restore="restoreFullscreenPanel('analysis')">
+          <AnalysisWindow :model="match" :active-id="activeId" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :current-time="workspace.currentTimeSec.value" :view="layout.analysisView" :strokes-collapsed="layout.strokeListCollapsed" @view="layout.analysisView = $event" @strokes-collapsed="layout.strokeListCollapsed = $event" @stroke="workspace.selectStroke" @evidence="openEvidence" />
         </WorkspaceWindow>
       </section>
     </main>

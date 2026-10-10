@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  formatDuration, formatLogLine, formatTaskTime, ranStages, ranStagesSummary, stageElapsed, taskProgress, type PipelineTask,
+  formatDuration, formatLogLine, formatTaskTime, ranStages, ranStagesSummary, retryTask, stageElapsed, taskProgress, type PipelineTask,
 } from "../src/data/pipelineTasks";
+import { sameReview, type MatchModel, type RallyModel } from "../src/domain/models";
 
 function task(stageStates: PipelineTask["stageStates"], currentStage: string | null = null): PipelineTask {
   return {
@@ -51,4 +52,32 @@ test("log lines show their UTC stamp as local time and leave other lines alone",
   const stamp = new Date(2026, 9, 10, 3, 22, 14).toISOString();
   assert.equal(formatLogLine(`${stamp} pose: started`), "03:22:14  pose: started");
   assert.equal(formatLogLine("worker exited"), "worker exited");
+});
+
+test("a one-segment commentary task names its segment and retries only that segment", async () => {
+  const value = { ...task({ commentary: stage("failed") }), status: "failed" as const, segmentIndex: 4 };
+  value.plan = { ...value.plan, requestedStages: ["commentary"] };
+  assert.equal(ranStagesSummary(value, name => name === "commentary" ? "賽評生成" : name), "賽評生成（片段 005）");
+  const calls: { url: string; body: unknown }[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+    return new Response(JSON.stringify(value), { status: 201 });
+  }) as typeof fetch;
+  try { await retryTask(value); }
+  finally { globalThis.fetch = original; }
+  // Replanning the commentary stage would generate every Rally of the match.
+  assert.deepEqual(calls, [{ url: "/api/pipeline/commentary", body: { matchId: "m", segmentIndex: 4 } }]);
+});
+
+test("a refreshed export of the same Review keeps playback; a different one does not", () => {
+  const rally = (id: number, start: number) => ({ id, start, end: start + 5 }) as RallyModel;
+  const review = (video: string, rallies: RallyModel[]) => ({ video, rallies }) as MatchModel;
+  const open = review("v.mp4", [rally(0, 1), rally(1, 20)]);
+  assert.equal(sameReview(open, review("v.mp4", [rally(0, 1), rally(1, 20)])), true);
+  assert.equal(sameReview(open, open), false);
+  assert.equal(sameReview(null, open), false);
+  assert.equal(sameReview(open, review("w.mp4", [rally(0, 1), rally(1, 20)])), false);
+  assert.equal(sameReview(open, review("v.mp4", [rally(0, 1), rally(1, 21)])), false);
+  assert.equal(sameReview(open, review("v.mp4", [rally(0, 1)])), false);
 });

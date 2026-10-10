@@ -95,6 +95,11 @@
 .workspace-window--collapsed {
   min-height: 0;
 }
+/* A fitted window takes its content's height, so the content must have one instead of filling the window. */
+.workspace-window--fit { min-height: 0; }
+.workspace-window--fit .workspace-window__body { flex: 0 1 auto; }
+.workspace-window--fit :is(.analysis-window-content, .rally-panel) { height: auto; }
+.workspace-window--fit .rally-detail { position: relative; inset: auto; }
 .workspace-window__edge-tab {
   display: grid;
   width: 100%;
@@ -289,9 +294,9 @@
 .analysis-window-content { display: flex; height: 100%; min-height: 0; flex-direction: column; }
 .analysis-window-content[data-density="compact"] .analysis-context-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .analysis-window-content[data-density="compact"] .analysis-context-header > p { justify-content: flex-start; flex-wrap: wrap; }
-.analysis-window-content[data-density="compact"] :is(.derived-signals, .commentary-empty, .source-details) { display: none; }
-.analysis-window-content[data-density="compact"] .hit-list > button { grid-template-columns: 26px 68px minmax(0, 1fr); }
-.analysis-window-content[data-density="compact"] .hit-player { display: none; }
+.analysis-window-content[data-density="compact"] .hit-row { grid-template-columns: 22px 8px minmax(0, 1fr); }
+.analysis-window-content[data-density="compact"] .hit-player__name { display: none; }
+.analysis-window-content[data-density="compact"] .commentary-request small { display: none; }
 .analysis-context-header {
   display: grid;
   flex: 0 0 auto;
@@ -312,9 +317,9 @@
 .analysis-tabs button { min-height: 38px; flex: 1; border-bottom: 2px solid transparent; border-radius: 0; }
 .analysis-tabs button[aria-pressed="true"] { border-bottom-color: var(--line-selected); background: rgb(255 255 255 / 5%); }
 .analysis-window-content > .rally-panel { flex: 1; }
-.analysis-court-view { min-height: 0; overflow: auto; padding: var(--space-3); }
-.analysis-court-view .rally-court-map { min-height: 0; background: transparent; border: 0; }
-.analysis-court-view .rally-court-map__court { width: auto; max-width: 100%; height: min(43vh, 360px); aspect-ratio: 284 / 524; }
+.analysis-court-view { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; padding: var(--space-3); }
+.analysis-court-view .rally-court-map { flex: 1; min-height: 0; padding: 0; background: transparent; border: 0; }
+.analysis-court-view .rally-court-map__court { flex: 1; width: 100%; max-width: 100%; min-height: 240px; height: auto; }
 
 .workspace-window--docked.workspace-window--analysis.workspace-window--collapsed {
   position: absolute;

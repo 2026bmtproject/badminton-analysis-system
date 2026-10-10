@@ -248,7 +248,7 @@ test("player preserves source aspect ratio and long analytical text can wrap", (
   assert.match(workspace, /object-fit:\s*contain/);
   assert.match(workspace, /\.video-wrap video\s*\{[^}]*max-height:\s*inherit/s);
   assert.match(workspace, /\.player-name\s*\{[^}]*overflow-wrap:\s*anywhere/s);
-  assert.match(inspector, /\.hit-player\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(inspector, /\.hit-player__name\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
 test("cheer lane draws a mirrored window wave with a threshold, without segment score dots", () => {
@@ -333,19 +333,16 @@ test("temporal map owns an opaque analytical surface", () => {
   );
 });
 
-test("selected stroke summary is stable before the list and keeps seek emission", () => {
+test("stroke commentary sits under its own shot and rows keep seek emission", () => {
   const detail = readFileSync(
     "src/components/inspector/RallyDetail.vue",
     "utf8",
   );
-  const summaryAt = detail.indexOf('v-if="selectedStroke" class="hit-reading"');
+  const commentaryAt = detail.indexOf('class="commentary-block"');
   const listAt = detail.indexOf('class="hit-list"');
-  assert.ok(summaryAt > 0 && summaryAt < listAt);
-  assert.equal((detail.match(/class="hit-reading"/g) ?? []).length, 1);
-  assert.doesNotMatch(
-    detail,
-    /v-if="selectedStrokeIndex === stroke\.eventIndex"\s+class="hit-reading"/,
-  );
+  assert.ok(commentaryAt > 0 && commentaryAt < listAt);
+  assert.match(detail, /class="hit-comment">\{\{ commentByStroke\.get\(stroke\.eventIndex\)/);
+  assert.doesNotMatch(detail, /hit-reading|relatedCommentaryEvents/);
   assert.match(detail, /@click="emit\('stroke', stroke\)"/);
 });
 
@@ -367,9 +364,9 @@ test("timeline labels, inspector provenance and workspace guidance use finished 
     assert.doesNotMatch(timeline, new RegExp(removed));
   }
   assert.doesNotMatch(detail, /（身分推導）/);
-  assert.match(detail, /局數來源：/);
-  assert.match(detail, /rally\.game !== null && rally\.gameSource/);
-  assert.match(detail, /gameSourceLabel\(rally\.gameSource\)/);
+  // Provenance is for the analysis pages; the Review flags only what changes how a Rally reads.
+  assert.doesNotMatch(detail, /局數來源|source-details|資料來源與限制/);
+  assert.match(detail, /rally\.gameConflict/);
 });
 
 test("instrument typography bundles only the compact measurement face", () => {
@@ -396,7 +393,9 @@ test("primary scores use the instrument divider while timeline semantics stay un
     "utf8",
   );
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  for (const primary of [app, detail]) {
+  // The Analysis header carries the pre-Rally score as text; the detail repeats no score.
+  assert.doesNotMatch(detail, /score-state/);
+  for (const primary of [app]) {
     assert.match(primary, /class="score-state[^"]*"/);
     assert.match(
       primary,
@@ -594,29 +593,18 @@ test("editorial inspector keeps content order and stable measurement columns", (
     "utf8",
   );
   const inspector = readFileSync("src/styles/inspector.css", "utf8");
-  const scoreAt = detail.indexOf('class="score-section"');
-  const factsAt = detail.indexOf('class="rally-facts"');
-  const signalsAt = detail.indexOf('class="derived-signals"');
-  const commentaryAt = detail.indexOf('class="commentary-empty"');
-  const strokesAt = detail.indexOf('class="section-heading hit-heading"');
-  const sourceAt = detail.indexOf('class="source-details"');
-  assert.ok(
-    scoreAt < factsAt &&
-      factsAt < signalsAt &&
-      signalsAt < commentaryAt &&
-      commentaryAt < strokesAt &&
-      strokesAt < sourceAt,
-  );
-  assert.match(detail, /padStart\(3, "0"\)/);
+  const flagsAt = detail.indexOf('class="rally-flags"');
+  const commentaryAt = detail.indexOf('class="commentary-block"');
+  const strokesAt = detail.indexOf('class="hit-list"');
+  assert.ok(flagsAt > 0 && flagsAt < commentaryAt && commentaryAt < strokesAt);
+  // Raw model scores are not readings: no signal table, and confidence only marks a guessed shot.
+  assert.doesNotMatch(detail, /derived-signals|confidence\.toFixed|highlight\?\.toFixed/);
   assert.match(detail, /padStart\(2, "0"\)/);
   assert.match(
     inspector,
-    /\.hit-list > button\s*\{[^}]*grid-template-columns:\s*30px 78px minmax\(68px, 1fr\) minmax\(56px, auto\);/s,
+    /\.hit-row\s*\{[^}]*grid-template-columns:\s*24px minmax\(0, 0\.9fr\) minmax\(0, 1fr\);/s,
   );
-  assert.match(
-    inspector,
-    /\.commentary-empty h3::after\s*\{[^}]*border-top:\s*1px solid var\(--line-structure\);/s,
-  );
+  assert.match(inspector, /\.commentary-summary\s*\{[^}]*border-left:\s*2px solid var\(--color-accent\);/s);
 });
 
 test("fit, active, and selected states use the line selection grammar", () => {
@@ -624,11 +612,7 @@ test("fit, active, and selected states use the line selection grammar", () => {
   const inspector = readFileSync("src/styles/inspector.css", "utf8");
   assert.match(
     inspector,
-    /\.hit-list > button\.selected\s*\{[^}]*background:\s*transparent;[^}]*border-left-color:\s*var\(--line-selected\);/s,
-  );
-  assert.match(
-    inspector,
-    /\.derived-signals h3::after\s*\{[^}]*border-top:\s*1px solid var\(--line-structure\);/s,
+    /\.hit-list > li\.hit-item--selected\s*\{[^}]*border-left-color:\s*var\(--line-selected\);/s,
   );
 });
 
@@ -675,13 +659,11 @@ test("source disclosure uses product labels and makes no unsupported provenance 
     "utf8",
   );
   const app = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(detail, /segments: "片段"/);
-  assert.match(detail, /audio_signals: "歡呼訊號"/);
-  assert.match(detail, /available: "可用"/);
-  assert.match(detail, /missing: "未提供"/);
-  assert.match(detail, /error: "讀取失敗"/);
-  assert.match(detail, /rally\.game !== null && rally\.gameSource/);
-  assert.doesNotMatch(detail, /state\.status\s*}}/);
+  // Only stage problems that change what this window shows surface, as one flag with product labels.
+  assert.match(detail, /events: "擊球"/);
+  assert.match(detail, /`\$\{label\}讀取失敗`/);
+  assert.match(detail, /`\$\{label\}已過期`/);
+  assert.doesNotMatch(detail, /audio_signals|state\.status\s*}}/);
   assert.doesNotMatch(app, /首屏不載入|AI 賽評/);
 });
 
@@ -725,8 +707,9 @@ test("exact Stroke evidence uses one precise formatter", () => {
   );
   const player = readFileSync("src/components/ReviewPlayer.vue", "utf8");
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  assert.match(detail, /formatPreciseTime\(selectedStroke\.time\)/);
-  assert.match(detail, /formatPreciseTimeParts\(stroke\.time\)\.fraction/);
+  // Rows carry no time column; the exact match time stays one hover away.
+  assert.match(detail, /:title="formatPreciseTime\(stroke\.time\)"/);
+  assert.doesNotMatch(detail, /<time>/);
   // The player carries no stroke HUD or segment summary; stroke evidence lives in the inspector.
   assert.doesNotMatch(player, /evidence-hud|now-playing|activeStroke/);
   // Timeline stroke labels carry only the shot; the side of the net line already says who hit it,

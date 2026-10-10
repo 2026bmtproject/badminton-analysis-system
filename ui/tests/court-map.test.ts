@@ -55,4 +55,12 @@ test("Court Map delegates to existing selected stroke action", () => {
   assert.match(page, /<RallyCourtMap[\s\S]*:selected-stroke-index="activeStrokeIndex"[\s\S]*@stroke="emit\('stroke', \$event\)"/);
   assert.match(map, /@keydown="selectOnKey\(\$event, hit\)"/);
   assert.doesNotMatch(map, /selectedCourtPoint|currentTime\s*=/);
+  // Markers carry no shot numbers or player captions; emphasis marks only the shot being played.
+  assert.doesNotMatch(map, /court-shot__number|court-half-label|upcoming/);
+  assert.match(map, /hit\.eventIndex !== props\.selectedStrokeIndex/);
+});
+
+test("refreshing a Review follows the catalog to its re-imported, content-hashed URL", () => {
+  const shell = readFileSync("src/layouts/MatchShell.vue", "utf8");
+  assert.match(shell, /async function refreshMatch\(\) \{[\s\S]*catalog\.value = await loadCatalog\(\);[\s\S]*loadMatch\(selected, \{ fresh: true \}\)/);
 });
