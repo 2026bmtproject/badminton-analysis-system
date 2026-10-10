@@ -41,7 +41,7 @@ summary:focus-visible { outline: 2px solid var(--color-text); outline-offset: 2p
 .status-chip[data-status="running"], .status-chip[data-status="queued"] { color: var(--color-accent); }
 .status-chip[data-status="succeeded"], .status-chip[data-status="completed"] { color: #d5e8da; }
 .status-chip[data-status="failed"], .status-chip[data-status="interrupted"] { color: var(--color-error); }
-.status-chip[data-status="partial"] { color: var(--color-warning); }
+.status-chip[data-status="partial"], .status-chip[data-status="stale"] { color: var(--color-warning); }
 .library-stage { margin-top: 10px; color: var(--color-text-secondary); font-size: var(--type-meta); }
 .library-card .stage-progress { max-width: 320px; margin-top: 6px; }
 .stage-progress { position: relative; display: block; height: 6px; overflow: hidden; background: var(--line-strong); border-radius: 3px; }

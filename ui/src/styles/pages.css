@@ -144,6 +144,9 @@
 .pipeline-stage-choice { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; border-bottom: 1px solid var(--color-border); cursor: pointer; }
 .pipeline-stage-choice > span:first-of-type { flex: 1; min-width: 0; }
 .pipeline-stage-choice .status-chip { min-height: 22px; padding: 1px 7px; font-size: var(--type-micro); }
+.pipeline-stale { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: rgb(217 168 78 / 8%); border: 1px solid rgb(217 168 78 / 30%); border-radius: var(--radius-sm); font-size: var(--type-meta); }
+.pipeline-stale p { margin: 0; color: var(--color-text-secondary); }
+.pipeline-stale strong { color: var(--color-warning); }
 .pipeline-mode { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
 .pipeline-mode label { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
 .pipeline-plan { padding: var(--space-3) var(--space-4); background: var(--color-surface-raised); border-radius: var(--radius-sm); }

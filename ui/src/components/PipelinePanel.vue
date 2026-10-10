@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import CourtCalibrationPanel from "./CourtCalibrationPanel.vue";
 import StageProgress from "./ui/StageProgress.vue";
 import { stageLabel } from "../data/stageLabels";
@@ -36,7 +37,15 @@ const running = computed(() => task.value?.status === "queued" || task.value?.st
 const locked = computed(() => running.value || busy.value);
 const elapsed = computed(() => task.value ? taskElapsed(task.value, clock.value) : null);
 const overall = computed(() => task.value ? taskProgress(task.value) : null);
+const route = useRoute();
 const incomplete = computed(() => stages.value.map(stage => stage.name).filter(name => !props.match.completedStages.includes(name)));
+/** Completed but built from inputs that have changed since: the Review hides these until they run again. */
+const stale = computed(() => stages.value.map(stage => stage.name).filter(name => name in props.match.staleStages));
+const outdated = computed(() => [...incomplete.value, ...stale.value]);
+function stageState(name: string) {
+  if (name in props.match.staleStages) return { status: "stale", label: "已過期" };
+  return props.match.completedStages.includes(name) ? { status: "succeeded", label: "已完成" } : { status: "missing", label: "未執行" };
+}
 const runRows = computed(() => plan.value?.stages.filter(row => row.action === "run") ?? []);
 const skipRows = computed(() => plan.value?.stages.filter(row => row.action === "skip") ?? []);
 /** The shared feed publishes a succeeded task's Review; this panel only reports on it. */
@@ -151,6 +160,8 @@ async function poll() {
 onMounted(async () => {
   try { stages.value = await listPipelineStages(); }
   catch (cause) { error.value = cause instanceof Error ? cause.message : "無法連接分析服務"; }
+  // The library's "更新分析" lands here with the stale stages already chosen.
+  if (route.query.select === "stale" && stale.value.length && !locked.value) pick(stale.value);
   if (task.value?.status === "succeeded") void syncReview(task.value);
   pollTimer = setInterval(() => { void poll(); }, 1500);
 });
@@ -162,14 +173,19 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
     <section class="pipeline-setup" aria-labelledby="pipeline-setup-title">
       <header class="pipeline-section-header">
         <h3 id="pipeline-setup-title">分析項目</h3>
-        <button type="button" class="button-secondary" :disabled="locked || !incomplete.length" @click="pick(incomplete)">全選未完成</button>
+        <button type="button" class="button-secondary" :disabled="locked || !outdated.length" @click="pick(outdated)">{{ stale.length ? "全選未完成與過期" : "全選未完成" }}</button>
       </header>
+      <div v-if="stale.length" class="pipeline-stale" role="status">
+        <p><strong>已過期，需要重跑：{{ stale.map(stageLabel).join("、") }}</strong></p>
+        <p>它們依賴的結果更新過，回看不會顯示過期的資料。</p>
+        <button type="button" class="button-secondary" :disabled="locked" @click="pick(stale)">選取過期項目</button>
+      </div>
       <fieldset :disabled="locked" class="pipeline-stage-list">
         <legend class="sr-only">選擇分析項目</legend>
         <label v-for="stage in stages" :key="stage.name" class="pipeline-stage-choice">
           <input v-model="selected" type="checkbox" :value="stage.name" />
           <span>{{ stageLabel(stage.name) }}</span>
-          <span class="status-chip" :data-status="match.completedStages.includes(stage.name) ? 'succeeded' : 'missing'">{{ match.completedStages.includes(stage.name) ? "已完成" : "未執行" }}</span>
+          <span class="status-chip" :data-status="stageState(stage.name).status">{{ stageState(stage.name).label }}</span>
         </label>
       </fieldset>
       <fieldset :disabled="locked" class="pipeline-mode">

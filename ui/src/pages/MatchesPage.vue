@@ -6,6 +6,7 @@ import StageProgress from "../components/ui/StageProgress.vue";
 import { mergeLibrary, type LibraryMatch } from "../data/library";
 import { importLocalMatch, listLocalMatches, loadCatalog, loadMatch, type ImportableMatch } from "../data/matchRepository";
 import { listPipelineMatches, taskStatusLabel, type LocalAnalysisMatch } from "../data/pipelineTasks";
+import { libraryIssueLines, type ReviewSnapshot } from "../data/reviewIssues";
 import { stageLabel } from "../data/stageLabels";
 import type { CatalogEntry } from "../domain/models";
 
@@ -18,7 +19,8 @@ const serviceError = ref("");
 const catalogError = ref("");
 const candidateError = ref("");
 const actionError = ref("");
-const reviewIssues = ref<Record<string, string[]>>({});
+/** Review snapshots by catalog ID; null when the Review file could not be read. */
+const reviews = ref<Record<string, ReviewSnapshot | null>>({});
 const publishing = ref<string | null>(null);
 const query = ref("");
 const filter = ref("all");
@@ -29,12 +31,25 @@ const visible = computed(() => rows.value.filter(row => {
   if (query.value && !`${row.name} ${row.id}`.toLocaleLowerCase().includes(query.value.toLocaleLowerCase())) return false;
   if (filter.value === "review") return Boolean(row.review);
   if (filter.value === "active") return ["running", "queued"].includes(row.local?.latestTask?.status ?? "");
-  if (filter.value === "attention") return ["failed", "interrupted"].includes(row.local?.latestTask?.status ?? "") || Boolean(row.candidate && !row.candidate.available);
+  if (filter.value === "attention") return ["failed", "interrupted"].includes(row.local?.latestTask?.status ?? "") || needsUpdate(row) || Boolean(row.candidate && !row.candidate.available);
   return true;
 }));
 function rawId(row: LibraryMatch) { return row.id.slice("match:".length); }
+function needsUpdate(row: LibraryMatch) {
+  return Boolean(row.local && Object.keys(row.local.staleStages).length);
+}
+function issues(row: LibraryMatch) {
+  if (row.id in reviews.value && reviews.value[row.id] === null) return ["回看資料無法讀取，請重新整理回看資料"];
+  return libraryIssueLines(row.local, reviews.value[row.id] ?? null);
+}
+function analysisStatus(row: LibraryMatch) {
+  const task = row.local?.latestTask;
+  if (task && task.status !== "succeeded") return task.status;
+  return needsUpdate(row) ? "stale" : task?.status ?? row.local?.analysisStatus;
+}
 function analysisLabel(row: LibraryMatch) {
   if (row.kind === "fixture") return "示範資料";
+  if (analysisStatus(row) === "stale") return "需要更新";
   if (row.local?.latestTask) return taskStatusLabel(row.local.latestTask.status);
   if (!row.local) return serviceError.value ? "分析服務離線" : "未取得分析狀態";
   return ({ completed: "分析完成", partial: "部分完成", unanalysed: "尚未分析" } as const)[row.local.analysisStatus];
@@ -61,10 +76,8 @@ async function refresh() {
     void Promise.all(reviewEntries.map(async entry => {
       try {
         const model = await loadMatch(entry);
-        reviewIssues.value[entry.id] = Object.entries(model.states)
-          .filter(([, state]) => ["error", "stale", "unknown"].includes(state.status))
-          .map(([name, state]) => `${stageLabel(name)}：${({ error: "資料錯誤", stale: "輸入過期", unknown: "來源狀態未知" } as Record<string, string>)[state.status]}${state.message ? `（${state.message}）` : ""}`);
-      } catch { reviewIssues.value[entry.id] = ["回看資料無法讀取，請重新整理回看資料"]; }
+        reviews.value[entry.id] = { states: model.states, importedAt: model.source?.importedAt };
+      } catch { reviews.value[entry.id] = null; }
     }));
   }
   else catalogError.value = "回看目錄讀取失敗。";
@@ -97,8 +110,8 @@ onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener(
     <p v-else-if="!visible.length" class="console-panel empty-state">{{ rows.length ? '找不到符合條件的比賽。' : '尚無比賽。請在設定中選擇 matches 資料夾，或將現有影片資料放入該目錄後掃描。' }}</p>
     <div v-else class="library-list"><article v-for="row in visible" :key="row.id" class="console-panel library-card">
       <div class="library-thumbnail" role="img" aria-label="沒有可用的比賽縮圖"><AppIcon name="video" :size="27" /></div>
-      <div class="library-card-content"><div class="library-card-title"><h2>{{ row.name }}</h2><span v-if="row.kind === 'fixture'" class="status-chip">示範</span></div><div class="library-card-meta"><span class="status-chip" :data-status="row.local?.latestTask?.status ?? row.local?.analysisStatus">{{ analysisLabel(row) }}</span><span class="status-chip" :data-status="row.review ? 'succeeded' : 'missing'">{{ row.review ? '可回看' : '尚無回看' }}</span><span v-if="row.candidate && !row.candidate.available" class="secondary">{{ row.candidate.reason }}</span></div><p v-if="stageProgress(row)" class="library-stage" role="status">{{ stageProgress(row) }}</p><StageProgress v-if="currentStageState(row)" :status="currentStageState(row)!.status" :progress="currentStageState(row)!.progress" :label="`${row.name} 目前階段進度`" /><p v-for="issue in reviewIssues[row.id] ?? []" :key="issue" class="library-issue">{{ issue }}</p></div>
-      <div class="library-card-actions"><RouterLink v-if="row.review" class="button-primary" :to="{ name: 'match-review', params: { matchId: row.id } }">開啟回看</RouterLink><RouterLink v-if="row.local && ['running', 'queued'].includes(row.local.latestTask?.status ?? '')" class="button-secondary" :to="{ name: 'tasks' }">查看進度</RouterLink><RouterLink v-else-if="row.local" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">{{ row.local.analysisStatus === 'unanalysed' ? '開始分析' : '分析設定' }}</RouterLink><button v-if="row.kind === 'match' && row.candidate?.available" type="button" class="button-secondary" :title="row.review ? '以目前的分析結果更新回看' : '把已有的分析結果匯入成回看'" :disabled="publishing !== null" @click="publish(row)">{{ publishing === rawId(row) ? '匯入中…' : '匯入結果' }}</button></div>
+      <div class="library-card-content"><div class="library-card-title"><h2>{{ row.name }}</h2><span v-if="row.kind === 'fixture'" class="status-chip">示範</span></div><div class="library-card-meta"><span class="status-chip" :data-status="analysisStatus(row)">{{ analysisLabel(row) }}</span><span class="status-chip" :data-status="row.review ? 'succeeded' : 'missing'">{{ row.review ? '可回看' : '尚無回看' }}</span><span v-if="row.candidate && !row.candidate.available" class="secondary">{{ row.candidate.reason }}</span></div><p v-if="stageProgress(row)" class="library-stage" role="status">{{ stageProgress(row) }}</p><StageProgress v-if="currentStageState(row)" :status="currentStageState(row)!.status" :progress="currentStageState(row)!.progress" :label="`${row.name} 目前階段進度`" /><p v-for="issue in issues(row)" :key="issue" class="library-issue">{{ issue }}</p></div>
+      <div class="library-card-actions"><RouterLink v-if="row.review" class="button-primary" :to="{ name: 'match-review', params: { matchId: row.id } }">開啟回看</RouterLink><RouterLink v-if="row.local && ['running', 'queued'].includes(row.local.latestTask?.status ?? '')" class="button-secondary" :to="{ name: 'tasks' }">查看進度</RouterLink><RouterLink v-else-if="row.local && needsUpdate(row)" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id }, query: { select: 'stale' } }">更新分析</RouterLink><RouterLink v-else-if="row.local" class="button-secondary" :to="{ name: 'match-analysis', params: { matchId: row.local.id } }">{{ row.local.analysisStatus === 'unanalysed' ? '開始分析' : '分析設定' }}</RouterLink><button v-if="row.kind === 'match' && row.candidate?.available" type="button" class="button-secondary" :title="row.review ? '以目前的分析結果更新回看' : '把已有的分析結果匯入成回看'" :disabled="publishing !== null" @click="publish(row)">{{ publishing === rawId(row) ? '匯入中…' : '匯入結果' }}</button></div>
     </article></div>
   </main>
 </template>

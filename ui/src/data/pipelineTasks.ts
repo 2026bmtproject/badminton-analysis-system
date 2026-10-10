@@ -23,6 +23,12 @@ export type PipelineTask = {
 };
 export type LocalAnalysisMatch = {
   id: string; completedStages: string[]; hasSegments: boolean;
+  /** Completed stages whose inputs changed since they ran, with the inputs that changed. */
+  staleStages: Record<string, string[]>;
+  /** Completed stages that ran before inputs were recorded, so freshness cannot be told. */
+  unknownStages: string[];
+  /** When the newest completed stage finished; a Review imported before this is behind. */
+  resultsUpdatedAt: string | null;
   analysisStatus: "completed" | "partial" | "unanalysed";
   latestTask: PipelineTask | null;
 };

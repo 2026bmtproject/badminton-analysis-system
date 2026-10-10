@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from modules.base import StageStatus, read_status
+from modules.base import StageStatus, artifact_fingerprint, read_status
 from modules.contracts import PIPELINE, artifact_path, resolve_input_video, stage_path
 from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
 from modules.local_tasks.locking import WorkerLock
@@ -39,6 +39,10 @@ class TaskManager:
         self.guard = threading.Lock()
         self.active_id: str | None = None
         self.instance_id = uuid.uuid4().hex
+        # path -> (mtime_ns, size, fingerprint): the library polls freshness, and re-hashing
+        # every artifact (pose alone is ~150 MB a match) on each poll would cost seconds.
+        self.fingerprints: dict[Path, tuple[int, int, str]] = {}
+        self.fingerprint_guard = threading.Lock()
         self.refresh_recovery()
 
     def refresh_recovery(self) -> bool:
@@ -117,6 +121,33 @@ class TaskManager:
                  "usesGemini": name in ("score_recognition", "commentary")}
                 for name, module in modules.items()]
 
+    def _fingerprint(self, match: Path, stage: str) -> str | None:
+        path = artifact_path(match, stage)
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            return None
+        with self.fingerprint_guard:
+            cached = self.fingerprints.get(path)
+        if cached and cached[:2] == (info.st_mtime_ns, info.st_size):
+            return cached[2]
+        fingerprint = artifact_fingerprint(match, stage)
+        if fingerprint is not None:
+            with self.fingerprint_guard:
+                self.fingerprints[path] = (info.st_mtime_ns, info.st_size, fingerprint)
+        return fingerprint
+
+    def _stale_inputs(self, match: Path, module, recorded: dict[str, str] | None) -> list[str] | None:
+        """``runner.stale_inputs`` over cached fingerprints; None when the run predates input tracking."""
+        if recorded is None:
+            return None
+        current = {}
+        for name in [*module.dependencies, *module.optional_dependencies]:
+            fingerprint = self._fingerprint(match, name)
+            if fingerprint is not None:
+                current[name] = fingerprint
+        return sorted(n for n in set(recorded) | set(current) if recorded.get(n) != current.get(n))
+
     def matches(self) -> list[dict]:
         latest = {}
         for task in self.store.list():
@@ -135,15 +166,26 @@ class TaskManager:
                 resolve_input_video(match)
             except FileNotFoundError:
                 continue
-            completed = []
-            for name in available_modules():
+            completed, stale, unknown, finished = [], {}, [], []
+            modules = available_modules()
+            for name, module in modules.items():
                 try:
                     status = read_status(stage_path(match, name))
-                    if status is not None and status.status == StageStatus.COMPLETED and artifact_path(match, name).is_file():
-                        completed.append(name)
+                    if status is None or status.status != StageStatus.COMPLETED or not artifact_path(match, name).is_file():
+                        continue
+                    completed.append(name)
+                    if status.finished_at:
+                        finished.append(status.finished_at)
+                    changed = self._stale_inputs(match, module, status.inputs)
+                    if changed is None:
+                        unknown.append(name)
+                    elif changed:
+                        stale[name] = changed
                 except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                     continue
             rows.append({"id": folder.name, "completedStages": completed,
+                         "staleStages": stale, "unknownStages": unknown,
+                         "resultsUpdatedAt": max(finished) if finished else None,
                          "analysisStatus": "completed" if set(default_modules()) <= set(completed)
                          else "partial" if completed else "unanalysed",
                          "hasSegments": "match_segmentation" in completed,

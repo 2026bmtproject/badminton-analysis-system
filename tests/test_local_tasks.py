@@ -145,6 +145,22 @@ def test_matches_lists_any_input_video_name(tmp_path):
     assert [row["id"] for row in manager.matches()] == ["Sample"]
 
 
+def test_matches_report_stale_and_unknown_stages(tmp_path):
+    match = match_fixture(tmp_path)
+    completed(match, "match_segmentation", unknown=True)
+    completed(match, "event_detection")
+    completed(match, "stroke_classification")
+    manager = TaskManager(match.parent, tmp_path / "tasks")
+    row = manager.matches()[0]
+    assert row["staleStages"] == {}
+    assert row["unknownStages"] == ["match_segmentation"]
+
+    artifact_path(match, "event_detection").write_text(json.dumps({"events": [], "changed": True}))
+    row = manager.matches()[0]
+    assert row["staleStages"] == {"stroke_classification": ["event_detection"]}
+    assert "stroke_classification" in row["completedStages"]
+
+
 class DeferredProcess:
     def __init__(self):
         self.done = threading.Event()

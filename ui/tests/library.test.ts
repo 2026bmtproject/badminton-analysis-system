@@ -4,7 +4,7 @@ import { mergeLibrary } from "../src/data/library";
 import type { LocalAnalysisMatch } from "../src/data/pipelineTasks";
 
 test("library merges local analysis and Review by canonical match ID", () => {
-  const local: LocalAnalysisMatch = { id: "Kunlavut", completedStages: [], hasSegments: false, analysisStatus: "unanalysed", latestTask: null };
+  const local: LocalAnalysisMatch = { id: "Kunlavut", completedStages: [], staleStages: {}, unknownStages: [], resultsUpdatedAt: null, hasSegments: false, analysisStatus: "unanalysed", latestTask: null };
   const rows = mergeLibrary(
     [{ id: "match:Kunlavut", name: "Kunlavut", url: "/matches/a.json", kind: "match" },
       { id: "demo", name: "Kunlavut", url: "/generated/demo.json", kind: "fixture" }],
@@ -19,7 +19,7 @@ test("library merges local analysis and Review by canonical match ID", () => {
 });
 
 test("local match without segments stays in the library and can open analysis", () => {
-  const rows = mergeLibrary([], [{ id: "raw", completedStages: [], hasSegments: false, analysisStatus: "unanalysed", latestTask: null }], []);
+  const rows = mergeLibrary([], [{ id: "raw", completedStages: [], staleStages: {}, unknownStages: [], resultsUpdatedAt: null, hasSegments: false, analysisStatus: "unanalysed", latestTask: null }], []);
   assert.equal(rows[0].id, "match:raw");
   assert.equal(rows[0].review, null);
   assert.equal(rows[0].local?.hasSegments, false);
