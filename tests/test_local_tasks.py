@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import uuid
+from types import SimpleNamespace
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from modules.local_tasks.planning import build_plan, resolve_match
 from modules.local_tasks.locking import WorkerLock
 from modules.local_tasks.service import PlanChanged, TaskManager, WorkerBusy, handler_for
 from modules.local_tasks.store import TaskStore
-from modules.local_tasks.worker import _safe_error, execute
+from modules.local_tasks.worker import _safe_error, execute, execute_segment_commentary
 
 
 def match_fixture(tmp_path: Path) -> Path:
@@ -362,3 +363,73 @@ def test_http_origin_policy_and_reconnect(tmp_path):
         process.done.set()
         server.shutdown()
         server.server_close()
+
+
+def commentary_ready(match: Path, segments: int = 2) -> None:
+    for name in PIPELINE["commentary"].dependencies:
+        completed(match, name)
+    artifact_path(match, "match_segmentation").write_text(json.dumps(
+        {"segments": [{"start_frame": i * 10, "end_frame": i * 10 + 5} for i in range(segments)]}))
+
+
+def test_segment_commentary_validates_and_queues_one_segment(tmp_path):
+    match = match_fixture(tmp_path)
+    launched = []
+    process = DeferredProcess()
+    def spawn(argv, **options):
+        launched.append(argv)
+        return process
+    manager = TaskManager(match.parent, tmp_path / "tasks", spawn=spawn)
+    with pytest.raises(ValueError, match="upstream"):
+        manager.start_segment_commentary({"matchId": "Sample", "segmentIndex": 0})
+    commentary_ready(match)
+    for bad in (-1, True, "1", None):
+        with pytest.raises(ValueError, match="invalid segmentIndex"):
+            manager.start_segment_commentary({"matchId": "Sample", "segmentIndex": bad})
+    with pytest.raises(ValueError, match="does not exist"):
+        manager.start_segment_commentary({"matchId": "Sample", "segmentIndex": 2})
+    assert not launched
+    task = manager.start_segment_commentary({"matchId": "Sample", "segmentIndex": 1})
+    assert task["segmentIndex"] == 1
+    assert task["status"] == "queued"
+    assert task["plan"]["requestedStages"] == ["commentary"]
+    assert task["plan"]["includesGemini"] is True
+    assert list(task["stageStates"]) == ["commentary"]
+    assert manager.store.read(task["id"])["segmentIndex"] == 1
+    assert launched[0][-1] == task["id"]
+    with pytest.raises(WorkerBusy):
+        manager.start_segment_commentary({"matchId": "Sample", "segmentIndex": 0})
+    process.done.set()
+
+
+def segment_task(store: TaskStore, match: Path, segment: int) -> str:
+    task_id = uuid.uuid4().hex
+    store.save({"id": task_id, "matchId": match.name, "segmentIndex": segment,
+                "options": {"stages": ["commentary"], "mode": "continue"}, "plan": {},
+                "status": "queued", "currentStage": None, "startedAt": None,
+                "finishedAt": None, "error": None, "exitCode": None,
+                "stageStates": {"commentary": {"status": "queued", "progress": None}}})
+    return task_id
+
+
+def test_worker_segment_commentary_success_and_unsupported(tmp_path):
+    match = match_fixture(tmp_path)
+    store = TaskStore(tmp_path / "tasks")
+    calls = []
+    def generate(path, segments):
+        calls.append((path, segments))
+        return SimpleNamespace(unsupported_segments=[])
+    task_id = segment_task(store, match, 3)
+    assert execute_segment_commentary(store, task_id, match, generate)
+    assert calls == [(match, [3])]
+    result = store.read(task_id)
+    assert result["status"] == "succeeded"
+    assert result["stageStates"]["commentary"]["status"] == "succeeded"
+    unsupported = lambda path, segments: SimpleNamespace(unsupported_segments=[
+        {"segment_index": 3, "reason": "player_identity_unavailable"}])
+    task_id = segment_task(store, match, 3)
+    assert not execute_segment_commentary(store, task_id, match, unsupported)
+    result = store.read(task_id)
+    assert result["status"] == "failed"
+    assert "player_identity_unavailable" in result["error"]
+    assert result["stageStates"]["commentary"]["status"] == "failed"

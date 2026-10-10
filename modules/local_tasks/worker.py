@@ -38,6 +38,49 @@ def _safe_error(error: BaseException) -> str:
     return result[:1000]
 
 
+def execute_segment_commentary(store: TaskStore, task_id: str, match: Path,
+                               generate=None) -> bool:
+    """Runs on-demand commentary for the task's one segment; the commentary stage status is untouched."""
+    if generate is None:
+        from modules.commentary import generate_commentary_segments as generate
+    record = store.read(task_id)
+    if record["status"] != "queued":
+        return False
+    segment = record["segmentIndex"]
+    stage = record["stageStates"]["commentary"]
+    record.update(status="running", startedAt=now(), currentStage="commentary")
+    stage.update(status="running", progress=None, startedAt=now())
+    store.save(record)
+    store.append_log(task_id, f"commentary: segment {segment} started")
+    try:
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            try:
+                sys.stdout = sink
+                sys.stderr = sink
+                result = generate(match, [segment])
+            finally:
+                sys.stdout, sys.stderr = old_stdout, old_stderr
+        if store.read(task_id)["status"] == "interrupted":
+            return False
+        if result.unsupported_segments:
+            raise RuntimeError(f"segment {segment} is unsupported: "
+                               f"{result.unsupported_segments[0]['reason']}")
+        stage.update(status="succeeded", progress=1.0, finishedAt=now())
+        record.update(status="succeeded", currentStage=None, finishedAt=now(), exitCode=0)
+        store.save(record)
+        store.append_log(task_id, f"commentary: segment {segment} succeeded")
+        return True
+    except BaseException as error:
+        message = _safe_error(error)
+        stage.update(status="failed", finishedAt=now(), error=message)
+        if store.read(task_id)["status"] != "interrupted":
+            record.update(status="failed", finishedAt=now(), error=message, exitCode=1)
+            store.save(record)
+        store.append_log(task_id, f"Commentary failed: {message}")
+        return False
+
+
 def execute(store: TaskStore, task_id: str, match: Path,
             modules: dict[str, Any] | None = None) -> bool:
     production_registry = modules is None
@@ -45,6 +88,8 @@ def execute(store: TaskStore, task_id: str, match: Path,
     record = store.read(task_id)
     if record["status"] != "queued":
         return False
+    if record.get("segmentIndex") is not None:
+        return execute_segment_commentary(store, task_id, match)
     from modules.local_tasks.planning import build_plan
     current_plan = build_plan(match, record["options"]["stages"], record["options"]["mode"],
                               None if production_registry else modules)

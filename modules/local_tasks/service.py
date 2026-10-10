@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from modules.artifacts import read_artifact
 from modules.base import StageStatus, artifact_fingerprint, read_status
 from modules.contracts import PIPELINE, artifact_path, resolve_input_video, stage_path
 from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
@@ -203,8 +204,7 @@ class TaskManager:
                 raise PlanChanged("source or plan changed; preview again before starting")
             if not any(row["action"] == "run" for row in plan["stages"]):
                 raise ValueError("plan has no work to run")
-            task_id = uuid.uuid4().hex
-            record = {"id": task_id, "matchId": plan["matchId"],
+            record = {"id": uuid.uuid4().hex, "matchId": plan["matchId"],
                       "options": {"mode": plan["mode"], "stages": plan["requestedStages"]},
                       "plan": plan, "status": "queued", "stageStates": {
                           row["name"]: {"status": "queued" if row["action"] == "run" else "skipped",
@@ -212,21 +212,58 @@ class TaskManager:
                           for row in plan["stages"]},
                       "currentStage": None, "createdAt": now(), "startedAt": None,
                       "finishedAt": None, "error": None, "exitCode": None}
+            return self._launch(record)
+
+    def start_segment_commentary(self, request: dict) -> dict:
+        """Queues commentary for one segment; it never rewrites the whole-match commentary stage."""
+        with self.guard:
+            if self.active_id is not None:
+                raise WorkerBusy("an analysis task is already active")
+            if self.refresh_recovery():
+                raise WorkerBusy("a worker from another service process is active or recovering")
+            match = resolve_match(self.matches_root, request.get("matchId"))
+            segment = request.get("segmentIndex")
+            if type(segment) is not int or segment < 0:
+                raise ValueError("invalid segmentIndex")
+            module = available_modules()["commentary"]
+            if not module.check_ready(match):
+                raise ValueError("commentary upstream stages are not complete")
+            spec = PIPELINE["match_segmentation"]
+            if segment >= len(read_artifact(spec, artifact_path(match, spec.name))[spec.record_key]):
+                raise ValueError("segmentIndex does not exist")
+            reason = f"segment {segment}"
+            # The plan mirrors a pipeline plan so task views need no second shape; it is never revalidated.
+            plan = {"planId": f"segment-commentary-{segment}", "matchId": match.name, "mode": "continue",
+                    "requestedStages": ["commentary"], "requiredStages": ["commentary"],
+                    "stages": [{"name": "commentary", "action": "run", "reason": reason,
+                                "stale": [], "unknown": False, "status": "missing"}],
+                    "affectedOutsideScope": [], "includesGemini": True}
+            record = {"id": uuid.uuid4().hex, "matchId": match.name, "segmentIndex": segment,
+                      "options": {"mode": "continue", "stages": ["commentary"]},
+                      "plan": plan, "status": "queued",
+                      "stageStates": {"commentary": {"status": "queued", "progress": None, "reason": reason}},
+                      "currentStage": None, "createdAt": now(), "startedAt": None,
+                      "finishedAt": None, "error": None, "exitCode": None}
+            return self._launch(record)
+
+    def _launch(self, record: dict) -> dict:
+        """Saves a queued record and starts its worker; the caller holds ``guard``."""
+        task_id = record["id"]
+        self.store.save(record)
+        argv = [sys.executable, "-m", "modules.local_tasks.worker",
+                "--tasks-dir", str(self.store.root), "--matches-dir", str(self.matches_root),
+                "--task-id", task_id]
+        try:
+            process = self.spawn(argv, cwd=Path(__file__).resolve().parents[2],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, close_fds=True)
+        except OSError as error:
+            record.update(status="failed", error=str(error), finishedAt=now(), exitCode=-1)
             self.store.save(record)
-            argv = [sys.executable, "-m", "modules.local_tasks.worker",
-                    "--tasks-dir", str(self.store.root), "--matches-dir", str(self.matches_root),
-                    "--task-id", task_id]
-            try:
-                process = self.spawn(argv, cwd=Path(__file__).resolve().parents[2],
-                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL, close_fds=True)
-            except OSError as error:
-                record.update(status="failed", error=str(error), finishedAt=now(), exitCode=-1)
-                self.store.save(record)
-                raise
-            self.active_id = task_id
-            threading.Thread(target=self._monitor, args=(task_id, process), daemon=True).start()
-            return record
+            raise
+        self.active_id = task_id
+        threading.Thread(target=self._monitor, args=(task_id, process), daemon=True).start()
+        return record
 
     def _monitor(self, task_id, process) -> None:
         code = process.wait()
@@ -314,6 +351,8 @@ def handler_for(manager: TaskManager, ui_origin: str, bind_host: str, bind_port:
                     return self.respond(200, manager.plan(request))
                 if self.path == "/api/pipeline/tasks":
                     return self.respond(201, manager.start(request))
+                if self.path == "/api/pipeline/commentary":
+                    return self.respond(201, manager.start_segment_commentary(request))
                 if self.path == "/api/pipeline/court/preview":
                     return self.respond(200, manager.court_preview(request))
                 if self.path == "/api/pipeline/court/save":
