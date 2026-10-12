@@ -22,6 +22,8 @@ export type OverlaySettings = {
   layers: Record<OverlayLayerId, boolean>;
   /** A tracking method name, or BOTH_METHODS. */
   shuttleMethod: string;
+  /** Overlay only: the picture goes dark under the drawn layers. */
+  hideVideo: boolean;
 };
 
 export function defaultOverlaySettings(): OverlaySettings {
@@ -30,6 +32,7 @@ export function defaultOverlaySettings(): OverlaySettings {
     // The stroke label repeats the Analysis window's stroke list, so it waits to be asked for.
     layers: { court: true, pose: true, players: true, shuttle: true, trail: true, hit: true, stroke: false },
     shuttleMethod: BOTH_METHODS,
+    hideVideo: false,
   };
 }
 
@@ -44,6 +47,7 @@ export function sanitizeOverlaySettings(value: unknown): OverlaySettings {
       return [id, typeof choice === "boolean" ? choice : fallback.layers[id]];
     })) as Record<OverlayLayerId, boolean>,
     shuttleMethod: typeof raw.shuttleMethod === "string" && raw.shuttleMethod ? raw.shuttleMethod : BOTH_METHODS,
+    hideVideo: raw.hideVideo === true,
   };
 }
 
@@ -72,6 +76,20 @@ export function activeOverlayLayers(settings: OverlaySettings, availability: Ove
     (!parent || settings.layers[parent])])) as Record<OverlayLayerId, boolean>;
 }
 
+/**
+ * Why the video cannot be hidden, or null when it can: a dark picture needs at least one layer drawn from
+ * the overlay files, since the hit layer alone would only flash a border on black.
+ */
+export function hideVideoAvailability(availability: OverlayAvailability): string | null {
+  const reasons = [availability.court, availability.pose, availability.shuttle];
+  return reasons.some((reason) => reason === null) ? null : reasons[0]!;
+}
+
+/** The video is hidden only while the overlay is on, so switching the overlay off always brings the picture back. */
+export function videoHidden(settings: OverlaySettings, availability: OverlayAvailability) {
+  return settings.enabled && settings.hideVideo && hideVideoAvailability(availability) === null;
+}
+
 /** Methods to draw; an unknown stored choice falls back to all of them. */
 export function shownShuttleMethods(settings: OverlaySettings, methods: readonly string[]): string[] {
   return methods.includes(settings.shuttleMethod) ? [settings.shuttleMethod] : [...methods];
@@ -87,11 +105,18 @@ export function toggleOverlayLayer(settings: OverlaySettings, id: OverlayLayerId
   if (settings.layers[id]) settings.enabled = true;
 }
 
-export type OverlayShortcut = { kind: "overlay" } | { kind: "layer"; id: OverlayLayerId };
+/** Asking for the overlay alone means wanting to see it, so hiding the video switches the overlay on. */
+export function toggleHideVideo(settings: OverlaySettings) {
+  settings.hideVideo = !settings.hideVideo;
+  if (settings.hideVideo) settings.enabled = true;
+}
+
+export type OverlayShortcut = { kind: "overlay" } | { kind: "hide-video" } | { kind: "layer"; id: OverlayLayerId };
 
 export function overlayShortcut(input: { code: string; shiftKey: boolean }): OverlayShortcut | null {
   if (input.shiftKey) return null;
   if (input.code === "KeyO") return { kind: "overlay" };
+  if (input.code === "KeyV") return { kind: "hide-video" };
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(input.code)?.[1];
   const layer = digit ? OVERLAY_LAYERS.find((item) => item.key === digit) : undefined;
   return layer ? { kind: "layer", id: layer.id } : null;

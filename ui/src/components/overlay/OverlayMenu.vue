@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { FUN_MODES, replacesShuttle, type FunMode } from "../../fun/funModes";
-import { BOTH_METHODS, OVERLAY_LAYERS, type OverlayAvailability, type OverlayLayerId, type OverlaySettings } from "../../overlay/overlaySettings";
+import { BOTH_METHODS, hideVideoAvailability, OVERLAY_LAYERS, type OverlayAvailability, type OverlayLayerId, type OverlaySettings } from "../../overlay/overlaySettings";
 import WorkspacePopover from "../workspace/WorkspacePopover.vue";
 import AppIcon from "../ui/AppIcon.vue";
 
@@ -12,9 +12,10 @@ const props = defineProps<{
   methods: readonly string[];
   fun: FunMode;
 }>();
-const emit = defineEmits<{ toggle: []; layer: [id: OverlayLayerId]; method: [value: string]; open: [value: boolean]; fun: [mode: FunMode] }>();
+const emit = defineEmits<{ toggle: []; hideVideo: []; layer: [id: OverlayLayerId]; method: [value: string]; open: [value: boolean]; fun: [mode: FunMode] }>();
 
 const methodOptions = computed(() => props.methods.length > 1 ? [...props.methods, BOTH_METHODS] : []);
+const hideVideoReason = computed(() => hideVideoAvailability(props.availability));
 const selectedMethod = computed(() => props.methods.includes(props.settings.shuttleMethod) ? props.settings.shuttleMethod : BOTH_METHODS);
 /** Each reason once: a missing stage usually disables a few layers together. */
 /** The party only shows to a Shift-click, and stays while a party is on so it can be switched off. */
@@ -40,6 +41,10 @@ const reasons = computed(() => [...new Set(Object.values(props.availability).fil
           <span>{{ layer.label }}</span><kbd>{{ layer.key }}</kbd>
         </label>
       </div>
+      <label class="overlay-menu__row overlay-menu__row--hide-video" :title="hideVideoReason ?? undefined">
+        <input type="checkbox" :checked="settings.hideVideo" :disabled="hideVideoReason !== null" @change="emit('hideVideo')" />
+        <span>只顯示疊圖</span><kbd>V</kbd>
+      </label>
       <fieldset v-if="methodOptions.length" class="overlay-menu__methods" :disabled="availability.shuttle !== null">
         <legend>羽球軌跡</legend>
         <label v-for="option in methodOptions" :key="option">

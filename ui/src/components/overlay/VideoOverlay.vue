@@ -20,6 +20,8 @@ const props = defineProps<{
   players: { a: string; b: string };
   /** Party mode; the oiia and nyan cats take the shuttle's place. */
   fun?: FunMode;
+  /** Overlay only: a dark backdrop covers the picture, which keeps playing so the marks stay on its frames. */
+  hideVideo?: boolean;
 }>();
 
 /** The next Rally's file is fetched this long before it starts. */
@@ -175,6 +177,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div v-if="hideVideo" class="video-overlay-backdrop" aria-hidden="true" />
   <div ref="tint" class="video-overlay-tint" hidden aria-hidden="true" />
   <canvas ref="canvas" class="video-overlay" aria-hidden="true" />
 </template>

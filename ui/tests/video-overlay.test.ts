@@ -11,7 +11,7 @@ import {
 } from "../src/overlay/overlayScene";
 import {
   activeOverlayLayers, defaultOverlaySettings, overlayAvailability, overlayShortcut, sanitizeOverlaySettings,
-  shownShuttleMethods, toggleOverlayLayer, type OverlayLayerId,
+  hideVideoAvailability, shownShuttleMethods, toggleHideVideo, toggleOverlayLayer, videoHidden, type OverlayLayerId,
 } from "../src/overlay/overlaySettings";
 import { defaultWorkspaceLayout, parseWorkspaceLayout } from "../src/state/workspaceLayout";
 import { desktopRuntime, registerMatch } from "../scripts/local-matches";
@@ -76,6 +76,27 @@ test("switching a layer on also switches the overlay on, and keys map to the men
   assert.deepEqual(overlayShortcut({ code: "Numpad1", shiftKey: false }), { kind: "layer", id: "court" });
   assert.equal(overlayShortcut({ code: "Digit8", shiftKey: false }), null);
   assert.equal(overlayShortcut({ code: "KeyO", shiftKey: true }), null);
+  assert.deepEqual(overlayShortcut({ code: "KeyV", shiftKey: false }), { kind: "hide-video" });
+});
+
+test("overlay only hides the video while the overlay is on and there are overlay files to draw", () => {
+  const capabilities = capabilityFromStates({ court: usable, pose: usable, shuttle: usable, events: usable });
+  const available = overlayAvailability({ capabilities, overlay: MANIFEST, fps: 25 });
+  const settings = defaultOverlaySettings();
+  assert.equal(settings.hideVideo, false);
+  assert.equal(sanitizeOverlaySettings({ hideVideo: "yes" }).hideVideo, false);
+  assert.equal(sanitizeOverlaySettings({ hideVideo: true }).hideVideo, true);
+  toggleHideVideo(settings);
+  assert.equal(settings.enabled, true, "asking for the overlay alone switches the overlay on");
+  assert.equal(videoHidden(settings, available), true);
+  settings.enabled = false;
+  assert.equal(videoHidden(settings, available), false, "switching the overlay off brings the picture back");
+  toggleHideVideo(settings);
+  assert.equal(settings.hideVideo, false);
+  assert.equal(settings.enabled, false, "showing the video again leaves the overlay as it was");
+  const unimported = overlayAvailability({ capabilities, overlay: undefined, fps: 25 });
+  assert.equal(hideVideoAvailability(unimported), "重新匯入比賽後才有疊圖資料");
+  assert.equal(videoHidden({ ...defaultOverlaySettings(), enabled: true, hideVideo: true }, unimported), false);
 });
 
 test("layers draw only when on, available, and under a drawn parent", () => {

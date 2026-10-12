@@ -16,13 +16,16 @@ import { playerShortcutAction, repeatsWhileHeld } from "../interaction/playerSho
 import { findStrokeTarget, resolveRouteRally, resolveRouteStroke } from "../rallies/rallyRoute";
 import {
   activeOverlayLayers,
+  hideVideoAvailability,
   overlayAvailability,
   overlayShortcut,
   shownShuttleMethods,
+  toggleHideVideo,
   toggleOverlay,
   toggleOverlayLayer,
   type OverlayLayerId,
   type OverlayShortcut,
+  videoHidden,
 } from "../overlay/overlaySettings";
 import { replacesShuttle, type FunMode } from "../fun/funModes";
 import { useMatchContext } from "../state/matchContext";
@@ -60,6 +63,7 @@ const SHORTCUT_GROUPS: readonly { title: string; items: readonly { keys: readonl
   { title: "疊圖", items: [
     { keys: [["O"]], label: "疊圖開關" },
     { keys: [["1 – 7"]], label: "切換圖層" },
+    { keys: [["V"]], label: "只顯示疊圖" },
   ] },
   { title: "時間軸", items: [
     { keys: [["雙擊片段"]], label: "放大／回到全場" },
@@ -109,6 +113,7 @@ const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "�
 const matchTitle = computed(() => !match.value.title || /^(?:match:)?yt[_:-]/i.test(match.value.title) ? "比賽回看" : match.value.title);
 const overlayLayersAvailable = computed(() => overlayAvailability(match.value));
 const overlayLayers = computed(() => activeOverlayLayers(layout.overlay, overlayLayersAvailable.value));
+const overlayOnly = computed(() => videoHidden(layout.overlay, overlayLayersAvailable.value));
 const overlayMethods = computed(() => match.value.overlay?.methods ?? []);
 const shownOverlayMethods = computed(() => shownShuttleMethods(layout.overlay, overlayMethods.value));
 const headerScore = computed(() => workspace.currentScore.value ? scoreText(workspace.currentScore.value) : null);
@@ -204,7 +209,12 @@ function keyboard(event: KeyboardEvent) {
 }
 function applyOverlayShortcut(shortcut: OverlayShortcut) {
   if (shortcut.kind === "overlay") toggleOverlay(layout.overlay);
+  else if (shortcut.kind === "hide-video") toggleOverlayOnly();
   else toggleLayer(shortcut.id);
+}
+/** Without overlay files there is nothing to show on a dark picture, so the choice stays as stored. */
+function toggleOverlayOnly() {
+  if (hideVideoAvailability(overlayLayersAvailable.value) === null) toggleHideVideo(layout.overlay);
 }
 /** An unavailable layer keeps its stored choice; there is nothing to switch on. */
 function toggleLayer(id: OverlayLayerId) {
@@ -394,10 +404,10 @@ onBeforeUnmount(() => {
       <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden, 'review-workspace-stage--docked': fullscreen && !timelineFloating }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
         <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
           <template #overlay="{ video }">
-            <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" :fun="funMode" />
+            <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" :fun="funMode" :hide-video="overlayOnly" />
           </template>
           <template #controls>
-            <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" :fun="funMode" @fun="chooseFun" />
+            <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @hide-video="toggleOverlayOnly" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" :fun="funMode" @fun="chooseFun" />
             <button v-if="fullscreen" class="player-icon-button player-icon-button--dock" type="button" :aria-label="timelineFloating ? '停靠時間軸' : '浮動時間軸'" :title="timelineFloating ? '停靠時間軸：移到影片下方，不遮擋畫面（D）' : '浮動時間軸：疊在影片上（D）'" @click="toggleTimelineDocked"><AppIcon :name="timelineFloating ? 'dock' : 'float'" /></button>
           </template>
         </ReviewPlayer>
