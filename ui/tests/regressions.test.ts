@@ -384,7 +384,7 @@ test("primary scores use the instrument divider while timeline semantics stay un
     "utf8",
   );
   const timeline = readFileSync("src/components/ReviewTimeline.vue", "utf8");
-  // The Analysis header carries the pre-Rally score as text; the detail repeats no score.
+  // The Rally detail repeats no score; the match bar carries it.
   assert.doesNotMatch(detail, /score-state/);
   for (const primary of [app]) {
     assert.match(primary, /class="score-state[^"]*"/);
@@ -394,8 +394,7 @@ test("primary scores use the instrument divider while timeline semantics stay un
     );
     assert.doesNotMatch(primary, />┃</);
   }
-  assert.match(inspector, /class="analysis-context-header"/);
-  assert.match(inspector, /analysisContextSummary/);
+  assert.doesNotMatch(inspector, /analysis-context-header|analysisContextSummary/);
   assert.match(timeline, /class="score-state timeline-score-state lead-chip"/);
   assert.match(timeline, /class="score-state-divider" \/>/);
   assert.match(timeline, /class="lead-mark lead-mark--change"[\s\S]*data-timeline-kind="score"/);
