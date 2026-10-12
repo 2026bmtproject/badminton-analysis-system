@@ -27,7 +27,7 @@ Capabilities 由 Python review exporter 的 stage state 與實際逐片段資料
 
 Python 本機任務服務執行 `modules/**` pipeline；匯入器讀取完成的 artifacts 並更新回看快取。Vue 仍只載入版本化 Review export，不載入 pose/shuttle 大型 JSON 至首屏。
 
-影片疊圖（球場線、骨架、選手標籤、羽球與拖尾、擊球閃圈、球種標籤）由同一次匯入產生：`modules.review_export` 以 `--overlay-dir` 把每個 Rally 的可繪資料寫成 `rally-NNN.json`（影片像素、整數座標、低信心關節已去除），Review export 的 `overlay` 只記錄位址與繪製用的索引。資料夾以內容 hash 命名並發布到 `/matches/overlay/<比賽>-<hash>/`，重新匯入後舊資料夾會清掉。播放器控制列的「圖層」選單與 `O`／`1–7` 快捷鍵切換顯示，預設全關；只有打開時才按 Rally 讀檔並預取下一個，以 `requestVideoFrameCallback` 對齊實際顯示的影格。舊匯入沒有疊圖資料，需重新匯入。
+影片疊圖（球場線、骨架、選手標籤、羽球與拖尾、擊球閃圈、球種標籤）由同一次匯入產生：`modules.review_export` 以 `--overlay-dir` 把每個 Rally 的可繪資料寫成 `rally-NNN.json`（影片像素、整數座標、低信心關節已去除），Review export 的 `overlay` 只記錄位址與繪製用的索引。資料夾以內容 hash 命名並發布到 `/matches/overlay/<比賽>-<hash>/`，重新匯入後舊資料夾會清掉。播放器控制列的「圖層」選單與 `O`／`1–7` 快捷鍵切換顯示，預設全關；只有打開時才按 Rally 讀檔並預取下一個，以 `requestVideoFrameCallback` 對齊實際顯示的影格。舊匯入沒有疊圖資料，需重新匯入。疊圖另有不列在選單上的派對模式（Shift＋點疊圖按鈕），素材在 `src/assets/fun/`，由 `uv run python ui/scripts/build-fun-assets.py <原始素材資料夾>` 從原始 gif／mp3 產生，換素材時才需要重跑。
 
 ## Windows 桌面版
 

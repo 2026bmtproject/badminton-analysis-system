@@ -4,7 +4,6 @@ import type { AnalysisView } from "../../state/workspaceLayout";
 import type { EvidenceModel, MatchModel, StrokeModel } from "../../domain/models";
 import RallyInspector from "../inspector/RallyInspector.vue";
 import RallyCourtMap from "../inspector/RallyCourtMap.vue";
-import { analysisContextSummary } from "./analysisContext";
 import { resolveAnalysisDensity } from "../../presentation/workspaceDensity";
 import { rallyAtOrBefore } from "../../temporal/activeContext";
 import { useMatchContext } from "../../state/matchContext";
@@ -33,9 +32,6 @@ const activeRally = computed(() =>
 /** In a gap the window keeps the Rally just played, so its commentary can still be read. */
 const shownRally = computed(() => activeRally.value ?? rallyAtOrBefore(props.model.rallies, props.currentTime));
 const previous = computed(() => !activeRally.value && shownRally.value !== null);
-const context = computed(() =>
-  analysisContextSummary(shownRally.value, previous.value, props.activeStrokeIndex),
-);
 const commentary = useSegmentCommentary(computed(() => props.model), useMatchContext().refreshMatch);
 const commentaryRequest = computed(() =>
   shownRally.value ? commentary.state(shownRally.value) : { kind: "none" as const },
@@ -53,17 +49,6 @@ onBeforeUnmount(() => observer?.disconnect());
 
 <template>
   <div ref="root" class="analysis-window-content" :data-density="density">
-    <header
-      class="analysis-context-header"
-      :data-context-state="context.state"
-      :aria-label="[context.title, context.status, ...context.details].join(' · ')"
-    >
-      <div class="analysis-context-header__identity">
-        <strong>{{ context.title }}</strong>
-        <span>{{ context.status }}</span>
-      </div>
-      <p><span v-for="detail in context.details" :key="detail">{{ detail }}</span></p>
-    </header>
     <nav class="analysis-tabs" aria-label="分析檢視">
       <button type="button" :aria-pressed="view === 'analysis'" @click="emit('view', 'analysis')">回合</button>
       <button type="button" :aria-pressed="view === 'court'" :disabled="!shownRally" @click="emit('view', 'court')">擊球點</button>

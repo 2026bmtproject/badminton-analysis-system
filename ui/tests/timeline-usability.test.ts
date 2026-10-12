@@ -15,7 +15,6 @@ import {
   timelineHoverPreview,
   withDoubleClickHint,
 } from "../src/components/timeline/timelinePreview";
-import { analysisContextSummary } from "../src/components/workspace/analysisContext";
 
 const rally: RallyModel = {
   id: 4,
@@ -88,18 +87,6 @@ test("10. hover preview is teleported above overlapping windows, into the fullsc
   assert.match(timeline, /document\.fullscreenElement instanceof HTMLElement \? document\.fullscreenElement : "body"/);
   assert.match(timeline, /addEventListener\("fullscreenchange", syncTooltipTarget\)/);
   assert.match(source("src/styles/timeline.css"), /\.timeline-hover-tooltip\s*\{[\s\S]*z-index: calc\(var\(--z-overlay\) \+ 20\)/);
-});
-test("11. analysis header distinguishes rally and active stroke context", () => {
-  const context = analysisContextSummary(rally, false, 12);
-  assert.equal(context.state, "stroke");
-  assert.equal(context.status, "第 1/1 拍");
-  assert.equal(analysisContextSummary(rally, false, null).state, "rally");
-});
-test("12. analysis header labels the Rally kept on show during a gap", () => {
-  const context = analysisContextSummary(rally, true, 12);
-  assert.equal(context.state, "previous");
-  assert.equal(context.status, "上一回合");
-  assert.equal(analysisContextSummary(null, false, null).state, "empty");
 });
 test("13. window focus is transient stacking state, not persisted layout", () => {
   const review = source("src/pages/ReviewPage.vue");

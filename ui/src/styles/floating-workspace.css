@@ -188,6 +188,7 @@
 .overlay-menu__row > span { flex: 1; }
 .overlay-menu__row kbd { color: var(--color-text-muted); font-family: var(--font-measurement); font-size: var(--type-micro); }
 .workspace-popover .overlay-menu__row--master { padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); font-weight: 600; }
+.workspace-popover .overlay-menu__row--hide-video { padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
 .workspace-popover .overlay-menu__row--child { padding-left: calc(var(--space-1) + 20px); }
 .overlay-menu__layers { display: grid; gap: 2px; }
 .workspace-popover .overlay-menu__layers--off .overlay-menu__row { color: var(--color-text-secondary); }
@@ -268,6 +269,9 @@
 .shortcut-help__row dt { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1); }
 .shortcut-help__row dd { margin: 0; color: var(--color-text); white-space: nowrap; }
 .shortcut-help__combo { display: inline-flex; align-items: center; gap: 3px; }
+/* Small and faint on purpose: the party is for whoever reads to the end. */
+.shortcut-help__secret { margin: 0; color: var(--color-text-muted); font-size: var(--type-micro); text-align: right; opacity: 0.55; }
+.shortcut-help__content .shortcut-help__secret kbd { min-width: 0; height: 16px; padding: 0 4px; font-size: inherit; }
 .shortcut-help__or,
 .shortcut-help__plus { color: var(--color-text-muted); font-size: var(--type-micro); }
 /* VS Code's keybinding label. */
@@ -289,27 +293,9 @@
   box-shadow: inset 0 -1px 0 rgb(68 68 68 / 60%);
 }
 .analysis-window-content { display: flex; height: 100%; min-height: 0; flex-direction: column; }
-.analysis-window-content[data-density="compact"] .analysis-context-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-.analysis-window-content[data-density="compact"] .analysis-context-header > p { justify-content: flex-start; flex-wrap: wrap; }
 .analysis-window-content[data-density="compact"] .hit-row { grid-template-columns: 22px 8px minmax(0, 1fr); }
 .analysis-window-content[data-density="compact"] .hit-player__name { display: none; }
 .analysis-window-content[data-density="compact"] .commentary-request small { display: none; }
-.analysis-context-header {
-  display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  background: rgb(255 255 255 / 3%);
-  border-bottom: 1px solid var(--color-border);
-}
-.analysis-context-header__identity { display: flex; align-items: baseline; gap: var(--space-2); white-space: nowrap; }
-.analysis-context-header__identity strong { font-size: var(--type-meta); letter-spacing: 0.035em; }
-.analysis-context-header__identity span { color: var(--color-text-muted); font-size: var(--type-micro); }
-.analysis-context-header > p { display: flex; min-width: 0; justify-content: flex-end; gap: var(--space-2); color: var(--color-text-secondary); font-family: var(--font-measurement); font-size: var(--type-micro); font-variant-numeric: tabular-nums; }
-.analysis-context-header > p span + span::before { margin-right: var(--space-2); color: var(--color-text-muted); content: "·"; }
 .analysis-tabs { display: flex; flex: 0 0 auto; border-bottom: 1px solid var(--color-border); }
 .analysis-tabs button { min-height: 35px; flex: 1; color: var(--color-text-secondary); border-bottom: 1px solid transparent; border-radius: 0; }
 .analysis-tabs button:hover { color: var(--color-text); background: transparent; }
@@ -323,8 +309,6 @@
 @container (max-width: 420px) {
   .workspace-window__mode-label { display: none; }
   .timeline-mode-selector select { max-width: 94px; }
-  .analysis-context-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .analysis-context-header > p { justify-content: flex-start; flex-wrap: wrap; }
 }
 @container (max-width: 330px) {
   .workspace-window__header { gap: var(--space-1); padding-left: var(--space-2); }

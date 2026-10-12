@@ -51,6 +51,8 @@ matches/*
 *.mov
 *.wav
 *.mp3
+# The Review party mode's sounds ship with the UI.
+!ui/src/assets/fun/*.mp3
 *.npy
 *.npz
 

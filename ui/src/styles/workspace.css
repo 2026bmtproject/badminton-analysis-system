@@ -120,6 +120,19 @@
   height: 100%;
   pointer-events: none;
 }
+/* Overlay only: covers the picture but not the clicks, which still play and pause the video. */
+.video-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--color-video);
+}
+/* The oiia party's beat light: multiplies the picture's colours; the overlay canvas above keeps its own. */
+.video-overlay-tint {
+  position: absolute;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
 .video-wrap video {
   display: block;
   width: 100%;
