@@ -13,19 +13,28 @@ const error = ref("");
 const loading = ref(true);
 const rawId = computed(() => String(route.params.matchId ?? ""));
 let timer: ReturnType<typeof setInterval> | undefined;
+async function loadAnalysis() {
+  const matches = await listPipelineMatches();
+  match.value = matches.find(row => row.id === rawId.value) ?? null;
+  error.value = match.value ? "" : "找不到此比賽的本機分析資料。";
+}
+/** The catalog only names the match and says whether it has a Review, so it is read when either can change. */
+async function loadReview() {
+  const review = (await loadCatalog()).find(row => row.id === `match:${rawId.value}`);
+  hasReview.value = Boolean(review);
+  name.value = review?.name ?? rawId.value;
+}
 async function load() {
-  try {
-    const [matches, catalog] = await Promise.all([listPipelineMatches(), loadCatalog()]);
-    match.value = matches.find(row => row.id === rawId.value) ?? null;
-    const review = catalog.find(row => row.id === `match:${rawId.value}`);
-    hasReview.value = Boolean(review);
-    name.value = review?.name ?? rawId.value;
-    error.value = match.value ? "" : "找不到此比賽的本機分析資料。";
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : "無法讀取分析資料"; }
+  try { await Promise.all([loadAnalysis(), loadReview()]); }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : "無法讀取分析資料"; }
   finally { loading.value = false; }
 }
+async function poll() {
+  try { await loadAnalysis(); }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : "無法讀取分析資料"; }
+}
 watch(rawId, () => { loading.value = true; void load(); });
-onMounted(() => { void load(); timer = setInterval(() => { void load(); }, 10000); });
+onMounted(() => { void load(); timer = setInterval(() => { void poll(); }, 10000); });
 onUnmounted(() => { if (timer) clearInterval(timer); });
 </script>
 

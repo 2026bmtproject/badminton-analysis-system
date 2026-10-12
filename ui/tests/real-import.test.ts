@@ -120,7 +120,7 @@ test("real catalog and registrations survive the actual demo-data generator", as
     assert.ok(
       (
         await readFile(join(folder, "public/generated/catalog.json"), "utf8")
-      ).includes("dense-test"),
+      ).includes("\"minimal\""),
     );
   } finally {
     assert.ok(

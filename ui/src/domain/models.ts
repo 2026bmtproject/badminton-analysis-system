@@ -155,7 +155,6 @@ export type OverlayManifestModel = {
 export type MatchModel = {
   schemaVersion?: "review-export-v1";
   players: { a: string; b: string };
-  layoutOnly?: boolean;
   title: string;
   video: string;
   duration: number;

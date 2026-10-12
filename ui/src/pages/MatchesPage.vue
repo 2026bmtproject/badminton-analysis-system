@@ -21,6 +21,8 @@ const candidateError = ref("");
 const actionError = ref("");
 /** Review snapshots by catalog ID; null when the Review file could not be read. */
 const reviews = ref<Record<string, ReviewSnapshot | null>>({});
+/** The Review URL each snapshot was read from; URLs are content-hashed, so an unchanged one is never read again. */
+const snapshotUrls: Record<string, string> = {};
 const publishing = ref<string | null>(null);
 const query = ref("");
 const filter = ref("all");
@@ -78,12 +80,13 @@ async function refresh() {
   const [c, l, m] = await Promise.allSettled([loadCatalog(), listPipelineMatches(), listLocalMatches()]);
   if (c.status === "fulfilled") {
     catalog.value = c.value; catalogError.value = "";
-    const reviewEntries = c.value.filter(row => row.kind === "match");
+    const reviewEntries = c.value.filter(row => row.kind === "match" && snapshotUrls[row.id] !== row.url);
     void Promise.all(reviewEntries.map(async entry => {
+      snapshotUrls[entry.id] = entry.url;
       try {
         const model = await loadMatch(entry);
         reviews.value[entry.id] = { states: model.states, importedAt: model.source?.importedAt };
-      } catch { reviews.value[entry.id] = null; }
+      } catch { reviews.value[entry.id] = null; delete snapshotUrls[entry.id]; }
     }));
   }
   else catalogError.value = "回看目錄讀取失敗。";

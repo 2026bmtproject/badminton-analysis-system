@@ -157,7 +157,6 @@ watch(() => props.rally.id, () => { if (scroll.value) scroll.value.scrollTop = 0
             type="button"
             class="hit-row"
             :data-hit="stroke.eventIndex"
-            :data-testid="`hit-${stroke.eventIndex}`"
             :data-family="strokeFamily(stroke.type)"
             :aria-pressed="selectedStrokeIndex === stroke.eventIndex"
             :title="formatPreciseTime(stroke.time)"

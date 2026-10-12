@@ -94,8 +94,6 @@ const LENS_DURATION_MS = 220;
 /** Wheel navigation pauses playback follow; it resumes once the wheel is idle this long. */
 const FOLLOW_RESUME_DELAY_MS = 2000;
 const INSPECTION_EDGE_PADDING_PX = 64;
-const SIGNAL_LANE_HEIGHT_PX = 80;
-const SIGNAL_LANE_MARGIN_PX = 8;
 /**
  * Rally lane geometry in track pixels, top to bottom: the label row (game
  * labels, rally numbers), the review-flag row, then bars growing up from the
@@ -136,10 +134,9 @@ const props = withDefaults(
     activeId: number | null;
     activeStrokeIndex?: number | null;
     scoreContextId?: number | null;
-    timelineMode?: TimelineMode | "all";
+    timelineMode: TimelineMode;
   }>(),
   {
-    timelineMode: "all",
     playing: false,
     activeStrokeIndex: null,
     scoreContextId: null,
@@ -150,16 +147,13 @@ const emit = defineEmits<{
   stroke: [stroke: StrokeModel];
   rallyAt: [rally: RallyModel, timeSec: number];
   seek: [timeSec: number];
-  inspect: [timeSec: number | null];
 }>();
 const density = ref<PanelDensity>("full");
-const modeShows = (track: TrackKey) =>
-  props.timelineMode === "all" || props.timelineMode === track;
+const modeShows = (track: TrackKey) => props.timelineMode === track;
 const fit = ref<TimelineFit | "custom">("match");
 const renderViewport = ref<TimelineViewport>(
   fitViewport("match", props.model.duration, null),
 );
-const lensProgress = ref(0);
 const lensActive = ref(false);
 const manualNavigation = ref(false);
 const centerFollowing = computed(() =>
@@ -206,9 +200,6 @@ const hoverTooltipSide = computed(() =>
   typeof window === "undefined"
     ? "center"
     : edgeLabelSide(inspectionClientX.value, window.innerWidth, 150),
-);
-const zoomLevel = computed(() =>
-  Math.max(1, props.model.duration / renderViewport.value.durationSec),
 );
 const inspectionLabelSide = computed(() => {
   return edgeLabelSide(
@@ -284,7 +275,6 @@ watch([() => props.selectedId, () => props.model.duration], (id) => {
     return;
   }
   cancelLens();
-  lensProgress.value = fit.value === "rally" ? 1 : 0;
   if (centerFollowing.value) {
     // Explicit selection re-zooms to the new rally, gliding there instead of flashing its exact span.
     startCenterFollow(authoritativeViewport(fit.value).durationSec);
@@ -322,7 +312,6 @@ watch(
     fit.value = "match";
     manualNavigation.value = false;
     renderViewport.value = fitViewport("match", props.model.duration, null);
-    lensProgress.value = 0;
     clearInspection();
   },
 );
@@ -530,9 +519,8 @@ function interpolateViewport(
     durationSec: Math.max(0.001, endSec - startSec),
   };
 }
-function applyLensEndpoint(target: TimelineViewport, targetProgress: number) {
+function applyLensEndpoint(target: TimelineViewport) {
   renderViewport.value = target;
-  lensProgress.value = targetProgress;
   lensFrame = undefined;
   lensActive.value = false;
   requestAnimationFrame(restoreInspection);
@@ -541,10 +529,7 @@ function handleReducedMotionChange(event: MediaQueryListEvent) {
   if (!event.matches) return;
   cancelLens();
   if (fit.value === "custom") return;
-  applyLensEndpoint(
-    authoritativeViewport(fit.value),
-    fit.value === "rally" ? 1 : 0,
-  );
+  applyLensEndpoint(authoritativeViewport(fit.value));
 }
 function resumeFollow() {
   clearTimeout(followResumeTimer);
@@ -590,15 +575,13 @@ function setFit(next: TimelineFit, focus: RallyModel | null = null) {
   if (next === "rally" && !anchor) return;
   if (next === fit.value) return;
   const from = { ...renderViewport.value };
-  const fromProgress = lensProgress.value;
   fit.value = next;
   resumeFollow();
   const target = fitViewport(next, props.model.duration, anchor);
-  const targetProgress = next === "rally" ? 1 : 0;
   clearInspection(false);
   cancelLens();
   if (reducedMotionQuery?.matches) {
-    applyLensEndpoint(target, targetProgress);
+    applyLensEndpoint(target);
     return;
   }
 
@@ -610,12 +593,11 @@ function setFit(next: TimelineFit, focus: RallyModel | null = null) {
     const elapsed = Math.min(1, (now - startedAt) / LENS_DURATION_MS);
     const eased = temporalLensEase(elapsed);
     renderViewport.value = interpolateViewport(from, target, eased);
-    lensProgress.value = fromProgress + (targetProgress - fromProgress) * eased;
     if (elapsed < 1) {
       lensFrame = requestAnimationFrame(step);
       return;
     }
-    applyLensEndpoint(target, targetProgress);
+    applyLensEndpoint(target);
   };
   lensFrame = requestAnimationFrame(step);
 }
@@ -679,7 +661,6 @@ function clearInspection(forgetPointer = true) {
   inspectionFrame = undefined;
   inspectionTime.value = null;
   hoveredMark.value = null;
-  emit("inspect", null);
 }
 function resolveHoveredMark(
   kind: TrackKey | undefined,
@@ -780,7 +761,6 @@ function updateInspection(
       timeSec,
       trackRect.width,
     );
-  emit("inspect", timeSec);
 }
 function restoreInspection() {
   if (lastPointer?.track.isConnected) {
@@ -882,10 +862,6 @@ function clickTimeline(event: MouseEvent) {
     else emit("seek", timeSec);
     return;
   }
-  if (kind === "cheer") {
-    emit("seek", timeSec);
-    return;
-  }
   emit("seek", timeSec);
 }
 function scrubTime(clientX: number, track: HTMLElement) {
@@ -922,14 +898,6 @@ function selectScoreMarker(rallyId: number) {
 function scoreMarkHovered(rallyId: number) {
   return hoveredMark.value?.kind === "score" && hoveredMark.value.id === rallyId;
 }
-const timelineStyle = computed(() => ({
-  "--lens-detail-progress": lensProgress.value,
-  "--lens-overview-opacity": showCheerCurveLane.value ? 1 : 1 - lensProgress.value,
-  "--lens-signal-height":
-    SIGNAL_LANE_HEIGHT_PX * (showCheerCurveLane.value ? 1 : 1 - lensProgress.value) + "px",
-  "--lens-signal-margin":
-    SIGNAL_LANE_MARGIN_PX * (showCheerCurveLane.value ? 1 : 1 - lensProgress.value) + "px",
-}));
 </script>
 
 <template>
@@ -937,15 +905,9 @@ const timelineStyle = computed(() => ({
     ref="root"
     class="intelligence-timeline"
     aria-label="比賽時間軸"
-    :data-fit="fit"
     :data-lens-active="lensActive"
-    :data-lens-progress="lensProgress.toFixed(4)"
-    :data-viewport-start="renderViewport.startSec"
-    :data-viewport-end="renderViewport.endSec"
-    :data-zoom-level="zoomLevel.toFixed(3)"
     :data-density="density"
     :aria-busy="lensActive"
-    :style="timelineStyle"
   >
     <div
       ref="surface"
@@ -988,7 +950,6 @@ const timelineStyle = computed(() => ({
                   hovered: hoveredMark?.kind === 'rally' && hoveredMark.id === bar.rallyId,
                 }"
                 :data-wide="bar.wide || undefined"
-                :data-rally-id="bar.rallyId"
                 :x="bar.x + '%'"
                 :width="bar.width + '%'"
                 :y="RALLY_BASELINE_PX - bar.fraction * RALLY_BAR_EXTENT_PX"
@@ -1135,7 +1096,7 @@ const timelineStyle = computed(() => ({
       <section v-if="modeShows('stroke')" class="timeline-band timeline-band--stroke" aria-label="擊球">
         <div class="timeline-band-tracks">
           <TimelineLane
-            v-if="modeShows('stroke') && capability('stroke')"
+            v-if="capability('stroke')"
             kind="stroke"
             :description="strokeDescription"
           >
@@ -1187,7 +1148,6 @@ const timelineStyle = computed(() => ({
                   :key="`vertex-${vertex.eventIndex}`"
                   class="stroke-vertex"
                   :class="strokeState(vertex.eventIndex)"
-                  :data-event-index="vertex.eventIndex"
                   :data-family="vertex.family"
                   :x="vertex.x + '%'"
                   :y="strokeY(vertex.level)"
@@ -1227,7 +1187,6 @@ const timelineStyle = computed(() => ({
       >
         <div class="timeline-band-tracks">
           <TimelineLane
-            v-if="showCheerCurveLane"
             kind="cheer"
             :description="cheerDescription"
           >
@@ -1272,11 +1231,7 @@ const timelineStyle = computed(() => ({
           </TimelineLane>
         </div>
       </section>
-      <span
-        v-if="!model.layoutOnly"
-        class="timeline-playhead"
-        aria-hidden="true"
-      />
+      <span class="timeline-playhead" aria-hidden="true" />
       <div
         v-if="inspectionTime !== null && !lensActive"
         class="timeline-inspection"

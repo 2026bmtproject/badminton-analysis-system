@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import CourtCalibrationPanel from "./CourtCalibrationPanel.vue";
 import StageProgress from "./ui/StageProgress.vue";
@@ -7,7 +7,7 @@ import { stageLabel } from "../data/stageLabels";
 import { useTaskFeed } from "../composables/useTaskFeed";
 import { importLocalMatch } from "../data/matchRepository";
 import {
-  CANCEL_CONFIRM, LOG_PAGE_SIZE, cancelPipelineTask, getPipelineLogs, getPipelineTask, listPipelineStages, planReasonLabel, previewPipeline,
+  CANCEL_CONFIRM, LOG_PAGE_SIZE, cancelPipelineTask, getPipelineLogs, listPipelineStages, planReasonLabel, previewPipeline,
   retryTask, startPipeline, taskElapsed, taskProgress, taskStatusLabel,
   type LocalAnalysisMatch, type PipelinePlan, type PipelineStage, type PipelineTask,
 } from "../data/pipelineTasks";
@@ -25,18 +25,16 @@ const cancelling = ref(false);
 const importing = ref(false);
 const importError = ref("");
 const error = ref("");
-const { reviewSync, syncReview, refresh: refreshTasks } = useTaskFeed();
+const { tasks, now, reviewSync, syncReview, refresh: refreshTasks } = useTaskFeed();
 const showLogs = ref(false);
 const lines = ref<string[]>([]);
 const logOffset = ref(0);
-const clock = ref(Date.now());
-let pollTimer: ReturnType<typeof setInterval> | undefined;
 let planVersion = 0;
 let fetchingLogs = false;
 
 const running = computed(() => task.value?.status === "queued" || task.value?.status === "running");
 const locked = computed(() => running.value || busy.value);
-const elapsed = computed(() => task.value ? taskElapsed(task.value, clock.value) : null);
+const elapsed = computed(() => task.value ? taskElapsed(task.value, now.value) : null);
 const overall = computed(() => task.value ? taskProgress(task.value) : null);
 const route = useRoute();
 const incomplete = computed(() => stages.value.map(stage => stage.name).filter(name => !props.match.completedStages.includes(name)));
@@ -169,19 +167,17 @@ function toggleLogs() {
   if (showLogs.value) void fetchLogs();
 }
 
-async function poll() {
-  clock.value = Date.now();
-  if (!task.value || !running.value) return;
-  try {
-    const previous = task.value.status;
-    task.value = await getPipelineTask(task.value.id);
-    if (showLogs.value) await fetchLogs();
-    if (previous !== task.value.status && !running.value) {
-      emit("updated");
-      if (task.value.status === "succeeded") void syncReview(task.value, { verify: false });
-    }
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : "任務狀態連線失敗"; }
-}
+/*
+ * The shared task feed polls every task, fast while one runs, so this panel follows its own task there instead of
+ * polling it again. The feed also publishes the Review once the task succeeds.
+ */
+watch(() => tasks.value.find((item) => item.id === task.value?.id), (fresh) => {
+  if (!fresh || !task.value) return;
+  const wasRunning = running.value;
+  task.value = fresh;
+  if (wasRunning && !running.value) emit("updated");
+});
+watch(now, () => { if (showLogs.value && running.value) void fetchLogs(); });
 
 onMounted(async () => {
   try { stages.value = await listPipelineStages(); }
@@ -189,9 +185,7 @@ onMounted(async () => {
   // The library's "更新分析" lands here with the stale stages already chosen.
   if (route.query.select === "stale" && stale.value.length && !locked.value) pick(stale.value);
   if (task.value?.status === "succeeded") void syncReview(task.value);
-  pollTimer = setInterval(() => { void poll(); }, 1500);
 });
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 </script>
 
 <template>

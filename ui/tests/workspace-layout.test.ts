@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import { defaultWorkspaceLayout, parseWorkspaceLayout, sanitizePanel } from "../src/state/workspaceLayout";
 import { availableTimelineModes } from "../src/components/timeline/timelineModeRegistry";
 import type { MatchCapabilities } from "../src/domain/models";
@@ -46,25 +45,6 @@ test("normal and fullscreen floating settings persist independently", () => {
   assert.deepEqual(parseWorkspaceLayout(JSON.stringify(v2)).fullscreenPanels, defaultWorkspaceLayout().fullscreenPanels);
 });
 
-test("unresized legacy fullscreen timelines adopt the current default height; moved ones keep their spot", () => {
-  const home = defaultWorkspaceLayout().fullscreenPanels.timeline;
-  for (const spot of [{ y: 0.66, height: 0.25 }, { y: 0.72, height: 0.19 }]) {
-    const legacy = defaultWorkspaceLayout();
-    legacy.fullscreenPanels.timeline = { ...legacy.fullscreenPanels.timeline, x: 0.1, ...spot };
-    const migrated = parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline;
-    assert.equal(migrated.y, home.y);
-    assert.equal(migrated.height, home.height);
-    assert.equal(migrated.x, 0.1);
-    legacy.fullscreenPanels.timeline.y = 0.5;
-    const moved = parseWorkspaceLayout(JSON.stringify(legacy)).fullscreenPanels.timeline;
-    assert.equal(moved.y, 0.5);
-    assert.equal(moved.height, home.height);
-  }
-  const resized = defaultWorkspaceLayout();
-  resized.fullscreenPanels.timeline.height = 0.3;
-  assert.equal(parseWorkspaceLayout(JSON.stringify(resized)).fullscreenPanels.timeline.height, 0.3);
-});
-
 test("untouched fullscreen timeline fits a fixed pixel height above its default bottom edge", () => {
   const home = defaultWorkspaceLayout().fullscreenPanels.timeline;
   const bottom = home.y + home.height;
@@ -103,13 +83,6 @@ test("the fullscreen idle delay is one whole-second setting shared by both windo
   assert.equal(stored("x"), 3);
   // The slider's last stop keeps the windows shown for good.
   assert.equal(stored(null), null);
-  const windowSource = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
-  assert.match(windowSource, /stop >= IDLE_NEVER_STOP \? null : stop/);
-  assert.match(windowSource, /idleSeconds === null \? "不隱藏"/);
-  const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.equal((review.match(/:idle-seconds="layout\.fullscreenIdleSec" @idle-seconds="setIdleSeconds"/g) ?? []).length, 2);
-  assert.match(review, /idleSec === null \|\| interactionActive\(\)\) return;/);
-  assert.match(review, /\}, idleSec \* 1000\);/);
 });
 
 test("timeline mode registry exposes only renderers backed by match capabilities", () => {
@@ -130,18 +103,4 @@ test("the Analysis stroke list fold persists and defaults open", () => {
   const folded = { ...defaultWorkspaceLayout(), strokeListCollapsed: true };
   assert.equal(parseWorkspaceLayout(JSON.stringify(folded)).strokeListCollapsed, true);
   assert.equal(parseWorkspaceLayout(JSON.stringify({ ...folded, strokeListCollapsed: "yes" })).strokeListCollapsed, false);
-  const detail = readFileSync("src/components/inspector/RallyDetail.vue", "utf8");
-  assert.match(detail, /:aria-expanded="!strokesCollapsed"/);
-  assert.match(detail, /v-show="!strokesCollapsed"/);
-});
-
-test("folding the stroke list shrinks the floating Analysis window to its content", () => {
-  const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  const windowSource = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
-  const styles = readFileSync("src/styles/floating-workspace.css", "utf8");
-  assert.match(review, /:fit-content="layout\.analysisView === 'analysis' && layout\.strokeListCollapsed"/);
-  // The stored height stays the cap, so unfolding returns the window to the size the user set.
-  assert.match(windowSource, /height: visiblePanel\.value\.collapsed \|\| props\.fitContent \? "auto"/);
-  assert.match(windowSource, /maxHeight: props\.fitContent && !visiblePanel\.value\.collapsed/);
-  assert.match(styles, /\.workspace-window--fit \.rally-detail \{ position: relative; inset: auto; \}/);
 });

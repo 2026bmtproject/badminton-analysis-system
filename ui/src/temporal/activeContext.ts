@@ -51,7 +51,7 @@ export function resolveActiveMatchContext(
   model: MatchModel | null,
   timeSec: number,
 ): ActiveMatchContext {
-  if (!model || model.layoutOnly) {
+  if (!model) {
     return { rally: null, stroke: null, scoreRally: null, score: null };
   }
   const rally = activeRallyAt(model.rallies, timeSec);

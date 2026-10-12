@@ -57,17 +57,6 @@ const panelDefaults: Record<WorkspacePanelId, PanelLayout> = {
   analysis: { x: 0.735, y: 0.035, width: 0.24, height: 0.57, collapsed: false, alpha: 0.94 },
 };
 
-/**
- * Earlier fullscreen timeline defaults. An unresized legacy timeline adopts the
- * current default height, and one still at its legacy spot adopts the current
- * default position, which sits lower now that no player bar spans the screen edge.
- */
-const LEGACY_FULLSCREEN_TIMELINES = [
-  { y: 0.66, height: 0.25 },
-  { y: 0.72, height: 0.19 },
-  { y: 0.74, height: 0.23 },
-];
-
 const modes: TimelineMode[] = ["rally", "stroke", "score", "cheer"];
 const views: AnalysisView[] = ["analysis", "court"];
 
@@ -131,14 +120,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
   if (!raw) return fallback;
   try {
     const value = JSON.parse(raw) as Omit<Partial<WorkspaceLayout>, "version"> & { version?: number };
-    if (value.version !== 1 && value.version !== 2 && value.version !== 3) return fallback;
-    const fullscreenTimeline = sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline);
-    const legacy = LEGACY_FULLSCREEN_TIMELINES.find((spot) => spot.height === fullscreenTimeline.height && spot.y === fullscreenTimeline.y)
-      ?? LEGACY_FULLSCREEN_TIMELINES.find((spot) => spot.height === fullscreenTimeline.height);
-    if (legacy) {
-      if (fullscreenTimeline.y === legacy.y) fullscreenTimeline.y = fallback.fullscreenPanels.timeline.y;
-      fullscreenTimeline.height = fallback.fullscreenPanels.timeline.height;
-    }
+    if (value.version !== 3) return fallback;
     return {
       version: 3,
       timelineMode: modes.includes(value.timelineMode as TimelineMode) ? value.timelineMode! : "rally",
@@ -155,7 +137,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
         analysis: { ...sanitizePanel(value.panels?.analysis, fallback.panels.analysis), collapsed: false },
       },
       fullscreenPanels: {
-        timeline: fullscreenTimeline,
+        timeline: sanitizePanel(value.fullscreenPanels?.timeline, fallback.fullscreenPanels.timeline),
         analysis: sanitizePanel(value.fullscreenPanels?.analysis, fallback.fullscreenPanels.analysis),
       },
     };
@@ -167,7 +149,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
 let shared: { layout: WorkspaceLayout } | null = null;
 
 /**
- * One layout for the whole app, so the settings page and a kept-alive Review edit the same values. Its saving watcher
+ * One layout for the whole app, so the settings page and the Review edit the same values. Its saving watcher
  * lives in a detached scope: it must outlast whichever view asked first.
  */
 export function useWorkspaceLayout() {

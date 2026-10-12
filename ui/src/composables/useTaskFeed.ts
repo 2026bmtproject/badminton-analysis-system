@@ -38,13 +38,17 @@ const unseenFailure = computed(() => {
   return Boolean(task && (task.status === "failed" || task.status === "interrupted") && task.id !== seenFailure.value);
 });
 
-/** True when the Review was already imported after this task finished, e.g. by an earlier session. */
+/**
+ * True when the Review was already imported after this task finished, e.g. by an earlier session. The catalog is
+ * read fresh; the Review file it points to is content-hashed, so a cached copy of that URL is never stale.
+ */
 async function reviewIsCurrent(task: PipelineTask) {
   const { loadCatalog, loadMatch } = await import("../data/matchRepository");
   try {
+    if (!task.finishedAt) return false;
     const entry = (await loadCatalog()).find(row => row.id === `match:${task.matchId}`);
-    if (!entry || !task.finishedAt) return false;
-    const importedAt = (await loadMatch(entry, { fresh: true })).source?.importedAt;
+    if (!entry) return false;
+    const importedAt = (await loadMatch(entry)).source?.importedAt;
     return Boolean(importedAt && Date.parse(importedAt) >= Date.parse(task.finishedAt));
   } catch {
     return false; // An unreadable old cache should not prevent a fresh export.

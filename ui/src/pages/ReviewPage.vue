@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import ReviewPlayer from "../components/ReviewPlayer.vue";
 import ReviewTimeline from "../components/ReviewTimeline.vue";
@@ -42,7 +42,6 @@ import {
 import { adaptiveDefaultPanelSizes } from "../presentation/workspaceDensity";
 import { fittedFullscreenTimeline, fullscreenHomePanel } from "../state/workspaceGeometry";
 
-defineOptions({ name: "ReviewPage" });
 /** Each item lists alternative key combos; each combo is the keys pressed together. */
 const SHORTCUT_GROUPS: readonly { title: string; items: readonly { keys: readonly (readonly string[])[]; label: string }[] }[] = [
   { title: "播放", items: [
@@ -106,7 +105,7 @@ const match = computed(() => {
  * workspace stacks (floating-workspace.css) and Analysis comes between them, so the player keeps its own bar;
  * fullscreen always floats the timeline toolbar over the video.
  */
-const controlsInTimeline = computed(() => !match.value.layoutOnly && (fullscreen.value || viewportWidth.value > 1_100));
+const controlsInTimeline = computed(() => fullscreen.value || viewportWidth.value > 1_100);
 const activeId = computed(() => workspace.activeRally.value?.id ?? null);
 const currentLabel = computed(() => activeId.value === null ? "比賽空檔" : `片段 ${String(activeId.value + 1).padStart(3, "0")}`);
 const displayPlayers = computed(() => ({ a: playerName(match.value.players.a, "選手 A"), b: playerName(match.value.players.b, "選手 B") }));
@@ -118,7 +117,6 @@ const overlayMethods = computed(() => match.value.overlay?.methods ?? []);
 const shownOverlayMethods = computed(() => shownShuttleMethods(layout.overlay, overlayMethods.value));
 const headerScore = computed(() => workspace.currentScore.value ? scoreText(workspace.currentScore.value) : null);
 const timelineModes = computed(() => availableTimelineModes(match.value.capabilities));
-const selectedTimelineLabel = computed(() => timelineModes.value.find((item) => item.id === layout.timelineMode)?.label ?? "片段");
 const adaptiveSizes = computed(() => adaptiveDefaultPanelSizes(viewportWidth.value, viewportHeight.value));
 const effectiveAnalysisDockWidth = computed(() =>
   layout.analysisDockWidth === DEFAULT_ANALYSIS_DOCK_WIDTH
@@ -196,7 +194,7 @@ function keyboard(event: KeyboardEvent) {
     return;
   }
   if (!event.repeat && workspace.handleKeyboard(event)) { event.stopPropagation(); return; }
-  const overlayKey = match.value.layoutOnly ? null : overlayShortcut(event);
+  const overlayKey = overlayShortcut(event);
   if (overlayKey) {
     consume(event);
     if (!event.repeat) applyOverlayShortcut(overlayKey);
@@ -338,20 +336,10 @@ onMounted(() => {
   document.addEventListener("fullscreenchange", syncFullscreen);
   window.addEventListener("pointerup", pointerUp);
   window.addEventListener("pointercancel", pointerUp);
-  updateViewport();
-});
-onActivated(() => {
   window.addEventListener("keydown", keyboard, true);
   window.addEventListener("keyup", keyboardRelease, true);
   window.addEventListener("wheel", modeWheel, { passive: false });
-});
-onDeactivated(() => {
-  window.removeEventListener("keydown", keyboard, true);
-  window.removeEventListener("keyup", keyboardRelease, true);
-  window.removeEventListener("wheel", modeWheel);
-  shortcutHelp.value?.close();
-  player.value?.pause();
-  clearIdleTimer();
+  updateViewport();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", keyboard, true);
@@ -402,7 +390,7 @@ onBeforeUnmount(() => {
     </header>
     <main class="review-main review-main--workspace">
       <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden, 'review-workspace-stage--docked': fullscreen && !timelineFloating }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
-        <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
+        <ReviewPlayer ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
           <template #overlay="{ video }">
             <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" :fun="funMode" :hide-video="overlayOnly" />
           </template>
@@ -411,12 +399,10 @@ onBeforeUnmount(() => {
             <button v-if="fullscreen" class="player-icon-button player-icon-button--dock" type="button" :aria-label="timelineFloating ? '停靠時間軸' : '浮動時間軸'" :title="timelineFloating ? '停靠時間軸：移到影片下方，不遮擋畫面（D）' : '浮動時間軸：疊在影片上（D）'" @click="toggleTimelineDocked"><AppIcon :name="timelineFloating ? 'dock' : 'float'" /></button>
           </template>
         </ReviewPlayer>
-        <div v-else class="layout-placeholder"><h2>一小時 · 120 個合成片段</h2><p>僅顯示長時間軸與片段清單。</p></div>
 
         <WorkspaceWindow title="時間軸" panel-id="timeline" :panel="panels.timeline" :active="activeWindow === 'timeline'" :passive="playing" :floating="timelineFloating" toolbar :toolbar-bottom="timelineFloating" :dock-size="effectiveTimelineDockHeight" @activate="activeWindow = 'timeline'" @change="updatePanel('timeline', $event)" @dock-size="setDockSize('timeline', $event)" @interaction="panelInteraction('timeline', $event)" :idle-seconds="layout.fullscreenIdleSec" @idle-seconds="setIdleSeconds" @restore="restoreFullscreenPanel('timeline')">
           <template #header>
             <label class="timeline-mode-selector"><span class="sr-only">時間軸模式</span><select v-model="layout.timelineMode" aria-label="時間軸模式"><option v-for="mode in timelineModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option></select></label>
-            <span class="workspace-window__mode-label">{{ selectedTimelineLabel }}</span>
             <div v-if="controlsInTimeline" ref="playerControlsHost" class="workspace-window__player-controls" />
           </template>
           <ReviewTimeline :model="match" :timeline-mode="layout.timelineMode" :selected-id="workspace.selectedRallyIndex.value" :selected-stroke-index="workspace.selectedStrokeIndex.value" :active-stroke-index="workspace.activeStroke.value?.eventIndex ?? null" :score-context-id="workspace.activeScoreRally.value?.id ?? null" :time="workspace.currentTimeSec.value" :playing="playing" :clock="timelineClock" :active-id="activeId" @rally="workspace.selectRally" @rally-at="workspace.selectRallyAt" @stroke="workspace.selectStroke" @seek="workspace.seek" />

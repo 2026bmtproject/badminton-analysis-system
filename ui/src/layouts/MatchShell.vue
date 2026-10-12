@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch, watchEffect, KeepAlive } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch, watchEffect } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { loadCatalog, loadMatch } from "../data/matchRepository";
 import type { CatalogEntry } from "../domain/models";
@@ -61,7 +61,7 @@ async function refreshMatch() {
   if (!current) throw new Error("No Match is loaded");
   catalog.value = await loadCatalog();
   const selected = catalog.value.find((item) => item.id === current.id) ?? current;
-  const model = await loadMatch(selected, { fresh: true });
+  const model = await loadMatch(selected);
   if (entry.value?.id !== current.id) return;
   entry.value = selected;
   context.model.value = model;
@@ -92,8 +92,6 @@ onUnmounted(() => { matchTitle.value = null; });
         返回比賽庫
       </RouterLink>
     </main>
-    <RouterView v-else-if="context.model.value" v-slot="{ Component }">
-      <KeepAlive include="ReviewPage"><component :is="Component" /></KeepAlive>
-    </RouterView>
+    <RouterView v-else-if="context.model.value" />
   </div>
 </template>

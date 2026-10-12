@@ -24,7 +24,6 @@
   height: 100%;
   grid-template-rows: minmax(0, 1fr) auto;
 }
-.review-workspace-stage > .layout-placeholder { grid-area: player; }
 .review-workspace-stage .video-wrap {
   min-height: 0;
   max-height: none;
@@ -46,8 +45,7 @@
  */
 .workspace-window--toolbar .workspace-window__header { min-height: 36px; gap: var(--space-2); padding: 0 var(--space-2); }
 .workspace-window--toolbar-bottom:not(.workspace-window--collapsed) .workspace-window__header { order: 2; padding-right: 28px; border-top: 1px solid var(--color-border); border-bottom: 0; }
-.workspace-window--toolbar:not(.workspace-window--capsule) .workspace-window__header > strong,
-.workspace-window--toolbar .workspace-window__mode-label { display: none; }
+.workspace-window--toolbar:not(.workspace-window--capsule) .workspace-window__header > strong { display: none; }
 .workspace-window--toolbar .workspace-window__header :is(button, select, .workspace-popover__trigger) { height: 28px; min-height: 28px; }
 .workspace-window--toolbar .workspace-window__header select { padding: 0 var(--space-2); font-size: var(--type-meta); background: transparent; border-color: var(--color-border); }
 /* A transparent select hands its native popup the default light background; keep the options dark. */
@@ -255,7 +253,6 @@
 .workspace-window:focus-within .workspace-window__resize-grip::after,
 .workspace-window--resizing .workspace-window__resize-grip::after { opacity: 1; }
 .timeline-mode-selector select { min-height: 26px; padding: var(--space-1) var(--space-2); font-size: var(--type-meta); }
-.workspace-window__mode-label { color: var(--color-text-muted); font-size: var(--type-micro); }
 .header-actions > .workspace-popover-anchor .workspace-popover__trigger { min-height: 26px; color: var(--color-text-muted); font-size: var(--type-meta); }
 .header-actions > .workspace-popover-anchor .workspace-popover__trigger:hover { color: var(--color-text-secondary); }
 .shortcut-help__content { display: grid; gap: var(--space-3); color: var(--color-text-secondary); font-size: var(--type-meta); }
@@ -307,7 +304,6 @@
 
 
 @container (max-width: 420px) {
-  .workspace-window__mode-label { display: none; }
   .timeline-mode-selector select { max-width: 94px; }
 }
 @container (max-width: 330px) {
@@ -346,6 +342,5 @@
 }
 @media (max-width: 560px) {
   .review-main--workspace { padding: var(--space-2); }
-  .workspace-window__mode-label { display: none; }
   .workspace-window__body { max-height: 70vh; }
 }

@@ -38,25 +38,8 @@ export function timeToPercent(timeSec: number, view: TimelineViewport): number {
   return ((timeSec - view.startSec) / view.durationSec) * 100;
 }
 
-export function percentToTime(percent: number, view: TimelineViewport): number {
-  return (
-    view.startSec +
-    (Math.min(100, Math.max(0, percent)) / 100) * view.durationSec
-  );
-}
-
 export function visibleRallies(rallies: RallyModel[], view: TimelineViewport) {
   return rallies.filter(
     (rally) => rally.end >= view.startSec && rally.start <= view.endSec,
   );
-}
-
-export function timelineItems(rallies: RallyModel[], view: TimelineViewport) {
-  return {
-    items: rallies.map((rally) => ({
-      id: rally.id,
-      left: timeToPercent(rally.start, view),
-      width: (rally.duration / view.durationSec) * 100,
-    })),
-  };
 }

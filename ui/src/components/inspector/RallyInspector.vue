@@ -20,7 +20,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <aside class="rally-panel" aria-label="回合分析" :data-rally-id="rally?.id ?? undefined">
+  <aside class="rally-panel" aria-label="回合分析">
     <p v-if="!rally" class="inspector-gap-detail">比賽開始後，這裡會顯示每個回合的賽評與擊球。</p>
     <RallyDetail
       v-else

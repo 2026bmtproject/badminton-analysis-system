@@ -54,11 +54,10 @@ export function sanitizeOverlaySettings(value: unknown): OverlaySettings {
 /** Why each layer cannot be drawn for this match, or null when it can. */
 export type OverlayAvailability = Record<OverlayLayerId, string | null>;
 
-export function overlayAvailability(model: Pick<MatchModel, "capabilities" | "overlay" | "fps" | "layoutOnly">): OverlayAvailability {
+export function overlayAvailability(model: Pick<MatchModel, "capabilities" | "overlay" | "fps">): OverlayAvailability {
   const { capabilities, overlay } = model;
-  if (model.layoutOnly || !model.fps) {
-    const reason = model.layoutOnly ? "版面示範沒有影片" : "缺少影格率資料";
-    return Object.fromEntries(OVERLAY_LAYERS.map(({ id }) => [id, reason])) as OverlayAvailability;
+  if (!model.fps) {
+    return Object.fromEntries(OVERLAY_LAYERS.map(({ id }) => [id, "缺少影格率資料"])) as OverlayAvailability;
   }
   const needsFiles = (capable: boolean, missing: string) =>
     !capable ? missing : overlay ? null : "重新匯入比賽後才有疊圖資料";

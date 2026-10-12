@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { playerShortcutAction } from "../src/interaction/playerShortcuts";
 import { segmentSkipTarget } from "../src/temporal/segmentPlayback";
@@ -42,9 +41,4 @@ test("the segments-only switch persists, defaults off and has an S shortcut", ()
   assert.equal(parseWorkspaceLayout(JSON.stringify(saved)).segmentsOnly, true);
   assert.equal(parseWorkspaceLayout(JSON.stringify({ ...saved, segmentsOnly: "yes" })).segmentsOnly, false);
   assert.equal(playerShortcutAction({ code: "KeyS", key: "s", shiftKey: false }), "toggle-segments-only");
-  const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(review, /v-model:segments-only="layout\.segmentsOnly"/);
-  const player = readFileSync("src/components/ReviewPlayer.vue", "utf8");
-  assert.match(player, /:aria-pressed="segmentsOnly"/);
-  assert.match(player, /requestAnimationFrame\(skipGaps\)/);
 });

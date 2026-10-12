@@ -14,7 +14,7 @@ import { doubleClickFit } from "../../temporal/timelineNavigation";
 
 export type TimelineHoverMark = {
   /** `break` ids the Rally a break follows; `stroke-rally` ids a Rally summarised by its stroke bar. */
-  kind: "rally" | "break" | "score" | "stroke" | "stroke-rally" | "cheer" | "cheer-window";
+  kind: "rally" | "break" | "score" | "stroke" | "stroke-rally" | "cheer-window";
   id: number | string;
 };
 
@@ -116,12 +116,7 @@ export function timelineHoverPreview(
   }
   if (mark.kind === "score") {
     const rally = rallies.find((item) => item.id === mark.id);
-    if (rally && lead) return leadPreview(rally, lead);
-    if (!rally?.score) return null;
-    return {
-      title: `比分 ${scoreText(rally.score)}`,
-      lines: [formatPreciseTime(rally.end), `片段 ${String(rally.id + 1).padStart(3, "0")}`],
-    };
+    return rally && lead ? leadPreview(rally, lead) : null;
   }
   if (mark.kind === "stroke") {
     const stroke = rallies.flatMap((rally) => rally.hits ?? []).find((item) => item.eventIndex === mark.id);
@@ -145,14 +140,6 @@ export function timelineHoverPreview(
         `${rally.hits.length} 拍`,
         ...order.flatMap((family) => (counts[family] ? [`${STROKE_FAMILY_LABELS[family]} ${counts[family]}`] : [])),
       ],
-    };
-  }
-  const rally = rallies.find((item) => item.id === mark.id);
-  if (!rally) return null;
-  if (mark.kind === "cheer" && rally.audio) {
-    return {
-      title: "歡呼訊號",
-      lines: [`片段 ${String(rally.id + 1).padStart(3, "0")}`, `信號 ${rally.audio.confidence.toFixed(2)}`],
     };
   }
   return null;

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ref } from "vue";
 import type {
@@ -252,23 +251,12 @@ test("4. real gaps clear rally, stroke, court and segment score observations", (
   assert.equal(context.score, null);
 });
 
-test("5. all active consumers are wired to the same authoritative context", () => {
-  const page = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(page, /@time="workspace\.updateTime"/);
-  assert.match(page, /:active-id="activeId"/);
-  assert.match(page, /:active-stroke-index="workspace\.activeStroke\.value\?\.eventIndex \?\? null"/);
-  assert.match(page, /:current-time="workspace\.currentTimeSec\.value"/);
-  assert.match(page, /:score-context-id="workspace\.activeScoreRally\.value\?\.id \?\? null"/);
-});
-
 test("6. court stroke selection seeks once and playback context resolves that stroke", () => {
   const { workspace, seeks } = workspaceHarness();
   workspace.selectStroke(secondStroke);
   workspace.updateTime(seeks.at(-1)!);
   assert.equal(workspace.activeRally.value?.id, 0);
   assert.equal(workspace.activeStroke.value?.eventIndex, 11);
-  const analysis = readFileSync("src/components/workspace/AnalysisWindow.vue", "utf8");
-  assert.match(analysis, /:selected-stroke-index="activeStrokeIndex"/);
 });
 
 test("8. persisted workspace geometry excludes transient playback and selection state", () => {
@@ -304,13 +292,4 @@ test("9b. centred follow runs only while playing in an undisturbed zoomed fit", 
   assert.equal(shouldCenterFollow({ ...base, playing: false }), false);
   assert.equal(shouldCenterFollow({ ...base, manualNavigation: true }), false);
   assert.equal(shouldCenterFollow({ ...base, lensActive: true }), false);
-});
-
-test("10. responsive layout changes presentation only, not temporal ownership", () => {
-  const styles = readFileSync("src/styles/floating-workspace.css", "utf8");
-  const page = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(styles, /@media \(max-width: 1100px\)/);
-  assert.match(styles, /\.workspace-window\s*\{[\s\S]*position:\s*relative/s);
-  assert.equal((page.match(/workspace\.activeStroke\.value/g) ?? []).length >= 2, true);
-  assert.doesNotMatch(styles, /activeRally|selectedRally|currentTime/);
 });
