@@ -16,11 +16,6 @@ export function timeFromClientX(
   return viewport.startSec + viewport.durationSec * fraction;
 }
 
-export function percentOfDuration(timeSec: number, durationSec: number) {
-  if (!(durationSec > 0)) return 0;
-  return clampFraction(timeSec / durationSec) * 100;
-}
-
 export type EdgeLabelSide = "start" | "center" | "end";
 
 export function edgeLabelSide(

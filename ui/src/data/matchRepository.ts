@@ -22,16 +22,16 @@ async function fetchJson(url: string, fresh = false): Promise<unknown> {
 }
 
 export async function loadCatalog(): Promise<CatalogEntry[]> {
+  // Fixtures are a development aid; a production build never asks for them.
   const [fixtures, matches] = await Promise.all([
-    fetchJson("/generated/catalog.json").catch(() => []),
+    import.meta.env.DEV ? fetchJson("/generated/catalog.json").catch(() => []) : [],
     fetchJson("/matches/catalog.json", true).catch(() => []),
   ]);
   const fixtureRows = z.array(catalogRow.omit({ url: true })).parse(fixtures);
   const matchRows = z.array(catalogRow).parse(matches);
-  const visibleFixtures = import.meta.env.DEV ? fixtureRows : [];
   return [
     ...matchRows.map((entry) => ({ ...entry, kind: "match" as const })),
-    ...visibleFixtures.map((entry) => ({
+    ...fixtureRows.map((entry) => ({
       ...entry,
       url: `/generated/${entry.id}.json`,
       kind: "fixture" as const,
@@ -58,9 +58,7 @@ export async function importLocalMatch(id: string): Promise<string> {
   return z.object({ id: z.string() }).parse(body).id;
 }
 
-export async function loadMatch(
-  entry: CatalogEntry,
-  options: { fresh?: boolean } = {},
-): Promise<MatchModel> {
-  return parseMatchModel(await fetchJson(entry.url, options.fresh));
+/** Review URLs are content-hashed, so a cached response is always the published Review. */
+export async function loadMatch(entry: CatalogEntry): Promise<MatchModel> {
+  return parseMatchModel(await fetchJson(entry.url));
 }

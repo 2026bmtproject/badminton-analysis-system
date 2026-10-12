@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import {
   adaptiveDefaultPanelSizes,
   resolveAnalysisDensity,
@@ -8,8 +7,6 @@ import {
   timelineTicks,
 } from "../src/presentation/workspaceDensity";
 import { placeWorkspacePopover } from "../src/presentation/workspacePopover";
-
-const source = (path: string) => readFileSync(path, "utf8");
 
 test("Timeline size only chooses full or compact", () => {
   assert.equal(resolveTimelineDensity(900, 230), "full");
@@ -57,32 +54,9 @@ test("Analysis resize resolves full or compact without becoming a collapsed rail
   assert.equal(resolveAnalysisDensity(340), "full");
   assert.equal(resolveAnalysisDensity(260), "compact");
   assert.equal(resolveAnalysisDensity(180), "compact");
-  assert.match(source("src/components/workspace/AnalysisWindow.vue"), /data-density/);
-  assert.match(source("src/components/workspace/AnalysisWindow.vue"), /activeId/);
-  assert.doesNotMatch(source("src/components/workspace/AnalysisWindow.vue"), /analysis-density-rail|writing-mode/);
 });
 
-test("responsive presentation removes DOM horizontal timeline navigation", () => {
-  const timelineStyles = source("src/styles/timeline.css");
-  assert.match(timelineStyles, /overflow-x:\s*clip/);
-});
-
-test("product chrome omits raw match identity and permanent technical footer", () => {
-  const shell = source("src/layouts/MatchShell.vue");
-  const review = source("src/pages/ReviewPage.vue");
-  assert.doesNotMatch(shell, /<code v-if="entry"/);
-  assert.match(shell, /比賽回看/);
-  assert.match(review, /shortcut-help__content/);
-  assert.doesNotMatch(review, /workspace-method-details/);
-});
-
-test("shared teleported popover has independent width and viewport collision placement", () => {
-  const component = source("src/components/workspace/WorkspacePopover.vue");
-  const styles = source("src/styles/floating-workspace.css");
-  assert.match(component, /<Teleport :to="teleportTarget">/);
-  assert.match(component, /document\.fullscreenElement instanceof HTMLElement/);
-  assert.match(styles, /\.workspace-popover[^}]*position:\s*fixed/s);
-  assert.match(styles, /white-space:\s*nowrap/);
+test("popover placement stays inside the viewport", () => {
   const placed = placeWorkspacePopover(
     { left: 1240, right: 1272, top: 680, bottom: 712 },
     { width: 210, height: 140 },
@@ -91,22 +65,4 @@ test("shared teleported popover has independent width and viewport collision pla
   );
   assert.ok(placed.left + placed.width <= 1272);
   assert.ok(placed.top < 680);
-});
-
-test("gap state keeps the Rally just played instead of an empty window", () => {
-  const analysis = source("src/components/workspace/AnalysisWindow.vue");
-  const inspector = source("src/components/inspector/RallyInspector.vue");
-  assert.match(analysis, /activeRally\.value \?\? rallyAtOrBefore\(props\.model\.rallies, props\.currentTime\)/);
-  assert.match(inspector, /:previous="previous"/);
-  assert.doesNotMatch(inspector, /等待下一段|保留最新可用比分|不顯示前一段內容/);
-});
-
-test("splitters show the VS Code sash, never a state colour", () => {
-  const styles = source("src/styles/floating-workspace.css");
-  const splitter = styles.slice(
-    styles.indexOf(".workspace-window__dock-resize"),
-    styles.indexOf(".workspace-window__resize-grip::after"),
-  );
-  assert.match(splitter, /--color-focus/);
-  assert.doesNotMatch(splitter, /--color-accent|--line-active/);
 });

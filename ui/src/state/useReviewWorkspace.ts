@@ -68,9 +68,7 @@ export function useReviewWorkspace<T extends PlayerController>(
   );
 
   const ownerRally = computed(() =>
-    model.value && !model.value.layoutOnly
-      ? rallyAtOrBefore(model.value.rallies, currentTimeSec.value)
-      : null,
+    model.value ? rallyAtOrBefore(model.value.rallies, currentTimeSec.value) : null,
   );
 
   function followOwner() {
@@ -118,7 +116,7 @@ export function useReviewWorkspace<T extends PlayerController>(
   }
 
   function seek(timeSec: number) {
-    if (!Number.isFinite(timeSec) || model.value?.layoutOnly) return;
+    if (!Number.isFinite(timeSec)) return;
     player.value?.seek(timeSec);
   }
 
@@ -160,7 +158,7 @@ export function useReviewWorkspace<T extends PlayerController>(
   function moveStroke(direction: -1 | 1) {
     const rally = selectedRally.value ?? activeRally.value;
     const hits = rally?.hits;
-    if (!rally || !hits?.length || model.value?.layoutOnly) return false;
+    if (!rally || !hits?.length) return false;
     const selectedIndex = hits.findIndex(
       (stroke) => stroke.eventIndex === selectedStrokeIndex.value,
     );
@@ -195,7 +193,7 @@ export function useReviewWorkspace<T extends PlayerController>(
     if (event.code !== "BracketLeft" && event.code !== "BracketRight")
       return false;
     const rallies = model.value?.rallies;
-    if (!rallies?.length || model.value?.layoutOnly) return false;
+    if (!rallies?.length) return false;
     event.preventDefault();
     const direction = event.code === "BracketLeft" ? -1 : 1;
     const owner = ownerRally.value;

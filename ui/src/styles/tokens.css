@@ -30,7 +30,6 @@
   --color-surface-raised: #313131;
   --color-surface-soft: #2a2d2e;
   --color-chrome: #181818;
-  --color-library: #1f1f1f;
   --color-media: #181818;
   --color-video: #020303;
   --line-structure: #2b2b2b;
@@ -91,7 +90,6 @@
   --color-shot-attack: #a066c9;
   --color-shot-unknown: #3d4449;
   --color-playhead: #f2f3f0;
-  --color-media-progress: #f3efe4;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -274,8 +272,7 @@ small,
 .error button {
   border: 1px solid currentColor;
 }
-.warning,
-.notice {
+.warning {
   color: var(--color-warning);
 }
 .empty-state {
@@ -303,8 +300,7 @@ small,
   border: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
-  button,
-  .match-row {
+  button {
     transition:
       color var(--motion-fast) var(--ease-standard),
       background-color var(--motion-fast) var(--ease-standard),

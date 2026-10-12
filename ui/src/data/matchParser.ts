@@ -36,31 +36,12 @@ const stroke = z.object({
   ]).optional(),
 });
 
-const canonicalCheer = z.object({
+const cheer = z.object({
   segmentIndex: z.number().int().nonnegative(),
   confidence: z.number(),
   intensity: z.number().nullable(),
   windowCount: z.number().int().nonnegative(),
 });
-
-// Compatibility belongs at the cache parsing boundary. Everything returned
-// from this module uses the canonical frontend model.
-const legacyCheer = z
-  .object({
-    schemaVersion: z.literal("review-export-v1").optional(),
-    segment_index: z.number().int().nonnegative(),
-    cheer_confidence: z.number(),
-    cheer_intensity: z.number().nullable(),
-    n_cheer_windows: z.number().int().nonnegative(),
-  })
-  .transform((signal) => ({
-    segmentIndex: signal.segment_index,
-    confidence: signal.cheer_confidence,
-    intensity: signal.cheer_intensity,
-    windowCount: signal.n_cheer_windows,
-  }));
-
-const cheer = z.union([canonicalCheer, legacyCheer]);
 const cheerWindow = z.object({
   segmentIndex: z.number().int().nonnegative(),
   start: z.number().nonnegative(),
@@ -74,12 +55,6 @@ const evidence = z.object({
   text: z.string(),
   eventIndex: z.number().int().nullable(),
   time: z.number().nullable(),
-});
-
-const legacyCommentary = z.object({
-  text: z.string(),
-  eventIndex: z.number().int().nullable(),
-  evidence: z.array(evidence),
 });
 
 const commentarySummary = z.object({
@@ -130,25 +105,8 @@ const rally = z
     audio: cheer.nullable(),
     highlight: z.number().nullable(),
     commentary: rallyCommentary.optional(),
-    comments: z.array(legacyCommentary).optional(),
   })
-  .superRefine((item, context) => {
-    if (item.commentary && item.comments) {
-      context.addIssue({
-        code: "custom",
-        path: ["commentary"],
-        message: "Rally cannot mix canonical and legacy commentary",
-      });
-    }
-    if (item.comments?.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["comments"],
-        message: "Non-empty draft commentary cache must be regenerated",
-      });
-    }
-  })
-  .transform(({ comments: _comments, ...item }) => ({
+  .transform((item) => ({
     ...item,
     commentary: item.commentary ?? {
       status: "unavailable" as const,
@@ -200,7 +158,6 @@ const matchEnvelope = z
     rallies: z.array(rally),
     cheerTimeline: z.array(cheerWindow).optional(),
     commentaryAvailability: commentaryAvailability.optional(),
-    layoutOnly: z.boolean().optional(),
     fps: z.number().positive().optional(),
     source: source.optional(),
     overlay: overlay.optional(),

@@ -45,10 +45,8 @@
 }
 .timeline-band--signals {
   background: transparent;
-  height: var(--lens-signal-height, 80px);
-  margin-bottom: var(--lens-signal-margin, var(--space-2));
+  height: 80px;
   overflow: clip;
-  opacity: var(--lens-overview-opacity, 1);
 }
 .timeline-lane {
   display: grid;

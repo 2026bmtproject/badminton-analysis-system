@@ -157,7 +157,6 @@ export function startPipeline(plan: PipelinePlan) {
     matchId: plan.matchId, stages: plan.requestedStages, mode: plan.mode, planId: plan.planId,
   });
 }
-export function getPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}`); }
 /** Stops a running task; stages it already finished keep their results, the one it was on starts over next time. */
 export function cancelPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}/cancel`, {}); }
 export const CANCEL_CONFIRM = "確定取消分析？已完成的階段會保留，進行中的階段下次需要重新執行。";

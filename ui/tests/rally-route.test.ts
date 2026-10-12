@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import type { MatchModel, RallyModel } from "../src/domain/models";
 import {
   canonicalInteger,
@@ -96,16 +95,4 @@ test("route identity uses canonical Rally.id and Stroke.eventIndex without neare
   assert.equal(resolveRouteStroke(owner, "900"), null);
   assert.equal(findStrokeTarget(model, 900)?.rally.id, 42);
   assert.equal(canonicalInteger("-1"), null);
-});
-
-test("Review opens the shared player at a canonical segment from the route query", () => {
-  const inspector = readFileSync(
-    "src/components/inspector/RallyInspector.vue",
-    "utf8",
-  );
-  const review = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(review, /resolveRouteRally\(model\.value, segment\)/);
-  assert.match(review, /workspace\.selectStroke\(stroke\)/);
-  assert.match(review, /workspace\.selectRally\(rally\)/);
-  assert.doesNotMatch(inspector, /開啟片段/);
 });

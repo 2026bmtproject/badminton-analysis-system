@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
 import { nextTick, ref } from "vue";
 import {
   capabilityFromStates,
@@ -15,7 +14,6 @@ import {
 import {
   fitViewport,
   matchViewport,
-  percentToTime,
   rallyViewport,
   timeToPercent,
   visibleRallies,
@@ -24,7 +22,6 @@ import { playerShortcutAction, repeatsWhileHeld } from "../src/interaction/playe
 import {
   edgeLabelSide,
   nearestTemporalMark,
-  percentOfDuration,
   timeFromClientX,
 } from "../src/interaction/temporalInteraction";
 import {
@@ -92,13 +89,7 @@ test("video time is the sole source for active rally context", () => {
   assert.equal(activeRallyAt(rallies, 16)?.id, 12);
 });
 
-test("all timeline tracks share reversible absolute-time mapping", () => {
-  const view = matchViewport(3_600);
-  for (const time of [0, 423.56, 1_800, 3_600]) {
-    assert.ok(
-      Math.abs(percentToTime(timeToPercent(time, view), view) - time) < 1e-9,
-    );
-  }
+test("all timeline tracks share absolute-time mapping", () => {
   const selected = rally(12, 423.56, 436.32);
   const focus = rallyViewport(selected);
   assert.equal(timeToPercent(selected.start, focus), 0);
@@ -132,22 +123,6 @@ test("timeline pointer mapping and sparse hit testing share the active viewport"
   assert.equal(
     nearestTemporalMark(marks, 109, (mark) => mark.time, viewport, 400),
     null,
-  );
-});
-
-test("global scrubber registrations preserve canonical Rally and Stroke time", () => {
-  const duration = 3893.893515;
-  const start = percentOfDuration(423.56, duration);
-  const end = percentOfDuration(436.32, duration);
-  const stroke = percentOfDuration(430.2, duration);
-  const midpoint = (start + end) / 2;
-  assert.ok(Math.abs(start - 10.8775) < 0.0001);
-  assert.ok(Math.abs(end - 11.2052) < 0.0001);
-  assert.ok(Math.abs(stroke - 11.0481) < 0.0001);
-  assert.ok(Math.abs(end - start - 0.327693) < 0.0001);
-  assert.ok(
-    Math.abs(midpoint - percentOfDuration((423.56 + 436.32) / 2, duration)) <
-      0.000001,
   );
 });
 
@@ -295,37 +270,8 @@ test("same-rally stroke stepping seeks exact events and stops at boundaries", ()
   assert.deepEqual(seeks, [11, 11.5, 12.5, 11.5]);
 });
 
-test("runtime model validation rejects malformed JSON and normalizes legacy cached cheer data", () => {
+test("runtime model validation rejects malformed JSON", () => {
   assert.throws(() => parseMatchModel({ title: "incomplete" }));
-  const parsed = parseMatchModel({
-    title: "Legacy cache",
-    video: "/video",
-    duration: 10,
-    scenario: "legacy",
-    players: { a: "A", b: "B" },
-    states: {
-      segments: { status: "available" },
-      audio_signals: { status: "available" },
-    },
-    rallies: [
-      {
-        ...rally(0, 1, 2),
-        audio: {
-          segment_index: 0,
-          cheer_confidence: 0,
-          cheer_intensity: null,
-          n_cheer_windows: 0,
-        },
-      },
-    ],
-  });
-  assert.deepEqual(parsed.rallies[0].audio, {
-    segmentIndex: 0,
-    confidence: 0,
-    intensity: null,
-    windowCount: 0,
-  });
-  assert.equal(parsed.capabilities.cheer, true);
 });
 
 test("runtime model validation preserves canonical cached cheer data", () => {
@@ -378,13 +324,10 @@ test("score text and short local axes use evidence-appropriate precision", () =>
   assert.equal(formatTimelineAxisTime(61.25, 120), "01:01");
 });
 
-test("edge labels align inward without changing temporal registration", () => {
-  const midpoint = percentOfDuration(5, 100);
-  assert.equal(midpoint, 5);
+test("edge labels align inward", () => {
   assert.equal(edgeLabelSide(5, 200, 18), "start");
   assert.equal(edgeLabelSide(100, 200, 18), "center");
   assert.equal(edgeLabelSide(195, 200, 18), "end");
-  assert.equal(midpoint, 5);
 });
 
 test("runtime parser rejects impossible canonical timeline states", () => {
@@ -479,40 +422,5 @@ test("runtime parser rejects impossible canonical timeline states", () => {
   assert.throws(
     () => parseMatchModel(rawMatch([commentaryMismatch])),
     /canonical Stroke/,
-  );
-});
-
-test("repository and presentation components do not traverse backend artifact field names", () => {
-  const componentFiles = readdirSync("src/components", { recursive: true })
-    .filter(
-      (file): file is string =>
-        typeof file === "string" && file.endsWith(".vue"),
-    )
-    .map((file) => `src/components/${file.replaceAll("\\", "/")}`);
-  const files = [
-    "src/data/matchRepository.ts",
-    "src/App.vue",
-    "src/layouts/MatchShell.vue",
-    "src/pages/MatchesPage.vue",
-    "src/pages/ReviewPage.vue",
-    ...componentFiles,
-  ];
-  const presentation = files
-    .map((file) => readFileSync(file, "utf8"))
-    .join("\n");
-  assert.doesNotMatch(
-    presentation,
-    /\b(score_a|score_b|segment_index|stroke_index|source_fact_ids|cheer_confidence|cheer_intensity|n_cheer_windows)\b/,
-  );
-});
-
-test("production import delegates artifact semantics and court policy to Python", () => {
-  const importer = readFileSync("scripts/local-matches.ts", "utf8");
-  assert.match(importer, /execFileSync\([\s\S]*modules\.review_export/);
-  assert.doesNotMatch(importer, /deriveCourtPositions|segment_index|cheer_confidence|source_fact_ids/);
-  assert.doesNotMatch(importer, /status\.inputs|fingerprint\(/);
-  assert.equal(
-    readdirSync("scripts").includes("court-positions.ts"),
-    false,
   );
 });

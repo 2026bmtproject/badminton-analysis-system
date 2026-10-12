@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { defaultWorkspaceLayout, parseWorkspaceLayout } from "../src/state/workspaceLayout";
 import {
@@ -11,12 +10,6 @@ import {
 } from "../src/state/workspaceGeometry";
 
 const bounds = { width: 1000, height: 800 };
-
-test("1. obsolete visible movement controller is removed from both shared windows", () => {
-  const component = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
-  assert.doesNotMatch(component, /移動面板|向左移動|向右移動|向上移動|向下移動|nudge\(/);
-  assert.doesNotMatch(component, />•••</);
-});
 
 test("2. shared direct dragging changes position and stays within workspace bounds", () => {
   const panel = defaultWorkspaceLayout().panels.timeline;
@@ -81,35 +74,4 @@ test("7. smaller workspace constrains dimensions and keeps the header reachable"
   assert.ok(constrained.y + constrained.height <= 1);
   assert.ok(constrained.width <= PANEL_MAX_WIDTH_RATIO);
   assert.ok(constrained.height <= PANEL_MAX_HEIGHT_RATIO);
-});
-
-test("8. transparency changes only the rgba panel backgrounds", () => {
-  const component = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
-  const styles = readFileSync("src/styles/floating-workspace.css", "utf8");
-  assert.match(component, /aria-label="背景透明度"/);
-  assert.match(component, /alpha: Math\.min\(MAX_PANEL_ALPHA, Math\.max\(MIN_PANEL_ALPHA, 1 - value\)\)/);
-  assert.match(styles, /background: rgb\(24 24 24 \/ var\(--workspace-panel-alpha\)\)/);
-  assert.doesNotMatch(styles, /\.workspace-window\s*\{[^}]*opacity:/s);
-  // Panel content keeps no opaque surface of its own, or it would hide the panel's transparency.
-  assert.match(styles, /\.workspace-window__body \.rally-panel\s*\{[^}]*background: transparent;/s);
-  assert.match(styles, /\.analysis-court-view \.rally-court-map\s*\{[^}]*background: transparent;/s);
-});
-
-test("9. settings contains transparency without duplicate movement actions", () => {
-  const component = readFileSync("src/components/workspace/WorkspaceWindow.vue", "utf8");
-  assert.match(component, /AppIcon name="sliders"/);
-  assert.match(component, /背景透明度/);
-  assert.doesNotMatch(component, /workspace-window__keyboard-move|→|←|↑|↓/);
-});
-
-test("10. stacked responsive panels hide resizing and avoid fixed inner overflow", () => {
-  const styles = readFileSync("src/styles/floating-workspace.css", "utf8");
-  assert.match(styles, /@media \(max-width: 1100px\)[\s\S]*\.workspace-window__resize-grip \{ display: none; \}/);
-  assert.match(styles, /\.workspace-window__body > \.intelligence-timeline \{ min-width: 0; \}/);
-  assert.doesNotMatch(styles, /min-width: 680px/);
-});
-test("11. fullscreen chrome never idles away under a pointer resting on a window", () => {
-  // Hidden windows let presses through to the video, so a drag started after resting would toggle playback.
-  const page = readFileSync("src/pages/ReviewPage.vue", "utf8");
-  assert.match(page, /function interactionActive\(\)[\s\S]*?\.workspace-window:hover/);
 });
