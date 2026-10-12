@@ -268,6 +268,9 @@
 .shortcut-help__row dt { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1); }
 .shortcut-help__row dd { margin: 0; color: var(--color-text); white-space: nowrap; }
 .shortcut-help__combo { display: inline-flex; align-items: center; gap: 3px; }
+/* Small and faint on purpose: the party is for whoever reads to the end. */
+.shortcut-help__secret { margin: 0; color: var(--color-text-muted); font-size: var(--type-micro); text-align: right; opacity: 0.55; }
+.shortcut-help__content .shortcut-help__secret kbd { min-width: 0; height: 16px; padding: 0 4px; font-size: inherit; }
 .shortcut-help__or,
 .shortcut-help__plus { color: var(--color-text-muted); font-size: var(--type-micro); }
 /* VS Code's keybinding label. */

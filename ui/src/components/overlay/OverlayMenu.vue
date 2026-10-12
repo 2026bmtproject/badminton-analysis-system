@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { FUN_MODES, replacesShuttle, type FunMode } from "../../fun/funModes";
 import { BOTH_METHODS, OVERLAY_LAYERS, type OverlayAvailability, type OverlayLayerId, type OverlaySettings } from "../../overlay/overlaySettings";
 import WorkspacePopover from "../workspace/WorkspacePopover.vue";
 import AppIcon from "../ui/AppIcon.vue";
@@ -9,17 +10,24 @@ const props = defineProps<{
   availability: OverlayAvailability;
   /** Shuttle tracking methods in this match. */
   methods: readonly string[];
+  fun: FunMode;
 }>();
-const emit = defineEmits<{ toggle: []; layer: [id: OverlayLayerId]; method: [value: string]; open: [value: boolean] }>();
+const emit = defineEmits<{ toggle: []; layer: [id: OverlayLayerId]; method: [value: string]; open: [value: boolean]; fun: [mode: FunMode] }>();
 
 const methodOptions = computed(() => props.methods.length > 1 ? [...props.methods, BOTH_METHODS] : []);
 const selectedMethod = computed(() => props.methods.includes(props.settings.shuttleMethod) ? props.settings.shuttleMethod : BOTH_METHODS);
 /** Each reason once: a missing stage usually disables a few layers together. */
+/** The party only shows to a Shift-click, and stays while a party is on so it can be switched off. */
+const shiftOpened = ref(false);
+const partyShown = computed(() => shiftOpened.value || props.fun !== "off");
+function funUnavailable(mode: FunMode) {
+  return replacesShuttle(mode) ? props.availability.shuttle : mode === "pipe" ? props.availability.hit : null;
+}
 const reasons = computed(() => [...new Set(Object.values(props.availability).filter((reason): reason is string => reason !== null))]);
 </script>
 
 <template>
-  <WorkspacePopover label="疊圖（O）" :min-width="200" :trigger-class="['player-icon-button', 'overlay-menu__trigger', { 'player-icon-button--on': settings.enabled }]" @open="emit('open', $event)">
+  <WorkspacePopover label="疊圖（O）" :min-width="200" :trigger-class="['player-icon-button', 'overlay-menu__trigger', { 'player-icon-button--on': settings.enabled }]" @click.capture="shiftOpened = $event.shiftKey" @open="emit('open', $event)">
     <template #trigger><AppIcon name="layers" /></template>
     <div class="overlay-menu">
       <label class="overlay-menu__row overlay-menu__row--master">
@@ -37,6 +45,13 @@ const reasons = computed(() => [...new Set(Object.values(props.availability).fil
         <label v-for="option in methodOptions" :key="option">
           <input type="radio" name="overlay-shuttle-method" :value="option" :checked="selectedMethod === option" @change="emit('method', option)" />
           <span>{{ option === BOTH_METHODS ? "兩者" : option }}</span>
+        </label>
+      </fieldset>
+      <fieldset v-if="partyShown" class="overlay-menu__methods overlay-menu__party">
+        <legend>派對</legend>
+        <label v-for="mode in FUN_MODES" :key="mode.id" :title="funUnavailable(mode.id) ?? undefined">
+          <input type="radio" name="overlay-fun-mode" :value="mode.id" :checked="fun === mode.id" :disabled="funUnavailable(mode.id) !== null" @change="emit('fun', mode.id)" />
+          <span>{{ mode.label }}</span>
         </label>
       </fieldset>
       <p v-for="reason in reasons" :key="reason" class="overlay-menu__note">{{ reason }}</p>

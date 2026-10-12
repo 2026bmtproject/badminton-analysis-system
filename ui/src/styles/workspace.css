@@ -120,6 +120,12 @@
   height: 100%;
   pointer-events: none;
 }
+/* The oiia party's beat light: multiplies the picture's colours; the overlay canvas above keeps its own. */
+.video-overlay-tint {
+  position: absolute;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
 .video-wrap video {
   display: block;
   width: 100%;

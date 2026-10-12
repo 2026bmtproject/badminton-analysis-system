@@ -24,6 +24,7 @@ import {
   type OverlayLayerId,
   type OverlayShortcut,
 } from "../overlay/overlaySettings";
+import { replacesShuttle, type FunMode } from "../fun/funModes";
 import { useMatchContext } from "../state/matchContext";
 import {
   constrainAnalysisDockWidth,
@@ -86,6 +87,8 @@ const fullscreenUiHidden = ref(false);
 const panelInteracting = ref<Record<WorkspacePanelId, boolean>>({ timeline: false, analysis: false });
 /** The overlay menu floats outside both windows, so an open menu holds the fullscreen UI by itself. */
 const overlayMenuOpen = ref(false);
+/** The hidden party mode; never stored, so a reload is always serious again. */
+const funMode = ref<FunMode>("off");
 const pointerPressed = ref(false);
 let idleTimer: number | undefined;
 const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
@@ -206,6 +209,14 @@ function applyOverlayShortcut(shortcut: OverlayShortcut) {
 /** An unavailable layer keeps its stored choice; there is nothing to switch on. */
 function toggleLayer(id: OverlayLayerId) {
   if (overlayLayersAvailable.value[id] === null) toggleOverlayLayer(layout.overlay, id);
+}
+/** A cat needs a shuttle to sit on, and the nyan cat its rainbow, so choosing one switches them on. */
+function chooseFun(mode: FunMode) {
+  funMode.value = mode;
+  if (!replacesShuttle(mode)) return;
+  layout.overlay.enabled = true;
+  layout.overlay.layers.shuttle = true;
+  if (mode === "nyan") layout.overlay.layers.trail = true;
 }
 function overlayMenu(open: boolean) {
   overlayMenuOpen.value = open;
@@ -373,6 +384,8 @@ onBeforeUnmount(() => {
                 </div>
               </dl>
             </section>
+            <!-- An easter egg for whoever reads this far. -->
+            <p class="shortcut-help__secret"><kbd>Shift</kbd> + 點疊圖按鈕，打開派對模式</p>
           </div>
         </WorkspacePopover>
       </div>
@@ -381,10 +394,10 @@ onBeforeUnmount(() => {
       <section ref="stage" class="review-workspace-stage" :class="{ 'review-workspace-stage--ui-hidden': fullscreenUiHidden, 'review-workspace-stage--docked': fullscreen && !timelineFloating }" :style="{ '--analysis-dock-width': `${effectiveAnalysisDockWidth}px`, '--timeline-dock-height': `${effectiveTimelineDockHeight}px` }" aria-label="影片分析工作區" @pointermove="revealUi" @pointerdown="pointerDown" @focusin="revealUi">
         <ReviewPlayer v-if="!match.layoutOnly" ref="player" :src="match.video" :fullscreen="fullscreen" :controls-target="controlsInTimeline ? playerControlsHost : null" :segments="match.rallies" v-model:segments-only="layout.segmentsOnly" @time="workspace.updateTime" @playing="playing = $event" @fullscreen-toggle="toggleFullscreen">
           <template #overlay="{ video }">
-            <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" />
+            <VideoOverlay v-if="match.fps" :video="video" :fps="match.fps" :rallies="match.rallies" :manifest="match.overlay ?? null" :layers="overlayLayers" :methods="shownOverlayMethods" :players="displayPlayers" :fun="funMode" />
           </template>
           <template #controls>
-            <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" />
+            <OverlayMenu :settings="layout.overlay" :availability="overlayLayersAvailable" :methods="overlayMethods" @toggle="toggleOverlay(layout.overlay)" @layer="toggleLayer" @method="layout.overlay.shuttleMethod = $event" @open="overlayMenu" :fun="funMode" @fun="chooseFun" />
             <button v-if="fullscreen" class="player-icon-button player-icon-button--dock" type="button" :aria-label="timelineFloating ? '停靠時間軸' : '浮動時間軸'" :title="timelineFloating ? '停靠時間軸：移到影片下方，不遮擋畫面（D）' : '浮動時間軸：疊在影片上（D）'" @click="toggleTimelineDocked"><AppIcon :name="timelineFloating ? 'dock' : 'float'" /></button>
           </template>
         </ReviewPlayer>
