@@ -178,4 +178,3 @@ Pose scans: 2 → 1. Source metadata stayed unchanged; no API calls occurred.
 Validation at the program commit: 34 benchmark tests passed; the combined
 benchmark, runtime, observations and tactical-analyzer selection passed 236 tests.
 No production reader, serializer or pipeline implementation is changed by this PR.
-

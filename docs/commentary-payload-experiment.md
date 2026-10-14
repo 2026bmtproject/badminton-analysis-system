@@ -193,4 +193,3 @@ runtime, observations and tactical-analyzer selection passed 236 tests. Existing
 tests exercise the production contracts individually; these new tests additionally
 compare baseline/reuse output identity and the candidate's exact visible evidence
 against the authoritative production catalog and intercepted generator payload.
-
