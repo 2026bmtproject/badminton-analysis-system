@@ -118,6 +118,7 @@
 `一張總架構圖 + 資料流`
 
 > 大綱（待補）：以總架構圖配一段話，讓讀者一眼看懂系統整體形狀與各階段如何串接。只給輪廓，模組機制與實作細節留待第三章。
+> 分析多少東西，用了哪些技術，子問題拆分
 
 ## 主要貢獻與系統亮點
 
@@ -167,6 +168,68 @@
 ## 系統架構
 
 本系統是一條離線批次處理的管線。輸入是一支未經剪輯的賽事轉播影片，輸出是逐拍的結構化資料：每個回合的時間範圍與比分、球場座標基準、球員骨架、羽球軌跡，以及每一次擊球的影格與球種。目前 registry 註冊十一個階段，包含原有七個視覺階段、音訊歡呼量測、精彩片段排序、球員身分對應與賽評生成；執行器依使用者選取範圍與相依關係規劃順序。音訊支線由分段結果界定範圍，其結果不影響視覺模型的競賽事實；賽評生成需使用者明確選取。
+
+**系統架構圖：**
+
+```mermaid
+flowchart TD
+    IN[["賽事轉播影片"]]:::io
+
+    subgraph PIPE["離線分析管線"]
+        direction LR
+
+        SEG["賽事影片分段"]:::stage
+        SCORE["計分板辨識"]:::stage
+
+        subgraph VIS["視覺分析"]
+            direction LR
+            COURT["場地偵測"]:::stage
+            POSE["球員骨架追蹤"]:::stage
+            SHUT["球體追蹤與<br/>軌跡重建"]:::stage
+            EV["擊球時刻偵測"]:::stage
+            STK["球種分類"]:::stage
+            COURT --> POSE --> EV
+            SHUT --> EV --> STK
+        end
+
+        subgraph AUD["音訊分析"]
+            direction LR
+            AUDIO["觀眾歡呼偵測"]:::stage
+            HL["精彩片段排序"]:::stage
+            AUDIO --> HL
+        end
+
+        subgraph SEM["賽事理解"]
+            direction LR
+            ID["球員身分對應"]:::stage
+            COM["賽評生成"]:::stage
+            ID --> COM
+        end
+
+        SEG --> SCORE
+        SEG --> COURT
+        SEG --> SHUT
+        SEG --> AUDIO
+        SCORE --> EV
+        SCORE --> ID
+        STK --> ID
+        HL --> COM
+    end
+
+    UI[["回看介面"]]:::io
+
+    IN --> SEG
+    PIPE --> UI
+
+    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
+    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
+    classDef group fill:#fafbfd,stroke:#9fb3d1,stroke-width:1px,stroke-dasharray:4 3,color:#3f5f8f;
+    classDef outer fill:#ffffff,stroke:#5477ac,stroke-width:1.5px,color:#12233f;
+    class VIS,AUD,SEM group;
+    class PIPE outer;
+```
+
+圖中箭頭只畫階段之間的直接先後關係，隱含在箭頭鏈中的相依不重複畫出（例如球種分類也讀取骨架與羽球軌跡）。完整相依見下表。
 
 **資料流總圖：**
 
@@ -232,13 +295,13 @@ flowchart TB
     classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
 ```
 
-分段結果界定後續分析範圍。視覺階段從原始影片讀取影格，音訊階段讀取對應波形，身分對應與賽評則整合結構化 artifact；不需要事先把影片剪成一個個小檔案。
+除分段階段外，其餘階段都以 `segments.json` 界定分析範圍：視覺階段從原始影片讀取影格，音訊階段讀取對應波形，身分對應與賽評則整合結構化產物，因此不需要事先把影片剪成一個個小檔案。
 
 **模組相依與輸入輸出：**
 
-| 階段               | 相依階段                               | 輸出檔          | 一筆記錄的內容                                                           |
-| ------------------ | -------------------------------------- | --------------- | ------------------------------------------------------------------------ |
-| 賽事影片分段       | —（直接讀原始影片）                    | `segments.json` | 一個固定機位比賽片段的起訖影格與起訖秒數                                 |
+| 階段               | 相依階段                               | 輸出檔          | 一筆記錄的內容                                                             |
+| ------------------ | -------------------------------------- | --------------- | -------------------------------------------------------------------------- |
+| 賽事影片分段       | —（直接讀原始影片）                    | `segments.json` | 一個固定機位比賽片段的起訖影格與起訖秒數                                   |
 | 計分板辨識         | 分段                                   | `scores.json`   | 一個片段的記分板觀察、發球方與局數；片段內有多筆觀察時另記子比分與切點秒數 |
 | 場地偵測           | 分段                                   | `court.json`    | 球場四個外角，以及球場公尺與影像像素之間的單應矩陣                       |
 | 球體追蹤與軌跡重建 | 分段                                   | `shuttle.json`  | 一幀中羽球的座標與可見性，兩種軌跡各一份                                 |
