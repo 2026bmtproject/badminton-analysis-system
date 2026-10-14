@@ -1170,7 +1170,7 @@ H_s=0.5C_s+0.5I_s^{effective}.
 
 `audio_signals.json` 的 `signals` 保存 segment 層級量測，`windows` 則保存各窗口的 `start_sec`、`end_sec` 與 `cheer_probability`。Python review exporter 以窗口中心 `(start_sec + end_sec) / 2` 作為曲線的完整比賽絕對時間。現有 UI 對同 segment 的連續窗口使用鄰近三個窗口的移動平均作顯示平滑；此步驟只影響繪圖，不回寫模型輸出、不重新正規化 segment，也不改變 p95 或 highlight 排序。曲線與影片共用時間軸映射，segment 邊界與資料缺口分開處理；舊 artifact 沒有 `windows` 時維持無曲線，不用 segment p95 延展出假曲線。
 
-窗口分類分數、segment `cheer_confidence` 與 `HighlightScore` 分別服務於時間分布呈現、音訊聚合量測與片段排序，curve peak 與 p95 不必相等。精確實作與實驗來源整理於[音訊方法與證據對照](audio-highlight-evidence.md)。
+窗口分類分數、segment `cheer_confidence` 與 `HighlightScore` 分別服務於時間分布呈現、音訊聚合量測與片段排序，curve peak 與 p95 不必相等。精確實作與實驗來源整理於[音訊方法與證據對照](../experiments/audio_highlight/README.md)。
 
 ## 使用者介面
 
@@ -1500,7 +1500,7 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 
 最終選擇 linear p95 是工程折衷，而非實驗證明它是最佳聚合器。P95 保留對局部尖峰的敏感度，其人工 detection 與 peak-pair 表現和 max 接近；在移除單一窗口的診斷中，p95 的極端尾端敏感度又低於 max。因此，正式系統以 p95 同時聚合窗口機率與非空值強度。
 
-本節數字逐項核對既有研究 JSON，未重跑模型或重新標註。Intensity strict concordance 以特徵可區分的人工明確配對為分母，coverage 表示明確配對中可區分的比例；人工平手不納入該分母。Segment peak-pair 比較的 45 組明確配對皆可由各候選區分。來源 commit、JSON hashes 與重現限制見[音訊方法與證據對照](audio-highlight-evidence.md)。
+本節數字逐項核對既有研究 JSON，未重跑模型或重新標註。Intensity strict concordance 以特徵可區分的人工明確配對為分母，coverage 表示明確配對中可區分的比例；人工平手不納入該分母。Segment peak-pair 比較的 45 組明確配對皆可由各候選區分。來源 commit、JSON hashes 與重現限制見[音訊方法與證據對照](../experiments/audio_highlight/README.md)。
 
 ## 端到端結果
 
@@ -1569,7 +1569,7 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 
 ## 音訊實驗來源與待補資料
 
-模型、資料角色、指標來源、JSON hashes、實作對照與重現限制見[音訊方法與證據對照](audio-highlight-evidence.md)。待補內容包含 `match_001` 至 `match_004` 的真實賽事來源、完整 cheer／no-cheer 標註規範、多標註者一致性，以及 labels／features／結果的可重現封存。這些缺口不由比賽資料夾名稱或模型輸出推導。
+模型、資料角色、指標來源、JSON hashes、實作對照與重現限制見[音訊方法與證據對照](../experiments/audio_highlight/README.md)。待補內容包含 `match_001` 至 `match_004` 的真實賽事來源、完整 cheer／no-cheer 標註規範、多標註者一致性，以及 labels／features／結果的可重現封存。這些缺口不由比賽資料夾名稱或模型輸出推導。
 # 參考文獻
 
 [1] "TrackNetV3: Enhancing ShuttleCock Tracking with Augmentations and Trajectory Rectification." Proceedings of the 5th ACM International Conference on Multimedia in Asia (MMAsia '23), 2023. https://doi.org/10.1145/3595916.3626370

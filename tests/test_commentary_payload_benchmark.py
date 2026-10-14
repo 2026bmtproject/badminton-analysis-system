@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from benchmarks.commentary_payloads import (baseline_payload, candidate_payload, coverage,
+from experiments.commentary.commentary_payloads import (baseline_payload, candidate_payload, coverage,
     verify_context, measure_rally, wire_bytes, run, REMOVED_POSE, REMOVED_SHUTTLE)
 from modules.commentary.analysis import observation_analyzer
 from modules.commentary.analysis.rally_analyzer import analyze_rally

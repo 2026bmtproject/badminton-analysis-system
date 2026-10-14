@@ -4,9 +4,13 @@ import argparse
 import copy
 import hashlib
 import json
+import sys
 from pathlib import Path
 
-from benchmarks.commentary_inputs import BatchReads, digest, selection, source_snapshot, provenance
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO))
+
+from experiments.commentary.commentary_inputs import BatchReads, digest, selection, source_snapshot, provenance
 from modules.commentary.adapters.upstream import read_commentary_inputs, build_rally_fact_from_stages
 from modules.commentary.analysis.rally_analyzer import analyze_rally
 from modules.commentary.analysis.observation_grounding import CAPABILITIES

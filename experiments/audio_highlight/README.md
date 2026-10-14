@@ -1,12 +1,12 @@
 # 音訊方法與實驗證據對照
 
-本文件提供 [正式報告](report.md) 音訊方法、實驗數字與限制的來源，記錄 2026-10-14 唯讀核對的程式版本與研究結果 snapshot。正式報告的方法描述以 production 程式為準，實驗指標以對應研究 JSON 為準。
+本文件提供 [正式報告](../../docs/report.md) 音訊方法、實驗數字與限制的來源，記錄 2026-10-14 唯讀核對的程式版本與研究結果 snapshot。正式報告的方法描述以 production 程式為準，實驗指標以對應研究 JSON 為準。
 
 ## 核對基準
 
 - Production 程式基準：`0e6578a70b831a64dd9887e389031f9136a4531f`。
 - Research 程式／凍結文件：[badminton-audio-highlight](https://github.com/2026bmtproject/badminton-audio-highlight) commit `f72eb4c36d2f47a2c187122ebdfe26cfbb63eed2`；唯讀核對時 tracked working tree 乾淨。
-- 凍結分類器：`yamnet_mean_lr_v1`，模型 SHA-256 `c5257098315fe51db163039cca95917dd482d1612e1f08b95d301a0dbf8f79f8`。Production 的 [metadata](../models/yamnet_mean_lr_v1/metadata.json) 保存四份訓練 features 的 SHA-256、樣本數、設定與訓練套件版本。
+- 凍結分類器：`yamnet_mean_lr_v1`，模型 SHA-256 `c5257098315fe51db163039cca95917dd482d1612e1f08b95d301a0dbf8f79f8`。Production 的 [metadata](../../models/yamnet_mean_lr_v1/metadata.json) 保存四份訓練 features 的 SHA-256、樣本數、設定與訓練套件版本。
 - 研究 `artifacts/` 與 `local_data/` 目前未被 Git 追蹤。Research commit 固定的是程式與文件，**不是以下所有原始資料**；表中的內容雜湊用於辨識本次實際核對的本機 JSON snapshot。需要相同 labels／features／評估設定才能重現，不能聲稱只 clone repository 就能取得全部實驗資料。
 
 ## 數字來源
@@ -34,16 +34,16 @@ Sensitivity 表使用 `leave_one_out_summary.detection` 的 `median_max_abs_delt
 
 | 報告語意 | Production 來源 |
 |---|---|
-| 3 秒完整窗口、1 秒 hop、3 秒後置延伸、絕對時間 | [windows.py](../modules/audio_highlight/windows.py) |
-| 16 kHz mono 正規化 | [audio.py](../modules/audio_highlight/audio.py) |
-| 凍結 YAMNet 與 mean pooling | [yamnet.py](../modules/audio_highlight/yamnet.py) |
-| Scaler、LR、固定 0.5 gate | [detector.py](../modules/audio_highlight/detector.py)、[metadata](../models/yamnet_mean_lr_v1/metadata.json) |
-| log RMS、同場 average rank、null／single-positive 語意 | [intensity.py](../modules/audio_highlight/intensity.py) |
-| 全窗口 confidence p95、非空值 intensity p95 | [aggregation.py](../modules/audio_highlight/aggregation.py) |
-| 0.5／0.5 heuristic 與排序 tie-break | [policy.py](../modules/highlight_ranking/policy.py) |
-| Window center、缺 windows 相容 | [exporter.py](../modules/review_export/exporter.py) |
-| 三窗口顯示平滑、共同時間映射與 gap | [cheerCurve.ts](../ui/src/temporal/cheerCurve.ts) |
-| Commentary 選用 highlight 背景 | [upstream.py](../modules/commentary/adapters/upstream.py)、[planner.py](../modules/commentary/generation/planner.py) |
+| 3 秒完整窗口、1 秒 hop、3 秒後置延伸、絕對時間 | [windows.py](../../modules/audio_highlight/windows.py) |
+| 16 kHz mono 正規化 | [audio.py](../../modules/audio_highlight/audio.py) |
+| 凍結 YAMNet 與 mean pooling | [yamnet.py](../../modules/audio_highlight/yamnet.py) |
+| Scaler、LR、固定 0.5 gate | [detector.py](../../modules/audio_highlight/detector.py)、[metadata](../../models/yamnet_mean_lr_v1/metadata.json) |
+| log RMS、同場 average rank、null／single-positive 語意 | [intensity.py](../../modules/audio_highlight/intensity.py) |
+| 全窗口 confidence p95、非空值 intensity p95 | [aggregation.py](../../modules/audio_highlight/aggregation.py) |
+| 0.5／0.5 heuristic 與排序 tie-break | [policy.py](../../modules/highlight_ranking/policy.py) |
+| Window center、缺 windows 相容 | [exporter.py](../../modules/review_export/exporter.py) |
+| 三窗口顯示平滑、共同時間映射與 gap | [cheerCurve.ts](../../ui/src/temporal/cheerCurve.ts) |
+| Commentary 選用 highlight 背景 | [upstream.py](../../modules/commentary/adapters/upstream.py)、[planner.py](../../modules/commentary/generation/planner.py) |
 
 ## 重現與核對
 

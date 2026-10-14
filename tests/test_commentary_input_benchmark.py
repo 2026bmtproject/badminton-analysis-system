@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from benchmarks.commentary_inputs import BatchReads, benchmark, provenance, source_snapshot
+from experiments.commentary.commentary_inputs import BatchReads, benchmark, provenance, source_snapshot
 from modules.artifacts import write_artifact
 from modules.commentary.adapters import upstream, vision
 from modules.commentary.adapters.streaming_json import iter_records
