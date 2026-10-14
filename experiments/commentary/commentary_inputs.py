@@ -1,6 +1,6 @@
 """Offline experiment only: compare existing reads with batch-local reuse.
 
-Run with python -m benchmarks.commentary_inputs --match matches/TTYvsASY
+Run with python -m experiments.commentary.commentary_inputs --match matches/TTYvsASY
 --selection 1:a 92:b. The suffix is the explicitly confirmed TOP player.
 No provider is constructed; production adapters/builders remain unchanged.
 """
@@ -17,6 +17,9 @@ from contextlib import ExitStack
 from pathlib import Path
 from time import perf_counter
 from unittest.mock import patch
+
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO))
 
 from modules.commentary.adapters import upstream, vision
 from modules.commentary.analysis.rally_analyzer import analyze_rally
@@ -151,7 +154,7 @@ def provenance(match, selections, expected_sources):
     Content hashing runs outside timed strategies. Size/mtime still guards
     ordinary source changes during the run; SHA-256 identifies its dataset.
     """
-    root = Path(__file__).resolve().parents[1]
+    root = REPO
     sources = {}
     for stage, stamp in expected_sources.items():
         if stamp is None:
@@ -166,10 +169,13 @@ def provenance(match, selections, expected_sources):
         raise ValueError("source artifacts changed while recording provenance")
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
         check=True, capture_output=True, text=True).stdout.strip()
-    dirty = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", "modules", "benchmarks", "uv.lock"], cwd=root)
+    dirty = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", "modules", "experiments/commentary", "uv.lock"], cwd=root)
     if dirty.returncode not in (0, 1):
         raise RuntimeError("cannot determine benchmark source state")
-    return dict(program_commit=revision, analysis_sources_dirty=dirty.returncode == 1,
+    untracked = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--",
+        "modules", "experiments/commentary", "uv.lock"], cwd=root, check=True,
+        capture_output=True, text=True).stdout.strip()
+    return dict(program_commit=revision, analysis_sources_dirty=dirty.returncode == 1 or bool(untracked),
         python=sys.version.split()[0], platform=platform.platform(),
         lock_sha256=hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
         selections=[dict(segment_index=s, top_player=p) for s,p in selections],
@@ -221,7 +227,7 @@ def benchmark(match, selections, strategy):
 def compare(match, selections):
     results = []
     for strategy in ("baseline", "reuse"):
-        args = [sys.executable, "-B", "-m", "benchmarks.commentary_inputs", "--match", str(match),
+        args = [sys.executable, "-B", "-m", "experiments.commentary.commentary_inputs", "--match", str(match),
                 "--strategy", strategy, "--selection", *[f"{s}:{p}" for s, p in selections]]
         result = subprocess.run(args, check=True, stdout=subprocess.PIPE, text=True, encoding="utf-8")
         results.append(json.loads(result.stdout))

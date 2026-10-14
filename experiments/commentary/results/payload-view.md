@@ -5,7 +5,7 @@ fast-forwarded to main `df8ba6a` (PR #9); `git diff 98b7d73 -- modules/commentar
 was empty. Experiment A remains a benchmark-only prototype, not production code.
 
 ```powershell
-.\.venv\Scripts\python.exe -B -m benchmarks.commentary_payloads `
+.\.venv\Scripts\python.exe -B -m experiments.commentary.commentary_payloads `
     --match matches/TTYvsASY --selection 1:a 92:b
 ```
 
@@ -152,7 +152,9 @@ are private local inputs, not repository fixtures; a fresh checkout can run the
 synthetic tests, but reproducing real results requires the same artifact bytes.
 Different artifacts or hardware require a new run; timings are not test thresholds.
 
-Reproduce from the program commit in a prepared Python checkout:
+Reproduce this historical run from its program commit in a prepared Python checkout.
+That commit still uses the original `benchmarks.*` module paths below; the
+current entry points are listed in [the experiment README](../README.md).
 
 ```powershell
 git switch --detach ceb6eaf3b0ebc7d6e2386e91c9343c6695c6ef7d
@@ -170,7 +172,7 @@ method, manifest and concise result summary are published. Size/mtime checks
 protect ordinary input changes during the run; they do not guarantee detection
 of adversarial timestamp-preserving rewrites.
 
-The shared source manifest is recorded in [Experiment A](commentary-performance-experiment.md#versioned-rerun-2026-10-14); both runs have exactly the same data version.
+The shared source manifest is recorded in [Experiment A](input-performance.md#versioned-rerun-2026-10-14); both runs have exactly the same data version.
 
 | Segment | Baseline bytes | Candidate bytes | Reduction % | Missing eligible fields |
 |---|---:|---:|---:|---:|
