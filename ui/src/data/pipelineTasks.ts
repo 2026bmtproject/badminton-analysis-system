@@ -141,7 +141,17 @@ async function request<T>(path: string, body?: object): Promise<T> {
 }
 
 export async function listPipelineMatches() {
-  return (await request<{ matches: LocalAnalysisMatch[] }>("matches")).matches;
+  // A service started before freshness metadata was added can remain connected
+  // after the desktop UI is rebuilt. Its completed stages have unknown freshness.
+  type Freshness = "staleStages" | "unknownStages" | "resultsUpdatedAt";
+  type MatchResponse = Omit<LocalAnalysisMatch, Freshness> & Partial<Pick<LocalAnalysisMatch, Freshness>>;
+  const { matches } = await request<{ matches: MatchResponse[] }>("matches");
+  return matches.map(match => ({
+    ...match,
+    staleStages: match.staleStages ?? {},
+    unknownStages: match.unknownStages ?? match.completedStages,
+    resultsUpdatedAt: match.resultsUpdatedAt ?? null,
+  }));
 }
 export async function listPipelineTasks() {
   return (await request<{ tasks: PipelineTask[] }>("tasks")).tasks;

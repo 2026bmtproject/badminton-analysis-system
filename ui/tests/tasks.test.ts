@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  cancelPipelineTask, formatDuration, formatLogLine, formatTaskTime, ranStages, ranStagesSummary, retryTask, stageElapsed, taskProgress, taskStatusLabel, type PipelineTask,
+  cancelPipelineTask, formatDuration, formatLogLine, formatTaskTime, listPipelineMatches, ranStages, ranStagesSummary, retryTask, stageElapsed, taskProgress, taskStatusLabel, type PipelineTask,
 } from "../src/data/pipelineTasks";
 import { sameReview, type MatchModel, type RallyModel } from "../src/domain/models";
 
@@ -14,6 +14,24 @@ function task(stageStates: PipelineTask["stageStates"], currentStage: string | n
   };
 }
 const stage = (status: string, progress: number | null = null) => ({ status, progress, reason: "" });
+
+test("older match responses keep the library usable without claiming freshness was checked", async () => {
+  const original = globalThis.fetch;
+  const legacy = { id: "Kunlavut", completedStages: ["match_segmentation"],
+    analysisStatus: "partial", hasSegments: true, latestTask: null };
+  const current = { ...legacy, id: "Current", staleStages: { pose: ["court_detection"] },
+    unknownStages: [], resultsUpdatedAt: "2026-10-10T03:00:00Z" };
+  globalThis.fetch = (async () => new Response(JSON.stringify({ matches: [legacy, current] }))) as typeof fetch;
+  try {
+    const [oldMatch, newMatch] = await listPipelineMatches();
+    assert.deepEqual(oldMatch.staleStages, {});
+    assert.deepEqual(oldMatch.unknownStages, ["match_segmentation"]);
+    assert.equal(oldMatch.resultsUpdatedAt, null);
+    assert.deepEqual(newMatch.staleStages, current.staleStages);
+    assert.deepEqual(newMatch.unknownStages, []);
+    assert.equal(newMatch.resultsUpdatedAt, current.resultsUpdatedAt);
+  } finally { globalThis.fetch = original; }
+});
 
 test("task progress counts only the stages the task runs, not reused ones", () => {
   const value = task({
