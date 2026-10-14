@@ -53,6 +53,15 @@
     - [球種分類](#球種分類)
       - [概述](#概述-6)
       - [分類流程](#分類流程)
+  - [音訊與精彩度分析](#音訊與精彩度分析)
+    - [音訊支線概述](#音訊支線概述)
+    - [音訊切窗與前處理](#音訊切窗與前處理)
+    - [YAMNet 特徵擷取與歡呼分類](#yamnet-特徵擷取與歡呼分類)
+    - [歡呼強度估計](#歡呼強度估計)
+    - [Segment 層級聚合](#segment-層級聚合)
+    - [精彩片段排序](#精彩片段排序)
+    - [與其他模組的整合](#與其他模組的整合)
+    - [歡呼時間曲線與資料語意](#歡呼時間曲線與資料語意)
   - [使用者介面](#使用者介面)
 - [四、實驗結果](#四實驗結果)
   - [資料集與重現方式](#資料集與重現方式)
@@ -73,6 +82,11 @@
       - [分類準確率](#分類準確率)
       - [上游影響](#上游影響)
       - [失敗案例與限制](#失敗案例與限制-3)
+    - [歡呼偵測與精彩度分析](#歡呼偵測與精彩度分析)
+      - [歡呼偵測資料集與評估方式](#歡呼偵測資料集與評估方式)
+      - [跨比賽歡呼偵測結果](#跨比賽歡呼偵測結果)
+      - [歡呼強度方法選擇](#歡呼強度方法選擇)
+      - [Segment 聚合方法選擇](#segment-聚合方法選擇)
   - [端到端結果](#端到端結果)
     - [處理時間](#處理時間)
     - [時間分布](#時間分布)
@@ -80,8 +94,10 @@
     - [應用於延遲直播的可能性](#應用於延遲直播的可能性)
 - [五、討論](#五討論)
   - [系統優點與限制](#系統優點與限制)
+    - [音訊支線的限制](#音訊支線的限制)
   - [整個專題哪裡用了AI，怎麼用](#整個專題哪裡用了ai怎麼用)
 - [附錄](#附錄)
+  - [音訊實驗來源與待補資料](#音訊實驗來源與待補資料)
 - [參考文獻](#參考文獻)
 
 # 一、簡介
@@ -138,7 +154,7 @@
 - 擊球時刻偵測(重要)：軌跡訊號法（Y 峰值／X 極值，對 smash 敏感度較低）、姿態方向轉折、擊球者切換 ＋ 角度變化等多種定位思路。
 - 球種分類：手工特徵 ＋ 傳統 ML（邏輯迴歸，8 類）與原始影片時空模型（SlowFast ＋ TimeSformer）等，與本系統採用的骨架序列 Transformer（BST）分屬不同輸入型態。
 - 計分板讀分：既有工作多由勝負判定間接推分，鮮少直接辨識計分板；本系統以 VLM 直接讀分。
-- 音訊事件：Bosi 以 LPC 殘差峰值抓擊球／落地聲，並揭示有觀眾場背景噪音嚴重傷害 recall——供音訊支線參考，若非本報告範圍可略。
+- 音訊事件：既有羽球工作包含以聲學訊號定位擊球／落地事件 [8]；本系統音訊支線則辨識觀眾歡呼，提供視覺事實之外的排序訊號。YAMNet [10] 使用 AudioSet [11] 預訓練表示，本系統固定其權重、平均池化 embeddings，再訓練下游二元分類器。擊球聲與觀眾反應是不同任務，前者的結果不直接視為本系統歡呼偵測的證據。
 
 ## 研究缺口與本系統定位
 
@@ -150,7 +166,7 @@
 # 三、系統設計
 ## 系統架構
 
-本系統是一條離線批次處理的管線。輸入是一支未經剪輯的賽事轉播影片，輸出是逐拍的結構化資料：每個回合的時間範圍與比分、球場座標基準、球員骨架、羽球軌跡，以及每一次擊球的影格與球種。目前實作七個階段，由管線執行器依相依關係排序後依序執行。
+本系統是一條離線批次處理的管線。輸入是一支未經剪輯的賽事轉播影片，輸出是逐拍的結構化資料：每個回合的時間範圍與比分、球場座標基準、球員骨架、羽球軌跡，以及每一次擊球的影格與球種。目前 registry 註冊十一個階段，包含原有七個視覺階段、音訊歡呼量測、精彩片段排序、球員身分對應與賽評生成；執行器依使用者選取範圍與相依關係規劃順序。音訊支線由分段結果界定範圍，其結果不影響視覺模型的競賽事實；賽評生成需使用者明確選取。
 
 **資料流總圖：**
 
@@ -165,6 +181,10 @@ flowchart TB
     POSE["球員骨架追蹤"]:::stage
     EV["擊球時刻偵測"]:::stage
     STK["球種分類"]:::stage
+    AUDIO["歡呼音訊量測"]:::stage
+    HL["精彩片段排序"]:::stage
+    ID["球員身分對應"]:::stage
+    COM["賽評生成（明確選取）"]:::stage
 
     SEGJ[/"segments.json<br/>回合片段"/]:::data
     SCJ[/"scores.json<br/>比分"/]:::data
@@ -173,6 +193,10 @@ flowchart TB
     PJ[/"pose.json<br/>球員骨架"/]:::data
     EJ[/"events.json<br/>擊球影格"/]:::data
     STJ[/"strokes.json<br/>球種與擊球者"/]:::data
+    AJ[/"audio_signals.json<br/>窗口與 segment 音訊量測"/]:::data
+    HJ[/"highlights.json<br/>排序分數"/]:::data
+    IJ[/"identity.json<br/>身分對應"/]:::data
+    COJ[/"commentary.json<br/>賽評"/]:::data
 
     IN --> SEG --> SEGJ
     SEGJ --> SCORE --> SCJ
@@ -189,13 +213,26 @@ flowchart TB
     PJ --> STK
     CJ --> STK
     SHJ --> STK --> STJ
+    SEGJ --> AUDIO --> AJ --> HL --> HJ
+    STJ --> ID
+    SCJ --> ID --> IJ
+    PJ -. 選用 .-> ID
+    SEGJ --> COM
+    EJ --> COM
+    STJ --> COM
+    SCJ --> COM
+    IJ --> COM --> COJ
+    HJ -. 選用背景 .-> COM
+    PJ -. 選用 .-> COM
+    CJ -. 選用 .-> COM
+    SHJ -. 選用 .-> COM
 
     classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
     classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
     classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
 ```
 
-除分段階段外，其餘階段都以 `segments.json` 界定分析範圍，再各自從原始影片讀取需要的影格，因此不需要事先把影片剪成一個個小檔案。
+分段結果界定後續分析範圍。視覺階段從原始影片讀取影格，音訊階段讀取對應波形，身分對應與賽評則整合結構化 artifact；不需要事先把影片剪成一個個小檔案。
 
 **模組相依與輸入輸出：**
 
@@ -208,13 +245,17 @@ flowchart TB
 | 球員骨架追蹤       | 分段、場地偵測                         | `pose.json`     | 一幀中兩名球員的 17 個關節點與人體框                                     |
 | 擊球時刻偵測       | 球體追蹤、骨架追蹤（比分為選用）       | `events.json`   | 一次擊球的影格編號                                                       |
 | 球種分類           | 擊球偵測、骨架追蹤、球體追蹤、場地偵測 | `strokes.json`  | 一次擊球的球種（8 類）、擊球者與信心                                     |
+| 音訊歡呼量測       | 分段                                   | `audio_signals.json` | segment 聚合訊號，以及供時間曲線使用的窗口分類分數 |
+| 精彩片段排序       | 音訊歡呼量測                           | `highlights.json` | 每個 segment 的啟發式排序分數 |
+| 球員身分對應       | 球種分類、計分板（骨架為選用）         | `identity.json` | 跨片段球員身分 epoch 與來源 |
+| 賽評生成           | 分段、擊球偵測、球種分類、計分板、身分對應 | `commentary.json` | 片段與逐拍賽評；精彩度、骨架、場地及羽球軌跡為選用 |
 
 比分對擊球偵測是「有就用、沒有也能跑」的選用相依：它只支撐一條精修規則，不應讓使用者為了偵測擊球而必須先準備 API 金鑰。
 
 **設計約定：** 管線由三個約定串起來，讓各階段能各自開發、單獨執行與重跑。
 
 1. **單一產物、統一格式。** 每個階段只寫一個 JSON 產物，外層固定是一個物件、內含一組記錄陣列，記錄欄位由程式中的資料類別統一定義。因為形狀一致，讀寫共用同一組函式，新增階段只需定義資料類別，不必自己寫檔案 I/O；下游也只依賴這份契約，不必匯入上游的實作。
-2. **以絕對影格編號對齊。** 所有階段的記錄都以原始影片的絕對影格編號標定時間，而不是片段內的相對編號。任兩個階段的產物因此可以直接對齊，不需要換算，也不必回頭查 `segments.json`。
+2. **以完整比賽時間對齊。** 視覺事件使用原始影片的絕對影格編號，音訊窗口保留完整比賽的絕對起訖秒數。跨模態資料藉原始幀率與 segment 索引對齊；聚合訊號依 `segments.json` 對應其片段範圍。
 3. **產物與快取分離。** 每場比賽一個資料夾，分成三區：`input/` 放原始影片，`stages/` 放各階段產物與紀錄執行狀態的 `status.json`，`cache/` 放昂貴但可重建的中間結果（降解析度影片、TrackNet 熱圖、人體偵測結果、逐幀球種機率）。快取以內容命名並以片段為單位存放，因此中斷可續跑，重新分段時也只有內容真正改變的片段需要重算。
 
 **執行與重跑：** 執行器依相依關係排序後逐一執行各階段，已完成的階段預設跳過。跳過與否不只看「是否跑過」，還會比對上游產物的內容雜湊：上游重跑後結果改變的階段會被標記為過期並重做。任一階段失敗即停止整條管線，後續階段不會拿到半成品。
@@ -1002,11 +1043,140 @@ flowchart TD
   <figcaption>BST 的 25 類預測：類別名稱同時給出擊球者與基礎球種，取最高機率的一類後再改名為報告用的 8 類；第二名的放小球同樣會改名為小球，但機率不會與第一名相加</figcaption>
 </figure>
 
+## 音訊與精彩度分析
+
+### 音訊支線概述
+
+音訊分析流程由歡呼偵測、相對強度估計、segment 層級聚合與精彩片段排序四部分組成。系統依每個 segment 的絕對時間範圍建立音訊窗口，以 YAMNet 與邏輯迴歸估計歡呼分類分數，再以 RMS 建立單場相對強度，最後聚合為每個 segment 一筆音訊訊號並計算排序分數。
+
+音訊是視覺分析的補充來源，不取代擊球時刻、球種、比分或球員身分等競賽事實。即使缺少音訊訊號，其餘分析模組仍可依各自的結構化輸入運作。
+
+```mermaid
+flowchart LR
+    A[賽事音訊] --> B[歡呼偵測]
+    B --> C[單場相對強度]
+    B --> D[Segment 聚合]
+    C --> D
+    D --> E[精彩片段排序]
+```
+
+### 音訊切窗與前處理
+
+系統先將音訊統一轉為 16 kHz 單聲道。對 segment \(s\)，分析起點等於 segment 起點，終點則在 segment 終點後增加 3 秒後置延伸，並以媒體實際長度為上限：
+
+\[
+A_s^{start}=S_s^{start},\qquad
+A_s^{end}=\min(S_s^{end}+3,\;T_{media}).
+\]
+
+分析範圍以 3 秒 window（分析窗口）切分，相鄰窗口的 hop 為 1 秒。只有完整落在分析範圍內的窗口會被保留，尾端不足 3 秒的窗口直接捨棄；若某 segment 沒有完整窗口，聚合會明確報錯，不產生無依據的分數。後置延伸不會改寫原始 segment 邊界；相鄰 segments 各自建立分析範圍，因此音訊窗口可能重疊。
+
+```text
+Segment:       |-------------------------|
+Audio span:    |-----------------------------|
+Windows:       |---3s---|
+                   |---3s---|
+                       |---3s---| ...
+Hop:               1s
+```
+
+### YAMNet 特徵擷取與歡呼分類
+
+每個 3 秒窗口先輸入凍結的 YAMNet [10]。YAMNet 使用 AudioSet 音訊事件資料預訓練 [11]；本系統不微調其權重，也不直接使用其原生 Cheering 類別分數作為正式歡呼分類結果。YAMNet 產生多個 patch embeddings，系統沿 patch 維度進行平均池化，得到 1024 維固定長度向量：
+
+\[
+\mathbf{e}_i=\frac{1}{K_i}\sum_{k=1}^{K_i}\mathbf{z}_{i,k},
+\qquad \mathbf{e}_i\in\mathbb{R}^{1024},
+\]
+
+其中 \(\mathbf{z}_{i,k}\) 為第 \(i\) 個窗口的第 \(k\) 個 YAMNet patch embedding，\(K_i\) 為 patch 數量。平均向量依序通過 StandardScaler 與邏輯迴歸，得到歡呼類別的 sigmoid 輸出 `cheer_probability`，並以固定門檻 0.5 產生 `predicted_cheer`：
+
+```text
+3 秒波形
+→ YAMNet patch embeddings
+→ mean pooling
+→ 1024 維 embedding
+→ StandardScaler
+→ Logistic Regression
+→ cheer_probability
+→ threshold 0.5
+```
+
+研究中雖計算 Brier score、Log Loss 與 ECE 等校準診斷，但沒有進行 calibration fitting、重新校準或門檻調整。因此，`cheer_probability` 是分類器分數，不應解讀為已校準的事件機率，也不代表回合精彩程度的機率。
+
+### 歡呼強度估計
+
+歡呼分類回答窗口是否具有歡呼類別證據；強度則描述通過分類門檻的聲音在同一場比賽中的相對響度。對窗口波形 \(x_1,\ldots,x_N\)，RMS 與穩定化後的 log RMS 定義為：
+
+\[
+RMS_i=\sqrt{\frac{1}{N}\sum_{n=1}^{N}x_n^2},
+\]
+
+\[
+L_i=20\log_{10}(RMS_i+10^{-12}).
+\]
+
+系統將全場所有 segments 所產生的 detector-positive 窗口記錄的 \(L_i\) 由小到大排序，以 average rank 映射至 \([0,1]\)，形成窗口層級的 `cheer_intensity`。令正例記錄數為 M，平均 rank 採零起算，再除以 M−1；相同 log RMS 使用平均 rank。因相鄰 segments 的窗口可能重疊，此分布是分析窗口記錄的分布，並非去重後的獨立聲音事件分布；若全場只有一個正例窗口，其強度定義為 0.5。Detector-negative 窗口的 `cheer_intensity` 為 `null`。
+
+`cheer_intensity` 是單場內的相對量，不是實體聲壓，也不能直接跨比賽比較。同一個實際音壓在兩場不同的比賽中，可能因各場分布不同而得到不同數值。
+
+### Segment 層級聚合
+
+令 \(W_s\) 為 segment \(s\) 的全部窗口，\(p_i\) 為窗口的 `cheer_probability`；令 \(W_s^+\) 為通過 0.5 門檻的窗口，\(r_i\) 為其 `cheer_intensity`。系統以 linear p95 聚合為三個輸出：
+
+\[
+C_s=Q_{0.95}^{linear}(\{p_i\mid i\in W_s\}),
+\]
+
+\[
+I_s=
+\begin{cases}
+Q_{0.95}^{linear}(\{r_i\mid i\in W_s^+\}), & |W_s^+|>0,\\
+\mathrm{null}, & |W_s^+|=0,
+\end{cases}
+\]
+
+\[
+N_s=|W_s^+|.
+\]
+
+`cheer_confidence`（\(C_s\)）聚合該 segment 的所有窗口機率，代表歡呼分類證據，不是已校準的 segment 機率。`cheer_intensity`（\(I_s\)）只聚合正例窗口的非空值強度；沒有正例時為 `null`。`n_cheer_windows`（\(N_s\)）是 detector-positive 窗口的支持數。由於 3 秒窗口以 1 秒 hop 重疊，該數量不等於彼此獨立的歡呼事件數。
+
+### 精彩片段排序
+
+令 \(C_s\) 為 segment 的 `cheer_confidence`，並將缺少的 `cheer_intensity` 視為零貢獻：
+
+\[
+I_s^{effective}=
+\begin{cases}
+I_s, & I_s\neq\mathrm{null},\\
+0, & I_s=\mathrm{null}.
+\end{cases}
+\]
+
+精彩片段分數定義為：
+
+\[
+H_s=0.5C_s+0.5I_s^{effective}.
+\]
+
+`HighlightScore` 是透明的啟發式排序分數，不是已校準的精彩程度機率，也不是以人工 highlight ground truth 訓練出的最佳公式。固定的 0.5/0.5 權重僅表示目前系統等量結合分類證據與相對強度。
+
+### 與其他模組的整合
+
+精彩片段分數可作為 Commentary 的選用背景訊號，也供現有回看 UI 進行片段排序與重要性呈現。它不建立或覆寫球員身分、擊球時刻、球種、比分與勝負等 canonical facts；下游若缺少 highlight 訊號，仍可使用其他結構化資料完成分析。
+
+### 歡呼時間曲線與資料語意
+
+`audio_signals.json` 的 `signals` 保存 segment 層級量測，`windows` 則保存各窗口的 `start_sec`、`end_sec` 與 `cheer_probability`。Python review exporter 以窗口中心 `(start_sec + end_sec) / 2` 作為曲線的完整比賽絕對時間。現有 UI 對同 segment 的連續窗口使用鄰近三個窗口的移動平均作顯示平滑；此步驟只影響繪圖，不回寫模型輸出、不重新正規化 segment，也不改變 p95 或 highlight 排序。曲線與影片共用時間軸映射，segment 邊界與資料缺口分開處理；舊 artifact 沒有 `windows` 時維持無曲線，不用 segment p95 延展出假曲線。
+
+窗口分類分數、segment `cheer_confidence` 與 `HighlightScore` 分別服務於時間分布呈現、音訊聚合量測與片段排序，curve peak 與 p95 不必相等。精確實作與實驗來源整理於[音訊方法與證據對照](audio-highlight-evidence.md)。
+
 ## 使用者介面
 
 # 四、實驗結果
 ## 資料集與重現方式
-本章各模組共用同一套影片庫。資料集由 16 支 YouTube 羽球單打完整轉播構成，涵蓋 2018 至 2023 年的國際賽事。影片皆為 1920 × 1080，幀率為 25 或 30 fps，編碼格式包含 H.264、AV1 與 VP9。全部影片合計 1,704,001 個影格、約 18.09 小時。為避免同一場比賽的資料同時出現在開發與評估中，資料以影片為單位切分為 7 場開發集與 9 場測試集；開發集用於設計與調整規則，測試集不參與開發，僅在完成後用於報告測試結果。由於其中 15 支影片來自 BWF 官方製作，跨轉播單位的泛化能力仍待後續驗證。
+本章視覺模組的實驗共用下述影片庫；音訊模型另使用四場開發比賽與一場偵測器外部驗證，資料角色與結果另列於「歡呼偵測與精彩度分析」，不假設兩套 match ID 或分割相同。資料集由 16 支 YouTube 羽球單打完整轉播構成，涵蓋 2018 至 2023 年的國際賽事。影片皆為 1920 × 1080，幀率為 25 或 30 fps，編碼格式包含 H.264、AV1 與 VP9。全部影片合計 1,704,001 個影格、約 18.09 小時。為避免同一場比賽的資料同時出現在開發與評估中，資料以影片為單位切分為 7 場開發集與 9 場測試集；開發集用於設計與調整規則，測試集不參與開發，僅在完成後用於報告測試結果。由於其中 15 支影片來自 BWF 官方製作，跨轉播單位的泛化能力仍待後續驗證。
 
 | 資料分割 | 影片數 |    影格數 |
 | -------- | -----: | --------: |
@@ -1023,7 +1193,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 驗證程式依序檢查檔案雜湊、影格數／幀率／長度，以及固定影格的畫面指紋。即使檔案經重新壓縮，只要影格序列相同仍可通過指紋檢查。
 
-影片對照資料及實驗程式均置於 `experiments/`，因此本章後續數字可由相同影片與版本化程式重新取得。
+上述視覺實驗的影片對照資料及程式置於 `experiments/`。音訊研究的程式與凍結文件另在 `badminton-audio-highlight`，其本機 labels、features 與結果 JSON 尚未隨 Git 發布，重現限制另行說明。
 ## 各模組結果
    （這裡放一張「全系統摘要表」，一列一模組、只放頭條指標）
 ### 賽事影片分段
@@ -1249,7 +1419,92 @@ BST 看過與沒看過的兩組只相差約 1 個百分點，可見在 BST 看�
 
 BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球與平快球互判（49 + 26 拍），其次是小球與勾球（19 + 10 拍）和殺球與切球（14 + 10 拍）。
 
+### 歡呼偵測與精彩度分析
+
+#### 歡呼偵測資料集與評估方式
+
+歡呼偵測任務以 3 秒窗口為單位，資料來自四場開發比賽。每場以固定 seed 42 的 segment-diverse deterministic sampling 選取 100 個窗口，再由人工進行 blind labeling。標註允許 ambiguous；二元分類資料會排除 ambiguous，本次四場凍結資料沒有 ambiguous 樣本。
+
+| 資料集 | Cheer | No cheer | 合計 |
+|---|---:|---:|---:|
+| `match_001` | 33 | 67 | 100 |
+| `match_002` | 31 | 69 | 100 |
+| `match_003` | 55 | 45 | 100 |
+| `match_004` | 31 | 69 | 100 |
+| **合計** | **150** | **250** | **400** |
+
+評估採 Leave-One-Match-Out（LOMO）：每一 fold 以三場共 300 個窗口訓練，剩餘一場的 100 個窗口作為測試資料。StandardScaler 只在該 fold 的訓練資料上 fitting，再套用到 held-out match。相較隨機拆分窗口，此方法以 match ID 隔離訓練與測試資料，避免同場相鄰窗口分散到兩邊；目前缺少完整賽事來源對照，尚不能據此宣稱跨轉播商的獨立性，但四場比賽仍不足以證明模型可普遍泛化。
+
+#### 跨比賽歡呼偵測結果
+
+| Held-out match | Accuracy | Precision | Recall | F1 | ROC-AUC | AP | `[[TN,FP],[FN,TP]]` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `match_001` | 0.940 | 0.966 | 0.848 | 0.903 | 0.990 | 0.983 | `[[66,1],[5,28]]` |
+| `match_002` | 0.870 | 1.000 | 0.581 | 0.735 | 0.934 | 0.904 | `[[69,0],[13,18]]` |
+| `match_003` | 0.870 | 0.850 | 0.927 | 0.887 | 0.958 | 0.968 | `[[36,9],[4,51]]` |
+| `match_004` | 0.850 | 0.711 | 0.871 | 0.783 | 0.947 | 0.907 | `[[58,11],[4,27]]` |
+| **Macro mean** | **0.883** | **0.882** | **0.807** | **0.827** | **0.957** | **0.940** | — |
+
+四場 LOMO 的 macro Accuracy 為 0.883、macro F1 為 0.827、macro ROC-AUC 為 0.957。0.957 是 ROC-AUC，不是 95.7% accuracy。各場 Brier score、Log Loss 與 ECE 顯示 score calibration behavior 存在差異；本研究沒有進行 recalibration，門檻仍固定為 0.5，因此分類器輸出不視為已校準機率。
+
+校準診斷採 10 個等寬 bins，每場 100 個窗口；結果只用於檢查分數分布，沒有重新擬合校準器。
+
+| 資料 | Brier score | Log Loss | ECE |
+| --- | --- | --- | --- |
+| `match_001` | 0.038 | 0.125 | 0.037 |
+| `match_002` | 0.112 | 0.480 | 0.131 |
+| `match_003` | 0.101 | 0.340 | 0.096 |
+| `match_004` | 0.121 | 0.528 | 0.132 |
+
+另以未參與上述四場訓練的 `match_005` 進行偵測器外部驗證。100 個窗口包含 34 個正例與 66 個負例，Accuracy 為 0.840，Precision、Recall 與 F1 均為 0.765，ROC-AUC 為 0.930，Average Precision（AP）為 0.862。`match_005` 只對偵測器是 untouched external validation；它後續又參與強度與 segment 聚合方法的開發，因此不能用來證明後兩者的 external generalization。
+
+為比較特徵路線，研究亦評估 RMS、YAMNet 原生 `Cheering` 分數、YAMNet crowd-combination 分數與 YAMNet embedding + Logistic Regression：
+
+| 方法 | LOMO ROC-AUC | LOMO AP |
+|---|---:|---:|
+| RMS | 0.920 | 0.876 |
+| YAMNet `Cheering` score | 0.839 | 0.750 |
+| YAMNet crowd-combination | 0.857 | 0.757 |
+| **YAMNet embedding + Logistic Regression** | **0.957** | **0.940** |
+
+此比較支持 production 採用 embedding + Logistic Regression，而非直接使用 YAMNet 原生類別分數。這些數字是描述性比較，未執行 threshold tuning 或統計顯著性檢定。
+
+最終部署模型再用四場的全部 400 個窗口 fitting scaler 與分類器；此 final fit 不是新的測試結果。LOMO 的 scaler 則各自只用當 fold 的 300 個訓練窗口。模型權重與 feature dataset hashes 記錄於 `models/yamnet_mean_lr_v1/metadata.json`。
+
+#### 歡呼強度方法選擇
+
+強度實驗使用 `match_005` 中 34 個已確認的歡呼窗口。單一主要標註者在不查看候選特徵值的情況下完成 60 組配對比較，其中 39 組有明確較強者、21 組平手、0 組無法判斷。
+
+| 候選方法 | Strict concordance | Coverage | Tie-adjusted concordance |
+| --- | --- | --- | --- |
+| `log_rms_db` | 0.692 | 1.000 | 0.692 |
+| `cheer_probability` | 0.667 | 1.000 | 0.667 |
+| `temporal_occupancy` | 0.457 | 0.897 | 0.462 |
+| `relative_loudness_db` | 0.436 | 1.000 | 0.436 |
+
+`log_rms_db` 的描述性 concordance 最高且 coverage 完整，也能將分類器信心與聲學強度分開，因此選為凍結的 intensity feature。然而，它與 `cheer_probability` 的差距不大，實驗沒有顯著性檢定，而且同一窗口會出現在多組配對中，60 組觀察值並不獨立。因此，此結果不能解讀為 `log_rms_db` 在其他資料上必然優於分類器分數。
+
+#### Segment 聚合方法選擇
+
+Segment 聚合實驗使用 `match_005` 的 106 個 segments、1,142 個重疊窗口與 420 個 detector-positive 窗口。人工 segment detection 標註包含 75 個 cheer 與 31 個 no-cheer segments；尖峰強度實驗則由 60 組人工配對構成，其中 45 組有明確結果、15 組平手。
+
+| 方法 | Detection ROC-AUC | Detection AP | Peak-pair concordance | 移除單一窗口的最大分數差異 median / Q95（detection） |
+| --- | --- | --- | --- | --- |
+| mean | 0.624 | 0.749 | 0.600 | 0.066 / 0.144 |
+| max | 0.710 | 0.862 | 0.711 | 0.005 / 0.489 |
+| p95 linear | 0.718 | 0.863 | 0.711 | 0.021 / 0.391 |
+| top-2 mean | 0.719 | 0.867 | 0.733 | 0.026 / 0.430 |
+| top-3 mean | 0.717 | 0.862 | 0.733 | 0.134 / 0.333 |
+
+Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 top-3 則是 secondary diagnostics。雖然 top-2 與 top-3 的部分 point estimates 較高，但不能在看到結果後將 secondary diagnostics 改稱勝出方法；各候選也沒有統計上的 winner claim。
+
+最終選擇 linear p95 是工程折衷，而非實驗證明它是最佳聚合器。P95 保留對局部尖峰的敏感度，其人工 detection 與 peak-pair 表現和 max 接近；在移除單一窗口的診斷中，p95 的極端尾端敏感度又低於 max。因此，正式系統以 p95 同時聚合窗口機率與非空值強度。
+
+本節數字逐項核對既有研究 JSON，未重跑模型或重新標註。Intensity strict concordance 以特徵可區分的人工明確配對為分母，coverage 表示明確配對中可區分的比例；人工平手不納入該分母。Segment peak-pair 比較的 45 組明確配對皆可由各候選區分。來源 commit、JSON hashes 與重現限制見[音訊方法與證據對照](audio-highlight-evidence.md)。
+
 ## 端到端結果
+
+本節時間表沿用既有七個視覺階段的量測，未計入本次新增說明的音訊量測、精彩度排序、身分對應與賽評生成成本，不能用作完整十一階段流程的耗時。
 
 在 5 支影片中，回合總長 1.63 小時，整條管線從空快取開始執行共耗時 4.42 小時。主要計算只作用在回合片段，因此處理時間以回合總長衡量，E2E 時間為回合總長的 2.71 倍，扣除比分辨識等待 Gemini API 的時間後為 1.96 倍。
 
@@ -1296,9 +1551,25 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 ## 系統優點與限制
 依賴太多假設，有過擬合跡象，對某類影片精準度高，但是有系統完全失效的可能
 
+### 音訊支線的限制
+
+音訊支線的主要優點，是將「是否具有歡呼證據」與「同場比賽中的相對聲音強度」分開處理，並以透明公式聚合與排序。YAMNet 提供語意型音訊特徵，邏輯迴歸負責歡呼分類，RMS rank 與 p95 聚合則維持可解釋性。然而，目前偵測資料只有四場開發比賽與一場偵測器外部驗證，仍不足以涵蓋不同轉播商、場館、語言、觀眾規模與混音方式。
+
+`match_005` 雖可作為偵測器的外部驗證資料，之後已參與強度與 segment 聚合方法開發，因此後兩項結果仍屬 development evidence。強度與聚合的人工研究樣本有限，配對會重複使用同一窗口或 segment，觀察值並非彼此獨立；目前也沒有多標註者一致性資料。這些限制使結果適合用於第一版方法選擇，但不足以支持統計優越性或廣泛泛化的主張。
+
+音訊量測本身亦有語意限制。轉播混音、麥克風位置、場館聲學、觀眾規模、播報、音樂與掌聲都可能改變特徵分布。`cheer_intensity` 是單場 average-rank 尺度，不能跨比賽直接比較，也不是實體聲壓。`cheer_probability` 與聚合後的 `cheer_confidence` 也未經重新校準，不應視為事件或 segment 的 calibrated probability。
+
+最後，觀眾歡呼不等同回合的技術品質。歡呼可能同時受比分、球星、爭議或現場活動影響，因此 HighlightScore 只能作為補充排序訊號。現行 0.5 confidence + 0.5 intensity 權重沒有人工 ranking ground truth，也未被證明為最佳組合；未來仍需更多跨轉播資料、人工排序標註與權重消融實驗。
+
 ## 整個專題哪裡用了AI，怎麼用
 
+音訊支線使用凍結的 YAMNet 預訓練模型擷取表示，並以四場人工標註資料訓練邏輯迴歸分類器。RMS、average-rank 正規化、p95 聚合與固定 0.5／0.5 排序公式則是確定性的訊號處理與政策；它們不是另外訓練的精彩度模型。
+
 # 附錄
+
+## 音訊實驗來源與待補資料
+
+模型、資料角色、指標來源、JSON hashes、實作對照與重現限制見[音訊方法與證據對照](audio-highlight-evidence.md)。待補內容包含 `match_001` 至 `match_004` 的真實賽事來源、完整 cheer／no-cheer 標註規範、多標註者一致性，以及 labels／features／結果的可重現封存。這些缺口不由比賽資料夾名稱或模型輸出推導。
 # 參考文獻
 
 [1] "TrackNetV3: Enhancing ShuttleCock Tracking with Augmentations and Trajectory Rectification." Proceedings of the 5th ACM International Conference on Multimedia in Asia (MMAsia '23), 2023. https://doi.org/10.1145/3595916.3626370
@@ -1318,6 +1589,10 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 [8] Samuele Bosi, "Audio-Video techniques for the analysis of players behaviour in Badminton matches," M.Sc. Thesis, Politecnico di Milano, 2020–2021.
 
 [9] Wei-Yao Wang, Yung-Chang Huang, Tsi-Ui Ik, and Wen-Chih Peng, "ShuttleSet: A Human-Annotated Stroke-Level Singles Dataset for Badminton Tactical Analysis," arXiv:2306.04948, 2023. https://arxiv.org/abs/2306.04948
+
+[10] M. Plakal and D. P. W. Ellis, "YAMNet," TensorFlow Models, official model documentation. https://github.com/tensorflow/models/tree/master/research/audioset/yamnet （查閱：2026-10-14）。
+
+[11] J. F. Gemmeke et al., "Audio Set: An ontology and human-labeled dataset for audio events," Proc. IEEE ICASSP, 2017. https://research.google/pubs/audio-set-an-ontology-and-human-labeled-dataset-for-audio-events/
 
 <style>
   /* 超強黑魔法 */
