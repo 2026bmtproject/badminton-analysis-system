@@ -64,6 +64,13 @@
     - [精彩片段排序](#精彩片段排序)
       - [概述](#概述-8)
   - [使用者介面](#使用者介面)
+    - [概述](#概述-9)
+    - [回看工作區](#回看工作區)
+      - [播放器與疊圖](#播放器與疊圖)
+      - [回合分析欄](#回合分析欄)
+      - [時間軸](#時間軸)
+    - [分析任務與場地校正](#分析任務與場地校正)
+    - [實作概要](#實作概要)
 - [四、實驗結果](#四實驗結果)
   - [資料集與重現方式](#資料集與重現方式)
   - [各模組結果](#各模組結果)
@@ -583,7 +590,7 @@ flowchart LR
 
 <figure>
   <img src="./report_pic/score_recognition/transcription_pick.png">
-  <figcaption>轉錄取代挑選：VLM 完整抄寫每隊數字，程式取最右一個為當前比分</figcaption>
+  <figcaption>轉錄取代挑選，VLM 完整抄寫每隊數字，程式取最右一個為當前比分</figcaption>
 </figure>
  
 #### 還原被合併的回合
@@ -852,7 +859,7 @@ flowchart TD
 
 <figure>
   <img src="./report_pic/pose/top_down.png">
-  <figcaption>由上而下：先裁切放大再估骨架</figcaption>
+  <figcaption>由上而下，先裁切放大再估骨架</figcaption>
 </figure>
 
 #### 選人：腳點與球網分半
@@ -872,7 +879,7 @@ flowchart TD
 
 <figure>
   <img src="./report_pic/pose/static_anchors.png">
-  <figcaption>整場腳點落點：固定不動者被判為靜態錨點</figcaption>
+  <figcaption>整場腳點落點，固定不動者被判為靜態錨點</figcaption>
 </figure>
 
 **有記憶的連續追蹤：** 逐幀獨立選人仍會偶爾跳錯人，故改用帶短期記憶的追蹤器，有記憶時選離「上一幀所在位置」最近的人。記憶過舊即作廢，下一幀重新起始時無前一位置可依靠，便退回用公尺身高挑最高者。連續性成為依據，把漏偵時誤選裁判的風險壓到最低。
@@ -931,7 +938,7 @@ flowchart LR
 
 <figure>
   <img src="./report_pic/shuttle_tracking/inpaint_gaps.png">
-  <figcaption>補洞前後路徑差異：被遮擋的缺口補回，飛出畫面上緣的缺口留空</figcaption>
+  <figcaption>補洞前後路徑差異，被遮擋的缺口補回，飛出畫面上緣的缺口留空</figcaption>
 </figure>
 
 #### 多候選軌跡修補（Viterbi）
@@ -1015,7 +1022,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 <figure>
   <img src="./report_pic/event_detection/dense_evidence.png">
-  <figcaption>逐幀滑動窗口產生的球種、信心與擊球者證據：(a)–(c) 為三次擊球的窗口球路與擊球者骨架，圈記為擊球時刻；下方時間軸為同一段窗口，真實擊球附近會形成連續的同球種高信心區間</figcaption>
+  <figcaption>逐幀滑動窗口產生的球種、信心與擊球者證據。(a)–(c) 為三次擊球的窗口球路與擊球者骨架，圈記為擊球時刻；下方時間軸為同一段窗口，真實擊球附近會形成連續的同球種高信心區間</figcaption>
 </figure>
 
 #### 候選生成
@@ -1034,12 +1041,12 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 <figure>
   <img src="./report_pic/event_detection/candidate_signals.png">
-  <figcaption>四種互補的擊球候選訊號：(a) 弧線底部的凸起、(b) 擊球前後速度向量的轉角與速率比、(c) 擊球前後的速率變化、(d) 回合開頭的兩個發球錨點</figcaption>
+  <figcaption>四種互補的擊球候選訊號。(a) 弧線底部的凸起、(b) 擊球前後速度向量的轉角與速率比、(c) 擊球前後的速率變化、(d) 回合開頭的兩個發球錨點</figcaption>
 </figure>
 
 <figure>
   <img src="./report_pic/event_detection/candidate_pool.png">
-  <figcaption>各訊號在完整回合中的候選分布與合併結果：(b) 中沒有任何單一訊號涵蓋全部人工標記，合併後的候選則全部涵蓋，但也多出數個回合結束後的候選</figcaption>
+  <figcaption>各訊號在完整回合中的候選分布與合併結果。(b) 中沒有任何單一訊號涵蓋全部人工標記，合併後的候選則全部涵蓋，但也多出數個回合結束後的候選</figcaption>
 </figure>
 
 #### 候選篩選
@@ -1054,7 +1061,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 <figure>
   <img src="./report_pic/event_detection/candidate_gates.png">
-  <figcaption>三道候選篩選規則及其保留／刪除結果：(a) 為一個回合的全部候選，被刪掉的三個標上編號；(b) 為同一批候選分到兩個半場，孤立的候選在對面半場找不到人回擊；編號的理由列在圖下</figcaption>
+  <figcaption>三道候選篩選規則及其保留／刪除結果。(a) 為一個回合的全部候選，被刪掉的三個標上編號；(b) 為同一批候選分到兩個半場，孤立的候選在對面半場找不到人回擊；編號的理由列在圖下</figcaption>
 </figure>
 
 #### 結構性補漏
@@ -1071,12 +1078,12 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 <figure>
   <img src="./report_pic/event_detection/fill_sequence.png">
-  <figcaption>由擊球序列與連續球種證據反推漏拍位置：(a) 相鄰兩拍同側、(b) 高信心球種區間內沒有擊球；兩者都再由弱轉折定出補上的位置</figcaption>
+  <figcaption>由擊球序列與連續球種證據反推漏拍位置。(a) 相鄰兩拍同側、(b) 高信心球種區間內沒有擊球；兩者都再由弱轉折定出補上的位置</figcaption>
 </figure>
 
 <figure>
   <img src="./report_pic/event_detection/fill_trajectory.png">
-  <figcaption>由輔助軌跡與發球錨點救回主軌跡漏拍：(a) 只有輔助軌跡看到的點落在球種訊號起點上，(b) 近端發球以持續上升錨點與下方球員的發球證據補回</figcaption>
+  <figcaption>由輔助軌跡與發球錨點救回主軌跡漏拍。(a) 只有輔助軌跡看到的點落在球種訊號起點上，(b) 近端發球以持續上升錨點與下方球員的發球證據補回</figcaption>
 </figure>
 
 #### 誤判修剪
@@ -1091,12 +1098,12 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 <figure>
   <img src="./report_pic/event_detection/prune_rally_edges.png">
-  <figcaption>利用回合有效邊界清除開頭誤偵與尾段落地球：(a)(b) 為兩個完整回合，橘色區間是回合的有效範圍，灰色是範圍之外；被刪掉的擊球標上編號，理由列在圖下</figcaption>
+  <figcaption>利用回合有效邊界清除開頭誤偵與尾段落地球。(a)(b) 為兩個完整回合，橘色區間是回合的有效範圍，灰色是範圍之外；被刪掉的擊球標上編號，理由列在圖下</figcaption>
 </figure>
 
 <figure>
   <img src="./report_pic/event_detection/prune_scoreboard.png">
-  <figcaption>結合比分與發球證據判定計分板死時間：每個片段只看比分與有無發球證據兩件事，同一個休息比分的連續片段中，最後一個有發球證據的才是真回合；(a) 為開賽前的 0:0，(b) 為局中技術暫停</figcaption>
+  <figcaption>結合比分與發球證據判定計分板死時間。每個片段只看比分與有無發球證據兩件事，同一個休息比分的連續片段中，最後一個有發球證據的才是真回合；(a) 為開賽前的 0:0，(b) 為局中技術暫停</figcaption>
 </figure>
 
 ### 球種分類
@@ -1140,12 +1147,12 @@ flowchart TD
 
 <figure>
   <img src="./report_pic/stroke_classification/bst_window.png">
-  <figcaption>依相鄰擊球時刻建立 BST 的 100 幀輸入窗口：(a) 窗口從上一拍延伸到下一拍之後，相鄰窗口彼此重疊；(b)–(d) 為窗口內的球員骨架、場上位置與羽球軌跡</figcaption>
+  <figcaption>依相鄰擊球時刻建立 BST 的 100 幀輸入窗口。(a) 窗口從上一拍延伸到下一拍之後，相鄰窗口彼此重疊；(b)–(d) 為窗口內的球員骨架、場上位置與羽球軌跡</figcaption>
 </figure>
 
 <figure>
   <img src="./report_pic/stroke_classification/bst_output.png">
-  <figcaption>BST 的 25 類預測：類別名稱同時給出擊球者與基礎球種，取最高機率的一類後再改名為報告用的 8 類；第二名的放小球同樣會改名為小球，但機率不會與第一名相加</figcaption>
+  <figcaption>BST 的 25 類預測。類別名稱同時給出擊球者與基礎球種，取最高機率的一類後再改名為報告用的 8 類；第二名的放小球同樣會改名為小球，但機率不會與第一名相加</figcaption>
 </figure>
 
 ## 音訊與精彩度分析
@@ -1193,7 +1200,7 @@ A_s^{end}=\min(S_s^{end}+3,\;T_{media}).
 
 <figure>
   <img src="./report_pic/audio_highlight/audio_windows.png">
-  <figcaption>片段音訊的讀取範圍與切窗：(a) 回合進行中只有零星的擊球聲，歡呼在片段結束前後爆發，並延續到後置延伸內；(b) 每 1 秒取一個 3 秒窗口，最後一個超出讀取範圍而捨棄</figcaption>
+  <figcaption>片段音訊的讀取範圍與切窗。(a) 回合進行中只有零星的擊球聲，歡呼在片段結束前後爆發，並延續到後置延伸內；(b) 每 1 秒取一個 3 秒窗口，最後一個超出讀取範圍而捨棄</figcaption>
 </figure>
 
 #### 歡呼分類
@@ -1283,6 +1290,143 @@ flowchart LR
 
 ## 使用者介面
 
+### 概述
+
+**問題與目標：** 前述各模組的輸出是十多份 JSON 檔，記錄每個回合的起訖、比分、球員骨架、羽球軌跡等。這些資料必須對照影片才看得懂，直接閱讀數字既無法判斷分析是否正確。本系統的使用者介面讓使用者不必操作指令列，就能完成「匯入影片、執行分析、對照影片回看結果」的完整流程，並把逐拍資訊疊回轉播畫面，讓分析結果可以被直接檢視。
+
+**使用流程總覽：**
+
+```mermaid
+flowchart LR
+    LIB["比賽庫"]:::stage
+    SET["分析設定"]:::stage
+    TASK["任務進度"]:::stage
+    IMP["匯入既有結果"]:::stage
+    REV[["回看工作區"]]:::io
+
+    LIB --> SET --> TASK -->|完成後自動更新| REV
+    LIB -->|已有分析結果| IMP --> REV
+    LIB -->|已可回看| REV
+
+    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
+    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
+```
+
+比賽庫列出比賽資料夾中的每一場比賽及其分析狀態。尚未分析的比賽從「分析設定」選擇要執行的項目，分析在背景執行，完成後回看資料自動更新。已在其他環境完成分析的比賽，則可直接匯入既有結果，不需重新計算。
+
+<figure>
+  <img src="./report_pic/ui/match_library.png">
+  <figcaption>比賽庫，每場比賽標示分析狀態與是否可回看</figcaption>
+</figure>
+
+<figure>
+  <img src="./report_pic/ui/analysis_settings.png">
+  <figcaption>分析設定，每個分析項目標示已完成、未執行或已過期</figcaption>
+</figure>
+
+### 回看工作區
+
+回看工作區是介面的核心，由播放器、回合分析欄與時間軸三個區域組成。三者共用同一個影片時間，任一區域的操作都會同步反映到另外兩區。
+
+<figure>
+  <img src="./report_pic/ui/review_workspace.jpg">
+  <figcaption>回看工作區。① 播放器與疊圖 ② 回合分析欄 ③ 時間軸</figcaption>
+</figure>
+
+#### 播放器與疊圖
+
+播放器在轉播畫面上疊加各模組的分析結果，共 7 個圖層：球場線、骨架、選手標籤、羽球、球路拖尾、擊球閃圈與球種標籤。各圖層可以單獨開關，讓使用者直接用眼睛檢查各模組的結果，例如球場線是否貼合場地、骨架是否選對球員、軌跡是否跟著球走。圖層預設全部關閉，避免干擾一般觀看，需要時以 `O` 鍵開關整組疊圖、以 `1`–`7` 鍵切換個別圖層，也可以按 `V` 隱藏影片、只看疊圖。
+
+完整轉播中，回合只佔播出時間的約三成。「只播片段」模式（`S` 鍵）會自動跳過回合之間的重播、休息與觀眾畫面，只播放分段模組切出的比賽片段。
+
+<figure>
+  <img src="./report_pic/ui/overlay_layers.jpg">
+  <figcaption>疊圖開啟前後。(a) 原始轉播畫面 (b) 開啟全部圖層</figcaption>
+</figure>
+
+#### 回合分析欄
+
+分析欄顯示目前回合的逐拍資訊，分為「回合」與「擊球點」兩個分頁。
+
+- **擊球序列：** 依序列出每一拍的擊球者與球種，信心度低於 0.5 的球種以淡色加問號標示。點選任一拍，影片即跳到該拍的擊球時刻。
+- **精華標記：** 精彩度排名在全場前 10% 的回合，會在欄位頂端顯示排名徽章。
+- **單回合賽評：** 賽評不預先為整場比賽產生，而是由使用者在想看的回合按下「產生這回合的賽評」，每次約使用 3–4 次 Gemini 請求。產生後，回合摘要下方以「依據 #1、#2…」列出摘要所引用的擊球，點選即跳到該拍。逐拍賽評則附在擊球序列的每一拍下方，讓使用者能逐句對照影片確認賽評是否有所本。
+- **擊球點：** 以俯視球場標出本回合每一拍的擊球位置，依擊球順序連線，顏色區分兩名球員，可一眼看出回合中雙方的跑動與落點分布。
+
+<figure>
+  <img src="./report_pic/ui/inspector.png">
+  <figcaption>回合分析欄。(a) 擊球序列與精華排名 (b) 產生賽評後 (c) 擊球點分頁</figcaption>
+</figure>
+
+#### 時間軸
+
+時間軸提供四種模式，各自呈現一種隨時間變化的分析結果。
+
+- **片段：** 每個片段一根長條，高度為回合長度，並以 G1–G3 標示局數。
+- **擊球：** 依每片段的球種組成著色。
+- **比分：** 呈現雙方比分差距隨時間的變化，位於中線上方表示選手 A 領先、下方表示選手 B 領先。
+- **歡呼：** 顯示各片段的歡呼訊號，並以三角形與數字標示精彩度排名。
+
+<figure>
+  <img src="./report_pic/ui/timeline_modes.png">
+  <figcaption>時間軸的四種模式（全場尺度）。(a) 片段 (b) 擊球 (c) 比分 (d) 歡呼</figcaption>
+</figure>
+
+時間軸可在「全場」與「單片段」兩種尺度間切換。全場尺度用於掌握整場比賽的分布與走勢。雙擊任一片段即放大到該回合，此時每一拍成為一個點並標上球種縮寫，可以看出來回的節奏。使用者也可以滾輪平移、`Ctrl`＋滾輪自由縮放。
+
+<figure>
+  <img src="./report_pic/ui/timeline_zoom.png">
+  <figcaption>擊球模式在兩種尺度下的呈現。(a) 全場 (b) 單回合</figcaption>
+</figure>
+
+播放、導覽、疊圖與時間軸的操作都有對應的鍵盤快捷鍵，按 `H` 即可叫出完整說明。
+
+### 分析任務與場地校正
+
+**分析計畫預覽：** 使用者勾選分析項目並按下「開始分析」後，介面先列出執行計畫：哪些階段會執行、哪些沿用既有結果及其原因，以及計畫是否會呼叫 Gemini API。若某些未勾選階段的上游結果會因這次分析而改變，介面也會列出這些將會過期的階段，回看時不會顯示過期的資料。
+
+<!-- 待補截圖：按下「開始分析」後的執行計畫預覽畫面 -->
+
+**任務進度：** 分析在獨立的背景程序中執行，關閉介面不會中斷分析。任務頁顯示整體進度、各階段耗時與詳細記錄，使用者也可以隨時取消，取消時已完成的階段會保留，下次分析只需從中斷處繼續。
+
+<figure>
+  <img src="./report_pic/ui/task_progress.png">
+  <figcaption>任務進度，顯示整體與各階段的進度及詳細記錄</figcaption>
+</figure>
+
+**場地校正：** 場地偵測失敗或角點不準時，使用者可以在分析設定頁的「場地校正」中，直接在球場畫面上拖曳四個外角修正位置，並以方向鍵逐像素微調。
+
+<figure>
+  <img src="./report_pic/ui/court_calibration.png">
+  <figcaption>場地校正，拖曳四個外角對齊球場邊線</figcaption>
+</figure>
+
+### 實作概要
+
+介面以 Vue 3 與 TypeScript 開發，並以 Electron 包裝為 Windows 桌面程式。分析本身仍由本機的 Python 服務執行，介面只負責送出分析任務與顯示進度。分析完成後，匯入程式會先驗證各階段的 JSON 是否完整、是否與影片相符，再整合成一份回看資料，介面只讀取這一份資料，不直接讀取各階段的原始輸出。骨架、軌跡等資料量較大的疊圖內容則按回合分開儲存，只在使用者打開疊圖時才讀取目前與下一個回合，避免開啟比賽時長時間等待。
+
+```mermaid
+flowchart LR
+    ST[["各階段 JSON"]]:::io
+    VID[["比賽影片"]]:::io
+    IMP["匯入程式<br/>（驗證、整合）"]:::stage
+    REV[["回看資料"]]:::io
+    OVL[["逐回合疊圖資料"]]:::io
+    UI["使用者介面"]:::stage
+    SVC["本機分析服務"]:::stage
+    PIPE["分析管線"]:::stage
+
+    ST --> IMP
+    VID --> IMP
+    IMP --> REV --> UI
+    IMP --> OVL -. 打開疊圖時讀取 .-> UI
+    UI -->|送出任務| SVC --> PIPE --> ST
+
+    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
+    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
+```
+
+
 # 四、實驗結果
 ## 資料集與重現方式
 本章視覺模組的實驗共用下述影片庫；音訊模型另使用四場開發比賽與一場偵測器外部驗證，資料角色與結果另列於「歡呼偵測與精彩度分析」，不假設兩套 match ID 或分割相同。資料集由 16 支 YouTube 羽球單打完整轉播構成，涵蓋 2018 至 2023 年的國際賽事。影片皆為 1920 × 1080，幀率為 25 或 30 fps，編碼格式包含 H.264、AV1 與 VP9。全部影片合計 1,704,001 個影格、約 18.09 小時。為避免同一場比賽的資料同時出現在開發與評估中，資料以影片為單位切分為 7 場開發集與 9 場測試集；開發集用於設計與調整規則，測試集不參與開發，僅在完成後用於報告測試結果。由於其中 15 支影片來自 BWF 官方製作，跨轉播單位的泛化能力仍待後續驗證。
@@ -1304,7 +1448,6 @@ uv run python experiments/dataset/verify_video.py --all
 
 上述視覺實驗的影片對照資料及程式置於 `experiments/`。音訊研究的程式與凍結文件另在 `badminton-audio-highlight`，其本機 labels、features 與結果 JSON 尚未隨 Git 發布，重現限制另行說明。
 ## 各模組結果
-   （這裡放一張「全系統摘要表」，一列一模組、只放頭條指標）
 ### 賽事影片分段
 
 在 9 場未參與開發的比賽、670 個真值片段上，本模組在 IoU ≥ 0.9 下達到 Precision 98.37%、Recall 98.96%，邊界誤差中位數為 0 影格。16 場、1354 個片段的整體 F1 為 99.01%，其中 11 場零錯誤。分段結果會直接決定下游分析範圍，因此本節分別驗證片段偵測、邊界精度，並分析所有失配案例。
@@ -1659,6 +1802,8 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 
 ## 系統優點與限制
 依賴太多假設，有過擬合跡象，對某類影片精準度高，但是有系統完全失效的可能
+
+沒做可用性測試
 
 ### 音訊支線的限制
 
