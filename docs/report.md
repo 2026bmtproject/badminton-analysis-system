@@ -279,6 +279,12 @@ flowchart TD
     class PIPE outer;
 ```
 
+**draw.io 樣圖參照：系統架構**
+
+![系統架構（CVPR 風格樣圖）](figures/report/system-architecture.svg)
+
+[編輯原始檔](figures/report/system-architecture.drawio) · [向量 PDF](figures/report/system-architecture.pdf)
+
 圖中箭頭只畫階段之間的直接先後關係，隱含在箭頭鏈中的相依不重複畫出（例如球種分類也讀取骨架與羽球軌跡）。完整相依見下表。
 
 **資料流總圖：**
@@ -399,6 +405,12 @@ flowchart LR
     classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
     classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
 ```
+
+**draw.io 樣圖參照：賽事影片分段**
+
+![賽事影片分段（CVPR 風格樣圖）](figures/report/match-segmentation.svg)
+
+[編輯原始檔](figures/report/match-segmentation.drawio) · [向量 PDF](figures/report/match-segmentation.pdf)
 
 #### 影格差異訊號
 
