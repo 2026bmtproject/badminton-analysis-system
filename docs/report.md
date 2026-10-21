@@ -8,6 +8,12 @@
 - [二、文獻探討](#二文獻探討)
   - [現有羽球分析系統與產品](#現有羽球分析系統與產品)
   - [關鍵子任務的既有方法](#關鍵子任務的既有方法)
+    - [回合切割](#回合切割)
+    - [球場偵測](#球場偵測)
+    - [球體追蹤](#球體追蹤)
+    - [擊球偵測](#擊球偵測)
+    - [球種辨識](#球種辨識)
+    - [計分板讀分](#計分板讀分)
   - [研究缺口與本系統定位](#研究缺口與本系統定位)
 - [三、系統設計](#三系統設計)
   - [系統架構](#系統架構)
@@ -184,7 +190,7 @@ flowchart LR
 
 ## 現有羽球分析系統與產品
 
-**概述：** 近年來，隨著電腦視覺與運動分析技術的發展，現有的羽球賽事分析技術已涵蓋了即時判決、羽球軌跡追蹤以及影片內容分析等應用。現有的系統依其應用情境，大致可分為正式賽事使用的商用系統，以及以自動化影片分析為核心的學術研究端整合系統。
+近年來，隨著電腦視覺與運動分析技術的發展，現有的羽球賽事分析技術已涵蓋了即時判決、羽球軌跡追蹤以及影片內容分析等應用。現有的系統依其應用情境，大致可分為正式賽事使用的商用系統，以及以自動化影片分析為核心的學術研究端整合系統。
 
 商用系統以 Hawk-Eye 為代表，該系統主要是透過多視角攝影設備追蹤羽球軌跡與落點，提供專業賽事中的即時判決輔助，此類系統著重即時性與判決精度，高度依賴專用攝影、運算設備以及專業團隊的部署與維護，因而提高成本與使用門檻。
 
@@ -192,27 +198,56 @@ flowchart LR
 
 然而，現有方案仍存在不同限制。商用系統主要針對專業賽事環境設計，較難直接套用於一般既有的賽事影片。學術研究雖已證實多項影片分析任務能被整合，但多著重個別辨識方法及最終分析結果，對於多階段流程中的模組相依、統一資料介面與局部重跑機制較少著墨。
 
-因此，本研究著重於一般賽事影片的離線自動化分析，透過模組化分析流程與統一的結構化資料介面，使各階段能獨立執行、重跑與替換，並進一步支援賽事資訊整合與自然語言賽評生成。
-
-
 ## 關鍵子任務的既有方法
 
-> 大綱（待補）：依子任務各一小段，說明前人做法與流派差異，帶出本系統採不同路線的背景；技術細節見第三章。
+本節依子任務整理既有方法的路線與限制。引用中的「§」與「表」指向原文的章節與表格，未編號的章節以原文標題標示。
 
-- 回合切割(重要)：以鏡頭角度做二元分類（NCCU Hit-frame）、以事件反推回合起訖（Bosi）等；對比本系統以影格差異訊號自動分段。
-- 球場偵測(重要)：學習式角點回歸（Court R-CNN）與幾何式（Hough ＋ 透視／單應、雙路徑交叉驗證）兩種哲學。
-- 球體追蹤：熱圖式 TrackNet 家族與偵測式改良 YOLOv8（砍 P5/32、強化小物件頭）兩條路線。
-- 擊球時刻偵測(重要)：軌跡訊號法（Y 峰值／X 極值，對 smash 敏感度較低）、姿態方向轉折、擊球者切換 ＋ 角度變化等多種定位思路。
-- 球種分類：手工特徵 ＋ 傳統 ML（邏輯迴歸，8 類）與原始影片時空模型（SlowFast ＋ TimeSformer）等，與本系統採用的骨架序列 Transformer（BST）分屬不同輸入型態。
-- 計分板讀分：既有工作多由勝負判定間接推分，鮮少直接辨識計分板；本系統以 VLM 直接讀分。
-- 音訊事件：既有羽球工作包含以聲學訊號定位擊球／落地事件 [8]；本系統音訊支線則辨識觀眾歡呼，提供視覺事實之外的排序訊號。YAMNet [10] 使用 AudioSet [11] 預訓練表示，本系統固定其權重、平均池化 embeddings，再訓練下游二元分類器。擊球聲與觀眾反應是不同任務，前者的結果不直接視為本系統歡呼偵測的證據。
+### 回合切割
+
+既有方法多利用「回合進行時，轉播固定以俯拍主機位拍攝」的慣例，把回合切割化約為逐幀判斷是否為比賽畫面。一類是監督式分類：Ghosh 等人以 HOG 特徵搭配 SVM 分類，再以 Kalman 濾波平滑 [14, §4.1]；Chien 與 Yu 以 CNN 分類拍攝角度，單幀準確率達 99.76%，換算成回合後 F1 卻只有 89.27%，作者歸因於轉播鏡頭形式多變 [5, §Rally-wise Video Trimming、表 2–4]。另一類是與參考畫面比對：Bosi 計算每幀與使用者選定之參考畫面的 RGB 差與 PSNR，以經驗門檻判斷 [8, §4.2]。也有整合系統直接使用資料集中已切好的回合片段 [6, §III-A]。前者需要逐幀標記，後者需要人工選定參考畫面與門檻。
+
+### 球場偵測
+
+學習式方法以標記資料訓練場地關鍵點偵測器，例如以 Court R-CNN 輸出單打場地的 6 個關鍵點 [5, §Court Keypoints Detection]，或以 YOLO 架構偵測 14 個場地地標 [7, §III]。幾何式方法利用場線結構與已知尺寸，不需訓練：AI-Powered Badminton Coach 以 Hough 直線取得候選線，再做透視校正 [6, §III-B]；MonoTrack 把標準球場模型對到候選線上，並指出原演算法寫死的角度門檻使約四分之一的影片失敗，改良後成功率由 73.9% 提升至 85.5% [13, §4.1]。Bosi 的系統則由使用者人工點出球場四角 [8, §4.4]。學習式需要標記資料，幾何式常倚賴預設的顏色或角度門檻，人工指定則需逐支影片操作。
+
+### 球體追蹤
+
+羽球小、快且常被遮擋，既有方法分為熱圖式與偵測框式兩條路線。熱圖式以 TrackNet 家族為代表，輸入連續數幀、輸出標示球位置的熱圖 [12]；TrackNetV2 被多個整合系統直接採用 [6, §III-B; 8, §4.5]，TrackNetV3 再加入背景估計與 inpainting 軌跡修補 [1, 摘要]。偵測框式如 Singha 等人修改 YOLOv8，移除大物件偵測頭以強化小物件偵測 [7, §III]。此外，多數系統另以 ARIMA、內插等後處理修正軌跡 [6, §III-B; 8, §4.6.1]。
+
+### 擊球偵測
+
+既有方法依所用訊號可分為四種思路：
+
+1. **軌跡幾何。** 在球的 Y 座標找峰值、X 座標找極值 [8, §4.6.2]，開源專案 SoloShuttlePose [4] 亦屬此類。殺球前後球的運動方向連貫，此法容易漏抓 [8, §5.3.5]。
+2. **球員姿態。** 以 Transformer 由雙方骨架序列預測羽球飛行方向，方向轉換處即為擊球幀 [5, §Hit-Frame Detection]；容差由 ±15 收緊到 ±5 幀時，F1 由 79.55% 降至 63.92% [5, 表 6]。
+3. **多源學習式。** MonoTrack 的 HitNet 以 GRU 讀取球場角點、姿態與羽球位置，逐幀判斷是否擊球，再以動態規劃施加「最短間隔、擊球者交替」約束，F1 由 0.866 提升至 0.946 [13, §4.4、表 1]；AI-Powered Badminton Coach 先判斷擊球者並以其切換處分段，再依羽球角度變化定位擊球幀 [6, §III-C]。
+4. **音訊。** 以 LPC 殘差偵測擊球聲 [8, §4.7]，但球評、觀眾等背景噪音使召回率不理想 [8, §5.3.5]。
+
+單一訊號各有盲點；多源方法表現較佳，但 HitNet 需以標記資料訓練，且依賴球場、姿態與羽球等上游輸入 [13, §4.4]。
+
+### 球種辨識
+
+既有方法的差異主要在輸入型態：AI-Powered Badminton Coach 以 131 維手工特徵搭配邏輯迴歸 [6, §III-D]；Singha 等人以 SlowFast 與 TimeSformer 直接處理原始影像 [7, §III]；BST 則以球員骨架、羽球軌跡與場上位置為輸入 [2, §3.2]。BST 須先知道擊球時刻才能切出每一拍的片段 [2, §3.1]，並依賴姿態估計、羽球追蹤與場線偵測三個既有模型的輸出 [2, 摘要]。
+
+### 計分板讀分
+
+羽球文獻中鮮少直接辨識計分板：Ghosh 等人的比分由人工標記 [14, §3]，AI-Powered Badminton Coach 只判斷回合勝方、不讀比分 [6, §III-D]，Bosi 雖把比分列為目標，最終並未實現 [8, §4.1、§5.3.6]。網球的 SmartTennisTV 自動定位計分板後以 OCR 辨識，再以計分規則修正錯誤，但指出 Tesseract 需依賽事人工設定前處理 [15, §3.2–§3.4]。
 
 ## 研究缺口與本系統定位
 
-> 大綱（待補）
+綜合前兩節，既有工作仍有三項缺口。第一，回合範圍、球場位置、比分等上游前提多由人工或資料集提供，連 HitNet、BST 等較強的模型也假設這些輸入已經就緒。第二，以學習式方法自動化這些上游步驟時，又需要逐幀或場地標記，換賽事、換場館就可能要重做。第三，既有整合系統多著重個別辨識結果，對模組相依、統一資料介面與局部重跑較少著墨。
 
-- 收斂前兩節：現有工作在「全自動、離線、模組化可重跑、資料契約開放」上仍有缺口，關鍵的分類與事件偵測也多停留在傳統 ML。
-- 本系統定位：一條離線批次 DAG 管線，統一資料契約、各階段可獨立重跑，並在球種分類等處採用較新的序列模型；細節見第三章系統設計。
+本系統定位為一條離線、批次執行的分析管線：把上游前提一併自動化，讓既有的成熟模型能直接用在未經處理的轉播影片上；各階段只透過統一的資料契約溝通，可單獨替換與重跑（見[系統架構](#系統架構)），並在此基礎上產生精彩片段排序與自然語言賽評。各子任務的路線如下表。
+
+| 子任務     | 本系統的路線                                             | 詳見                                      |
+| ---------- | -------------------------------------------------------- | ----------------------------------------- |
+| 回合切割   | 影格差異訊號，門檻由影片自身分布估計；免標記、免參考畫面 | [賽事影片分段](#賽事影片分段)             |
+| 計分板讀分 | VLM 直接轉錄計分板，免逐賽事前處理                       | [計分板辨識](#計分板辨識)                 |
+| 球場偵測   | 幾何式，不預設球場顏色，由內部場線反推外角               | [場地偵測](#場地偵測)                     |
+| 球體追蹤   | 預訓練 TrackNetV3，加上多候選 Viterbi 後處理             | [球體追蹤與軌跡重建](#球體追蹤與軌跡重建) |
+| 擊球偵測   | 融合軌跡、骨架與球種模型，以結構約束補漏拍               | [擊球時刻偵測](#擊球時刻偵測)             |
+| 球種分類   | 預訓練 BST，輸入全由前述模組自動產生                     | [球種分類](#球種分類)                     |
+| 歡呼偵測   | YAMNet 特徵辨識觀眾歡呼，作為精彩度訊號                  | [歡呼音訊量測](#歡呼音訊量測)             |
 
 # 三、系統設計
 ## 系統架構
@@ -1838,9 +1873,9 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 模型、資料角色、指標來源、JSON hashes、實作對照與重現限制見[音訊方法與證據對照](../experiments/audio_highlight/README.md)。待補內容包含 `match_001` 至 `match_004` 的真實賽事來源、完整 cheer／no-cheer 標註規範、多標註者一致性，以及 labels／features／結果的可重現封存。這些缺口不由比賽資料夾名稱或模型輸出推導。
 # 參考文獻
 
-[1] "TrackNetV3: Enhancing ShuttleCock Tracking with Augmentations and Trajectory Rectification." Proceedings of the 5th ACM International Conference on Multimedia in Asia (MMAsia '23), 2023. https://doi.org/10.1145/3595916.3626370
+[1] Yu-Jou Chen and Yu-Shuen Wang, "TrackNetV3: Enhancing ShuttleCock Tracking with Augmentations and Trajectory Rectification." Proceedings of the 5th ACM International Conference on Multimedia in Asia (MMAsia '23), 2023. https://doi.org/10.1145/3595916.3626370
 
-[2] "BST: Badminton Stroke-type Transformer for Skeleton-based Action Recognition in Racket Sports." arXiv:2502.21085, 2025. https://arxiv.org/abs/2502.21085
+[2] Jing-Yuan Chang, "BST: Badminton Stroke-type Transformer for Skeleton-based Action Recognition in Racket Sports." arXiv:2502.21085, 2025. https://arxiv.org/abs/2502.21085
 
 [3] wulongyuan, "BadmintonCV: Badminton court and players detection using OpenCV," GitHub repository. https://github.com/wulongyuan/BadmintonCV
 
@@ -1859,6 +1894,14 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 [10] M. Plakal and D. P. W. Ellis, "YAMNet," TensorFlow Models, official model documentation. https://github.com/tensorflow/models/tree/master/research/audioset/yamnet （查閱：2026-10-14）。
 
 [11] J. F. Gemmeke et al., "Audio Set: An ontology and human-labeled dataset for audio events," Proc. IEEE ICASSP, 2017. https://research.google/pubs/audio-set-an-ontology-and-human-labeled-dataset-for-audio-events/
+
+[12] Y.-C. Huang, I.-N. Liao, C.-H. Chen, T.-U. İk, and W.-C. Peng, "TrackNet: A Deep Learning Network for Tracking High-speed and Tiny Objects in Sports Applications," in 2019 16th IEEE International Conference on Advanced Video and Signal Based Surveillance (AVSS), 2019. arXiv:1907.03698. https://arxiv.org/abs/1907.03698
+
+[13] P. Liu and J.-H. Wang, "MonoTrack: Shuttle Trajectory Reconstruction from Monocular Badminton Video," in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW), 2022, pp. 3512–3521. arXiv:2204.01899. https://arxiv.org/abs/2204.01899
+
+[14] A. Ghosh, S. Singh, and C. V. Jawahar, "Towards Structured Analysis of Broadcast Badminton Videos," in 2018 IEEE Winter Conference on Applications of Computer Vision (WACV), 2018, pp. 296–304. arXiv:1712.08714. https://arxiv.org/abs/1712.08714
+
+[15] A. Ghosh and C. V. Jawahar, "SmartTennisTV: Automatic Indexing of Tennis Videos," in National Conference on Computer Vision, Pattern Recognition, Image Processing and Graphics (NCVPRIPG), 2017. arXiv:1801.01430. https://arxiv.org/abs/1801.01430
 
 <style>
   /* 超強黑魔法 */
