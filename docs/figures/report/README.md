@@ -2,6 +2,8 @@
 
 目前包含 `match-segmentation`（賽事影片分段）及 `system-architecture`（系統架構）兩張樣圖。各有 `.drawio`、`.svg` 與 `.pdf`。其餘十二張尚未轉換。原報告所有 Mermaid 語法保留，樣圖附在對應區塊下方。
 
+`system-overview`（第一章系統概觀）沿用同一套視覺規範，已直接取代原本的 Mermaid 圖；目前只有 `.drawio` 與 `.svg`，PDF 待以 draw.io 匯出。
+
 ## 視覺規範
 
 採橫向主流程、白底、低飽和藍／青綠／橘模組配色、虛線分組框與深灰箭頭。這是參考電腦視覺論文常見表達方式的設計，並非 CVPR 官方規範。

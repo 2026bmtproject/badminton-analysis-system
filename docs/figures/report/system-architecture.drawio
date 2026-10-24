@@ -78,7 +78,7 @@
         <mxCell id="SCORE" value="" style="rounded=1;arcSize=10;fillColor=#E8EDF3;strokeColor=#526174;strokeWidth=1.5;dashed=0;" vertex="1" parent="1">
           <mxGeometry x="430" y="95" width="185" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="SCORE-label" value="計分板辨識" style="text;html=0;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Arial Unicode MS;fontSize=23;fontColor=#243247;fontStyle=0;" vertex="1" parent="1">
+        <mxCell id="SCORE-label" value="比分辨識" style="text;html=0;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Arial Unicode MS;fontSize=23;fontColor=#243247;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry x="430" y="95" width="185" height="64" as="geometry" />
         </mxCell>
         <mxCell id="COURT" value="" style="rounded=1;arcSize=10;fillColor=#E6EFFA;strokeColor=#526174;strokeWidth=1.5;dashed=0;" vertex="1" parent="1">
