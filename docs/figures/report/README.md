@@ -1,6 +1,8 @@
 # 報告圖表：CVPR 論文方法圖風格樣圖
 
-目前包含 `match-segmentation`（賽事影片分段）及 `system-architecture`（系統架構）兩張樣圖。各有 `.drawio`、`.svg` 與 `.pdf`。其餘十二張尚未轉換。原報告所有 Mermaid 語法保留，樣圖附在對應區塊下方。
+目前包含 `match-segmentation`（賽事影片分段）及 `system-architecture`（系統架構）兩張樣圖。`match-segmentation` 有 `.drawio`、`.svg` 與 `.pdf`。其餘十二張尚未轉換。原報告所有 Mermaid 語法保留，樣圖附在對應區塊下方。
+
+`system-architecture` 已重畫為第三章的導覽圖：分組對應第三章各節，只畫直接相依，選用相依以虛線表示。它由 `make_system_architecture.py` 從同一份座標產生 `.drawio` 與 `.svg`（`uv run python docs/figures/report/make_system_architecture.py docs/figures/report`），已直接取代報告中的舊圖；PDF 待以 draw.io 匯出。
 
 `system-overview`（第一章系統概觀）沿用同一套視覺規範，已直接取代原本的 Mermaid 圖；目前只有 `.drawio` 與 `.svg`，PDF 待以 draw.io 匯出。
 
