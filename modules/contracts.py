@@ -551,13 +551,20 @@ PIPELINE: dict[str, StageSpec] = {
 }
 
 
-def topological_order(dependencies: dict[str, list[str]]) -> list[str]:
+def topological_order(dependencies: dict[str, list[str]],
+                      priority: dict[str, int] | None = None) -> list[str]:
     """Kahn's algorithm: return names so every dep precedes its dependents.
 
     ``dependencies`` maps name -> list of names it must follow. Dependencies on
-    names outside the map are ignored (lets you sort a subset). Raises
-    ``ValueError`` if the graph has a cycle.
+    names outside the map are ignored (lets you sort a subset). Among stages that
+    are free to run, a lower ``priority`` (default 0) goes first, then the name.
+    Raises ``ValueError`` if the graph has a cycle.
     """
+    rank = priority or {}
+
+    def key(name: str) -> tuple[int, str]:
+        return rank.get(name, 0), name
+
     names = set(dependencies)
     indegree = {n: 0 for n in names}
     dependents: dict[str, list[str]] = {n: [] for n in names}
@@ -567,7 +574,7 @@ def topological_order(dependencies: dict[str, list[str]]) -> list[str]:
                 indegree[n] += 1
                 dependents[d].append(n)
 
-    ready = sorted(n for n, deg in indegree.items() if deg == 0)
+    ready = sorted((n for n, deg in indegree.items() if deg == 0), key=key)
     order: list[str] = []
     while ready:
         n = ready.pop(0)
@@ -576,7 +583,7 @@ def topological_order(dependencies: dict[str, list[str]]) -> list[str]:
             indegree[m] -= 1
             if indegree[m] == 0:
                 ready.append(m)
-                ready.sort()
+                ready.sort(key=key)
 
     if len(order) != len(names):
         cyclic = sorted(names - set(order))

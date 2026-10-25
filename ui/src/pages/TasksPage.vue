@@ -10,7 +10,7 @@ import {
 } from "../data/pipelineTasks";
 import { stageLabel } from "../data/stageLabels";
 
-const { tasks, error, loaded, now, active, refresh, acknowledgeFailure, reviewVersion } = useTaskFeed();
+const { tasks, error, loaded, now, active, refresh, acknowledgeFailure, reviewVersion, courtCheckTask } = useTaskFeed();
 const reviewIds = ref(new Set<string>());
 const expanded = ref<string | null>(null);
 const logsOpen = ref<string | null>(null);
@@ -141,6 +141,8 @@ onMounted(() => { void loadReviews(); });
         </ol>
         <p v-if="skippedCount" class="secondary task-now-skipped">另 {{ skippedCount }} 項沿用既有結果</p>
         <p v-if="featured.error" class="error" role="alert">{{ featured.error }}</p>
+        <p v-if="courtCheckTask?.id === featured.id" class="warning task-now-court" role="status">球場偵測完成，請到分析設定看一下有沒有歪掉；後面的分析照常進行。
+          <RouterLink :to="{ name: 'match-analysis', params: { matchId: featured.matchId } }">檢查球場</RouterLink></p>
         <footer class="task-actions">
           <button v-if="featured.id === active?.id" type="button" class="button-secondary" :disabled="cancelling !== null" @click="cancel(featured)">{{ cancelling === featured.id ? "取消中…" : "取消分析" }}</button>
           <button v-if="failed(featured)" type="button" class="button-primary" :disabled="retrying !== null" @click="retry(featured)">{{ retrying === featured.id ? "重新開始中…" : "重試" }}</button>

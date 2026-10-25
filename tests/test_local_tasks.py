@@ -17,7 +17,8 @@ from modules.local_tasks.planning import build_plan, resolve_match
 from modules.local_tasks.locking import WorkerLock
 from modules.local_tasks.service import PlanChanged, TaskManager, WorkerBusy, handler_for
 from modules.local_tasks.store import TaskStore
-from modules.local_tasks.worker import _safe_error, execute, execute_segment_commentary
+from modules.local_tasks.worker import MAX_RERUNS, _safe_error, execute, execute_segment_commentary
+from modules.runner import stale_inputs
 
 
 def match_fixture(tmp_path: Path) -> Path:
@@ -360,6 +361,73 @@ def test_worker_success_failure_and_no_progress(tmp_path, monkeypatch):
     assert result["status"] == "failed"
     assert "fake stage failed" in result["error"]
     assert result["exitCode"] == 1
+
+
+def test_plan_runs_the_court_first_and_its_readers_last(tmp_path):
+    match = match_fixture(tmp_path)
+    order = build_plan(match, ["event_detection"], "continue", fake_registry())["requiredStages"]
+    assert order == ["match_segmentation", "court_detection", "shuttle_tracking", "pose", "event_detection"]
+
+
+class Counting(FakeModule):
+    """Counts runs and can run a side effect, standing in for the user saving the court meanwhile."""
+
+    def __init__(self, name, runs, during=None):
+        super().__init__(name)
+        self.runs, self.during = runs, during
+
+    def _run(self, match_path, *, on_progress=None, **kwargs):
+        self.runs[self.name] = self.runs.get(self.name, 0) + 1
+        if self.during and self.runs[self.name] == 1:
+            self.during(match_path)
+        return super()._run(match_path, on_progress=on_progress, **kwargs)
+
+
+def save_court(match_path):
+    path = artifact_path(match_path, "court_detection")
+    path.write_text(json.dumps({"courts": [], "confirmed": True}))
+
+
+@pytest.mark.parametrize("saved_during, pose_runs", [
+    ("shuttle_tracking", 1),  # before pose read it: pose just reads the new court
+    ("pose", 2),              # while pose ran on the old one
+    ("event_detection", 2),   # after pose used it
+])
+def test_worker_reruns_only_stages_that_read_a_court_saved_mid_task(tmp_path, monkeypatch, saved_during, pose_runs):
+    match = match_fixture(tmp_path)
+    store = TaskStore(tmp_path / "tasks")
+    monkeypatch.setattr("modules.local_tasks.worker._reject_gapped_input_video", lambda _: None)
+    runs: dict[str, int] = {}
+    modules = {name: Counting(name, runs, save_court if name == saved_during else None) for name in PIPELINE}
+    task_id = queued_task(store, match, ["event_detection"], modules)
+    assert execute(store, task_id, match, modules)
+    record = store.read(task_id)
+    assert record["status"] == "succeeded"
+    assert runs["pose"] == pose_runs
+    assert runs["court_detection"] == runs["shuttle_tracking"] == 1
+    # Pose writes the same artifact each time, so nothing downstream of it changes.
+    assert runs["event_detection"] == 1
+    assert record["stageStates"]["pose"].get("reruns", 0) == pose_runs - 1
+    assert stale_inputs(match, modules["pose"]) == []
+
+
+def test_worker_stops_requeueing_a_stage_whose_inputs_never_settle(tmp_path, monkeypatch):
+    match = match_fixture(tmp_path)
+    store = TaskStore(tmp_path / "tasks")
+    monkeypatch.setattr("modules.local_tasks.worker._reject_gapped_input_video", lambda _: None)
+    saves = iter(range(100))
+
+    class Restless(FakeModule):
+        def _run(self, match_path, *, on_progress=None, **kwargs):
+            artifact_path(match_path, "court_detection").write_text(json.dumps({"courts": [], "n": next(saves)}))
+            return super()._run(match_path, on_progress=on_progress, **kwargs)
+
+    modules = fake_registry()
+    modules["pose"] = Restless("pose")
+    task_id = queued_task(store, match, ["pose"], modules)
+    assert execute(store, task_id, match, modules)
+    assert store.read(task_id)["stageStates"]["pose"]["reruns"] == MAX_RERUNS
+    assert stale_inputs(match, modules["pose"]) == ["court_detection"]
 
 
 def test_interrupted_worker_keeps_interrupted_task_state(tmp_path, monkeypatch):

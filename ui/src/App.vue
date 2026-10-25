@@ -11,7 +11,7 @@ import { matchTitle, windowContext, windowTitle } from "./state/windowTitle";
 const route = useRoute();
 // Connection only shows when it is lost: a permanent green dot said nothing, and pages that need the service
 // already explain when it is missing. This covers the ones that do not, such as Review.
-const { active, unseenFailure, offline } = useTaskFeed();
+const { active, unseenFailure, offline, courtCheckTask } = useTaskFeed();
 const desktop = useDesktopStatus();
 const activePercent = computed(() => active.value ? Math.round(taskProgress(active.value).fraction * 100) : 0);
 const tasksTitle = computed(() => unseenFailure.value ? "任務：上一個分析沒有完成" : "任務");
@@ -28,6 +28,19 @@ watch(() => route.fullPath, () => {
   if (route.hash) document.getElementById(route.hash.slice(1))?.scrollIntoView({ block: "start" });
   else content.value?.scrollTo({ top: 0 });
 }, { flush: "post" });
+/*
+ * A detected court is worth a look from any page: a crooked one would cost every later stage a rerun. The toast steps
+ * aside on the analysis page, which shows the court itself, and "稍後" hides it for this task until the next launch;
+ * the status bar keeps asking until the court is judged fine or repaired there.
+ */
+const toastLater = ref<string | null>(null);
+const courtLink = computed(() => courtCheckTask.value
+  ? { name: "match-analysis", params: { matchId: courtCheckTask.value.matchId } } as const : null);
+const courtToast = computed(() => {
+  const task = courtCheckTask.value;
+  if (!task || toastLater.value === task.id) return null;
+  return route.name === "match-analysis" && route.params.matchId === task.matchId ? null : task;
+});
 const refreshDesktop = () => { void desktop.refresh(); };
 onMounted(() => { refreshDesktop(); window.addEventListener("focus", refreshDesktop); });
 onUnmounted(() => window.removeEventListener("focus", refreshDesktop));
@@ -46,9 +59,18 @@ onUnmounted(() => window.removeEventListener("focus", refreshDesktop));
       <RouterLink class="desktop-nav-settings" :to="{ name: 'settings' }" title="設定" aria-label="設定" active-class="is-active"><AppIcon name="settings" :size="24" /></RouterLink>
     </nav>
     <div ref="content" class="desktop-content"><RouterView /></div>
+    <aside v-if="courtToast && courtLink" class="court-check-toast" role="status" aria-label="球場待檢查">
+      <p><strong>{{ courtToast.matchId }} 的球場偵測完成</strong>請看一下有沒有歪掉；後面的分析照常進行，歪一點點不用調。</p>
+      <div class="court-check-toast-actions">
+        <RouterLink class="button-primary" :to="courtLink">檢查球場</RouterLink>
+        <button type="button" class="button-secondary" @click="toastLater = courtToast.id">稍後</button>
+      </div>
+    </aside>
     <footer class="status-bar" aria-label="狀態列">
       <RouterLink v-if="matchesFolder" class="status-bar-item" :to="environmentLink" :title="`matches 資料夾：${matchesDir}`"><AppIcon name="folder" :size="14" />{{ matchesFolder }}</RouterLink>
       <RouterLink v-if="offline" class="status-bar-item status-bar-item--error" :to="environmentLink" title="分析服務未連線，查看設定"><AppIcon name="alert" :size="14" />分析服務未連線</RouterLink>
+      <RouterLink v-if="courtCheckTask && courtLink" class="status-bar-item status-bar-item--warning" :to="courtLink"
+        :title="`${courtCheckTask.matchId} 的球場偵測完成，請檢查有沒有歪掉`"><AppIcon name="alert" :size="14" />球場待檢查</RouterLink>
       <RouterLink v-if="active" class="status-bar-item" :to="{ name: 'tasks' }" :title="`任務：${active.matchId} 分析中 ${activePercent}%`" role="status"><AppIcon class="status-bar-spin" name="refresh" :size="14" />{{ active.matchId }} 分析中 {{ activePercent }}%</RouterLink>
     </footer>
   </div>

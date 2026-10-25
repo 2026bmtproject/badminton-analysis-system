@@ -11,11 +11,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from modules.base import StageStatus, read_status
+from modules.base import StageStatus, artifact_fingerprint, current_inputs, read_status, write_status
 from modules.contracts import stage_path
 from modules.local_tasks.locking import WorkerLock
 from modules.local_tasks.store import TaskStore, now
 from modules.runner import _reject_gapped_input_video, available_modules
+
+# A stage whose inputs keep changing under it (the user saving the court again and again) stops
+# being re-queued after this many reruns; it is then left stale for the next task.
+MAX_RERUNS = 3
 
 
 def _safe_error(error: BaseException) -> str:
@@ -81,6 +85,42 @@ def execute_segment_commentary(store: TaskStore, task_id: str, match: Path,
         return False
 
 
+def _inputs_of(module) -> list[str]:
+    return [*module.dependencies, *module.optional_dependencies]
+
+
+def _requeue_stale(store: TaskStore, record: dict, match: Path, modules: dict[str, Any],
+                   pending: list[str]) -> None:
+    """Puts back every stage of the task whose inputs changed after it ran, in plan order.
+
+    The court can be saved while a task runs, so a stage that already read it may have read
+    the old one. A stage still waiting needs nothing: it reads the new court when it starts.
+    """
+    scope = record["plan"]["requiredStages"]
+    # Hashed once per check, not once per reader: pose alone is ~150 MB and four stages read it.
+    fingerprints: dict[str, str | None] = {}
+    for name in scope:
+        stage = record["stageStates"][name]
+        if name in pending or stage.get("reruns", 0) >= MAX_RERUNS:
+            continue
+        status = read_status(stage_path(match, name))
+        if status is None or status.status != StageStatus.COMPLETED or status.inputs is None:
+            continue
+        for dependency in _inputs_of(modules[name]):
+            if dependency not in fingerprints:
+                fingerprints[dependency] = artifact_fingerprint(match, dependency)
+        current = {dep: fingerprints[dep] for dep in _inputs_of(modules[name]) if fingerprints[dep] is not None}
+        changed = sorted(dep for dep in set(status.inputs) | set(current)
+                         if status.inputs.get(dep) != current.get(dep))
+        if not changed:
+            continue
+        stage.update(status="queued", progress=None, reason="inputs changed: " + ", ".join(changed),
+                     reruns=stage.get("reruns", 0) + 1)
+        pending.append(name)
+        store.append_log(record["id"], f"{name}: inputs changed ({', '.join(changed)}), queued to rerun")
+    pending.sort(key=scope.index)
+
+
 def execute(store: TaskStore, task_id: str, match: Path,
             modules: dict[str, Any] | None = None) -> bool:
     production_registry = modules is None
@@ -104,15 +144,16 @@ def execute(store: TaskStore, task_id: str, match: Path,
     store.save(record)
     store.append_log(task_id, "Analysis started")
     current = None
+    pending = [item["name"] for item in record["plan"]["stages"] if item["action"] == "run"]
     try:
         _reject_gapped_input_video(match)
-        for item in record["plan"]["stages"]:
-            if item["action"] == "skip":
-                continue
+        while pending:
             if store.read(task_id)["status"] == "interrupted":
                 return False
-            current = item["name"]
+            current = pending.pop(0)
             stage = record["stageStates"][current]
+            # What the stage is about to read; it records its inputs only once it finishes.
+            read_at_start = current_inputs(match, _inputs_of(modules[current]))
             stage.update(status="running", progress=None, startedAt=now())
             record["currentStage"] = current
             store.save(record)
@@ -149,9 +190,15 @@ def execute(store: TaskStore, task_id: str, match: Path,
                 return False
             if result is None or result.status != StageStatus.COMPLETED:
                 raise RuntimeError(f"{current} did not complete")
+            if result.inputs is not None and result.inputs != read_at_start:
+                # An input changed while it ran. Record what it actually started from, so it
+                # reads as stale, not as built from the new input.
+                result.inputs = read_at_start
+                write_status(stage_path(match, current), result)
             stage.update(status="succeeded", progress=1.0, finishedAt=now())
-            store.save(record)
             store.append_log(task_id, f"{current}: succeeded")
+            _requeue_stale(store, record, match, modules, pending)
+            store.save(record)
         if store.read(task_id)["status"] == "interrupted":
             return False
         record.update(status="succeeded", currentStage=None, finishedAt=now(), exitCode=0)

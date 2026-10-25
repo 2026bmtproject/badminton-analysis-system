@@ -14,6 +14,8 @@ export type PipelinePlan = {
 export type TaskStage = {
   status: string; progress: number | null; reason: string; error?: string;
   startedAt?: string; finishedAt?: string;
+  /** Times the worker queued it again because an input (the court, saved mid-task) changed after it ran. */
+  reruns?: number;
 };
 export type PipelineTask = {
   id: string; matchId: string; status: "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
@@ -169,16 +171,30 @@ export function startPipeline(plan: PipelinePlan) {
 }
 /** Stops a running task; stages it already finished keep their results, the one it was on starts over next time. */
 export function cancelPipelineTask(id: string) { return request<PipelineTask>(`tasks/${id}/cancel`, {}); }
+/** The commentary stage writes a few rallies as a demonstration; Review generates any other one on demand. */
+export const COMMENTARY_STAGE_NOTE = "示範用：只生成精彩排名前 3 段，沒有精彩排序時取最長的 3 段；其他片段可在回看頁單段產生。";
 export const CANCEL_CONFIRM = "確定取消分析？已完成的階段會保留，進行中的階段下次需要重新執行。";
 /** Generates commentary for one segment only; the whole-match commentary stage is left alone. */
 export function startSegmentCommentary(matchId: string, segmentIndex: number) {
   return request<PipelineTask>("commentary", { matchId, segmentIndex });
 }
-/** Starts the same request again against a fresh plan, since the old plan's ID is stale by now. */
+/**
+ * What a retry asks for: only the stages the task never finished, in its own mode. Asking for the original selection
+ * instead would, in "rerun-selected" mode, redo every stage that already succeeded before the failure.
+ */
+export function retryRequest(task: PipelineTask): { stages: string[]; mode: PipelinePlan["mode"] } {
+  const unfinished = task.plan.requiredStages.filter((name) => {
+    const status = task.stageStates[name]?.status;
+    return status !== undefined && status !== "succeeded" && status !== "skipped";
+  });
+  return { stages: unfinished.length ? unfinished : task.plan.requestedStages, mode: task.plan.mode };
+}
+/** Starts what the task left unfinished against a fresh plan, since the old plan's ID is stale by now. */
 export async function retryTask(task: PipelineTask) {
   // A segment task's plan names the whole commentary stage; replanning it would generate every rally.
   if (task.segmentIndex !== undefined) return startSegmentCommentary(task.matchId, task.segmentIndex);
-  return startPipeline(await previewPipeline(task.matchId, task.plan.requestedStages, task.plan.mode));
+  const { stages, mode } = retryRequest(task);
+  return startPipeline(await previewPipeline(task.matchId, stages, mode));
 }
 export const LOG_PAGE_SIZE = 100;
 export function getPipelineLogs(id: string, offset: number) {
