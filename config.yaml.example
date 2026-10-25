@@ -14,3 +14,6 @@ commentary:
   tactical_reviewer_max_output_tokens: 4096
   commentator_max_output_tokens: 8192
   commentary_reviewer_max_output_tokens: 4096
+  # 分析流程的賽評階段只示範幾段：精彩排名前 N 段，沒有精彩排序時取最長 N 段；null = 整場。
+  # 其他片段在回看頁單段產生。
+  stage_segment_limit: 3

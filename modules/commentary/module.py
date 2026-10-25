@@ -37,6 +37,7 @@ TACTICAL_GENERATOR_THINKING_LEVEL = "medium"
 TACTICAL_REVIEWER_THINKING_LEVEL = "low"
 COMMENTATOR_THINKING_LEVEL = "medium"
 COMMENTARY_REVIEWER_THINKING_LEVEL = "low"
+DEFAULT_STAGE_SEGMENT_LIMIT = 3
 FAILURE_DIAGNOSTIC_VERSION = "commentary-provider-failure-v1"
 FAILURE_DIAGNOSTIC_NAME = "failure_diagnostic.json"
 _PROVIDER_PHASES = (
@@ -294,6 +295,10 @@ class CommentaryModuleConfig:
     tactical_reviewer_max_output_tokens: int = 4096
     commentator_max_output_tokens: int = 8192
     commentary_reviewer_max_output_tokens: int = 4096
+    # The pipeline stage is a demonstration of what the analysis feeds, so it writes a few
+    # rallies rather than paying for every one; Review generates any other rally on demand.
+    # None runs every segment.
+    stage_segment_limit: int | None = DEFAULT_STAGE_SEGMENT_LIMIT
 
     def __post_init__(self) -> None:
         if not isinstance(self.model, str) or not self.model.strip():
@@ -308,6 +313,9 @@ class CommentaryModuleConfig:
             value = getattr(self, name)
             if type(value) is not int or value < 32:
                 raise ValueError(f"commentary.{name} must be an integer >= 32")
+        if self.stage_segment_limit is not None and (
+                type(self.stage_segment_limit) is not int or self.stage_segment_limit < 1):
+            raise ValueError("commentary.stage_segment_limit must be null or an integer >= 1")
 
     @classmethod
     def from_project(cls) -> "CommentaryModuleConfig":
@@ -405,6 +413,36 @@ def identity_mapping_for_segment(
     return epoch, CourtPositionToPlayer(top=epoch.top, bottom=epoch.bottom)
 
 
+def stage_segment_order(match_path: str | Path, segments: list[Segment]) -> list[int]:
+    """Segments in the order the stage tries them.
+
+    With a highlight ranking, ranked segments come first in its documented order (score,
+    then source cheer confidence, both descending, then segment index); without one, or
+    for segments it does not rank, the longest come first.
+    """
+
+    def longest(indices) -> list[int]:
+        return sorted(indices, key=lambda index: (-segments[index].duration_sec, index))
+
+    highlight_path = artifact_path(match_path, "highlight_ranking")
+    if not highlight_path.is_file():
+        return longest(range(len(segments)))
+    spec = PIPELINE["highlight_ranking"]
+    scores = {row["segment_index"]: row["score"]
+              for row in read_artifact(spec, highlight_path)[spec.record_key]}
+    confidence: dict[int, float] = {}
+    audio_path = artifact_path(match_path, "audio_highlight")
+    if audio_path.is_file():
+        audio = PIPELINE["audio_highlight"]
+        confidence = {row["segment_index"]: row["cheer_confidence"]
+                      for row in read_artifact(audio, audio_path)[audio.record_key]
+                      if row.get("cheer_confidence") is not None}
+    ranked = sorted((index for index in scores if 0 <= index < len(segments)),
+                    key=lambda index: (-scores[index], -confidence.get(index, 0.0), index))
+    rest = longest(index for index in range(len(segments)) if index not in scores)
+    return [*ranked, *rest]
+
+
 class CommentaryModule(BaseModule):
     name = "commentary"
     dependencies = PIPELINE[name].dependencies
@@ -470,8 +508,13 @@ class CommentaryModule(BaseModule):
         segment_indices: Iterable[int] | None,
         *,
         progress: CommentaryProgress | None,
+        limit: int | None = None,
     ) -> tuple[list[int], list[CommentaryJob], list[dict]]:
-        """Perform every cheap/canonical validation before providers are opened."""
+        """Perform every cheap/canonical validation before providers are opened.
+
+        With ``limit``, segments are tried in :func:`stage_segment_order` until that many are
+        eligible, so an unsupported segment hands its place to the next one.
+        """
 
         segment_spec = PIPELINE["match_segmentation"]
         segment_envelope = read_artifact(segment_spec, artifact_path(match_path, segment_spec.name))
@@ -480,7 +523,8 @@ class CommentaryModule(BaseModule):
             raise ValueError("invalid match_segmentation artifact: no segments")
 
         if segment_indices is None:
-            requested = list(range(len(segments)))
+            requested = (list(range(len(segments))) if limit is None
+                         else stage_segment_order(match_path, segments))
         else:
             requested_values = list(segment_indices)
             if not requested_values:
@@ -498,7 +542,11 @@ class CommentaryModule(BaseModule):
         epochs = read_identity_epochs(match_path)
         unsupported: list[dict] = []
         jobs: list[CommentaryJob] = []
+        attempted: list[int] = []
         for segment_index in requested:
+            if limit is not None and len(jobs) >= limit:
+                break
+            attempted.append(segment_index)
             if progress is not None:
                 progress.preparing(segment_index)
             resolved = identity_mapping_for_segment(epochs, segment_index)
@@ -524,7 +572,9 @@ class CommentaryModule(BaseModule):
                 court_position_to_player=mapping,
             )
             jobs.append(CommentaryJob(segment_index, epoch, mapping, rally, compact))
-        return requested, jobs, unsupported
+        jobs.sort(key=lambda job: job.segment_index)
+        unsupported.sort(key=lambda item: item["segment_index"])
+        return sorted(attempted), jobs, unsupported
 
     @staticmethod
     def _segment_artifact_path(match_path: Path, segment_index: int) -> Path:
@@ -730,9 +780,12 @@ class CommentaryModule(BaseModule):
         progress = CommentaryProgress(full_match=True)
         failure_path = stage_path(match_path, self.name) / FAILURE_DIAGNOSTIC_NAME
         failure_path.unlink(missing_ok=True)
+        limit = config.stage_segment_limit
         requested, jobs, unsupported = self._prepare_jobs(
-            match_path, None, progress=progress,
+            match_path, None, progress=progress, limit=limit,
         )
+        policy = ("all" if limit is None else "highlight_ranking"
+                  if artifact_path(match_path, "highlight_ranking").is_file() else "longest_duration")
         progress.request_notice(
             requested=len(requested), eligible=len(jobs), unsupported=len(unsupported)
         )
@@ -758,7 +811,10 @@ class CommentaryModule(BaseModule):
         try:
             write_artifact(PIPELINE[self.name], rallies, temporary, extra={
                 "schema_version": ARTIFACT_VERSION,
-                "runtime": config.public_metadata(),
+                "runtime": {**config.public_metadata(), "selection": {
+                    "policy": policy, "limit": limit,
+                    "segments": [job.segment_index for job in jobs],
+                }},
                 "unsupported_segments": unsupported,
                 "diagnostics": diagnostics,
             })
