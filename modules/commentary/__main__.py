@@ -16,7 +16,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     mode.add_argument(
         "--all", action="store_true",
-        help="explicitly generate canonical full-match commentary",
+        help="run the commentary stage: commentary.stage_segment_limit segments "
+             "(default 3, top highlights or else the longest; null for every segment)",
     )
     args = parser.parse_args(argv)
     if not args.segment and not args.all:

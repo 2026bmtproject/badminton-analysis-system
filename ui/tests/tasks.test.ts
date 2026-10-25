@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  cancelPipelineTask, formatDuration, formatLogLine, formatTaskTime, listPipelineMatches, ranStages, ranStagesSummary, retryTask, stageElapsed, taskProgress, taskStatusLabel, type PipelineTask,
+  cancelPipelineTask, formatDuration, formatLogLine, formatTaskTime, listPipelineMatches, ranStages, ranStagesSummary, retryRequest, retryTask, stageElapsed, taskProgress, taskStatusLabel, type PipelineTask,
 } from "../src/data/pipelineTasks";
 import { sameReview, type MatchModel, type RallyModel } from "../src/domain/models";
 
@@ -86,6 +86,17 @@ test("a one-segment commentary task names its segment and retries only that segm
   finally { globalThis.fetch = original; }
   // Replanning the commentary stage would generate every Rally of the match.
   assert.deepEqual(calls, [{ url: "/api/pipeline/commentary", body: { matchId: "m", segmentIndex: 4 } }]);
+});
+
+test("a retry asks only for the stages the task left unfinished, in its own mode", () => {
+  const value = { ...task({ match_segmentation: stage("succeeded"), court_detection: stage("skipped"),
+    player_identity: stage("succeeded"), commentary: stage("failed") }), status: "failed" as const };
+  value.plan = { ...value.plan, mode: "rerun-selected", requestedStages: ["match_segmentation", "player_identity", "commentary"],
+    requiredStages: ["match_segmentation", "court_detection", "player_identity", "commentary"] };
+  assert.deepEqual(retryRequest(value), { stages: ["commentary"], mode: "rerun-selected" });
+  // Stages the failure kept it from reaching are retried too, and so are cancelled or interrupted ones.
+  value.stageStates = { ...value.stageStates, player_identity: stage("interrupted"), commentary: stage("queued") };
+  assert.deepEqual(retryRequest(value).stages, ["player_identity", "commentary"]);
 });
 
 test("cancelling posts to the task's own cancel route and reads back as cancelled", async () => {

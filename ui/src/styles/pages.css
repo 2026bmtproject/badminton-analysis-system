@@ -59,6 +59,12 @@
 .court-calibration-toggle { gap: var(--space-2); padding-inline: 0; font-weight: var(--weight-semibold); }
 .court-calibration-toggle:hover { background: transparent; }
 .court-calibration-outdated button { margin-left: var(--space-2); }
+/* A court waiting to be checked moves to the top of the panel; it is the one thing the running task needs from the user. */
+.court-calibration--check { order: -1; border-color: rgb(217 168 78 / 45%); }
+.court-check { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: rgb(217 168 78 / 8%); border: 1px solid rgb(217 168 78 / 30%); border-radius: var(--radius-sm); font-size: var(--type-meta); }
+.court-check p { color: var(--color-text-secondary); }
+.court-check strong { margin-right: var(--space-2); color: var(--color-warning); }
+.pipeline-plan-note { display: block; color: var(--color-text-secondary); font-size: var(--type-micro); }
 
 .match-back-link:focus-visible {
   outline: 2px solid var(--color-text);

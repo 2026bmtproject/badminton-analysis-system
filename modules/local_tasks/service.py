@@ -19,7 +19,7 @@ from modules.base import StageStatus, artifact_fingerprint, read_status, write_s
 from modules.contracts import PIPELINE, artifact_path, resolve_input_video, stage_path
 from modules.court_detection.review import CourtConflict, load_court_review, preview_corners, save_corners
 from modules.local_tasks.locking import WorkerLock
-from modules.local_tasks.planning import build_plan, resolve_match
+from modules.local_tasks.planning import COURT_STAGE, build_plan, court_dependents, resolve_match
 from modules.local_tasks.store import TaskStore, now
 from modules.runner import available_modules, default_modules, stale_inputs
 
@@ -107,11 +107,30 @@ class TaskManager:
         result["saveBlocked"] = self._court_busy(match_id)
         return result
 
+    def _active_task(self) -> dict | None:
+        return next((record for record in self.store.list()
+                     if record["status"] in ("queued", "running")), None)
+
     def _court_busy(self, match_id: str) -> bool:
-        if self.refresh_recovery():
+        """Whether a save now could be lost or raced.
+
+        A task of this service may be running: once its court stage is done (or was never
+        part of it), the court can be repaired while later stages run, and the worker reruns
+        whichever of them already read the old one. Until then the court stage would
+        overwrite the save. A worker this service does not own is never second-guessed.
+        """
+        locked = self.refresh_recovery()
+        active = self._active_task()
+        if active is None:
+            return locked
+        if active["id"] != self.active_id:
             return True
-        return any(record["matchId"] == match_id and record["status"] in ("queued", "running")
-                   for record in self.store.list())
+        if active["matchId"] != match_id:
+            return False
+        if active.get("segmentIndex") is not None:
+            return True
+        court = active["stageStates"].get(COURT_STAGE)
+        return court is not None and court["status"] in ("queued", "running")
 
     def court_preview(self, request: dict) -> dict:
         match = resolve_match(self.matches_root, request.get("matchId"))
@@ -122,11 +141,20 @@ class TaskManager:
             match = resolve_match(self.matches_root, request.get("matchId"))
             if self._court_busy(match.name):
                 raise WorkerBusy("此比賽正在分析或 worker 狀態待確認，暫時無法保存場地")
+            active = self._active_task()
+            task = active if active is not None and active["matchId"] == match.name else None
             result = save_corners(match, request.get("revision"), request.get("corners"))
             result["staleStages"] = []
             result["unknownStages"] = []
-            for name, module in available_modules().items():
-                if name == "court_detection":
+            # Stages of the running task that already read the court; its worker reruns them.
+            result["rerunStages"] = []
+            modules = available_modules()
+            scope = set(task["plan"]["requiredStages"]) if task else set()
+            readers = court_dependents(modules)
+            if task and task.get("currentStage") in readers:
+                result["rerunStages"].append(task["currentStage"])
+            for name, module in modules.items():
+                if name == COURT_STAGE or name in result["rerunStages"]:
                     continue
                 status = read_status(stage_path(match, name))
                 if status is None or status.status != StageStatus.COMPLETED:
@@ -134,6 +162,8 @@ class TaskManager:
                 stale = stale_inputs(match, module)
                 if stale is None:
                     result["unknownStages"].append(name)
+                elif stale and name in scope:
+                    result["rerunStages"].append(name)
                 elif stale:
                     result["staleStages"].append(name)
             return result

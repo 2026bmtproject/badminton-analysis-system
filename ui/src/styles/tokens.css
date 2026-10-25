@@ -78,6 +78,7 @@
   --overlay-shuttle-inpaint: #3fd0e0;
   --overlay-shuttle-viterbi: #e05cd6;
   --overlay-label-bg: rgb(20 20 20 / 78%);
+  --overlay-casing: rgb(0 0 0 / 50%);
   --color-stroke: #858f94;
   /*
    * Shot families on the stroke lane, kept clear of the A/B hues. Serve and

@@ -13,6 +13,7 @@ import {
   activeOverlayLayers, defaultOverlaySettings, overlayAvailability, overlayShortcut, sanitizeOverlaySettings,
   hideVideoAvailability, shownShuttleMethods, toggleHideVideo, toggleOverlayLayer, videoHidden, type OverlayLayerId,
 } from "../src/overlay/overlaySettings";
+import { MARK_MAX_GROWTH, markScale } from "../src/overlay/drawOverlay";
 import { defaultWorkspaceLayout, parseWorkspaceLayout } from "../src/state/workspaceLayout";
 import { desktopRuntime, registerMatch } from "../scripts/local-matches";
 import { startLocalHost } from "../scripts/local-host";
@@ -185,6 +186,13 @@ test("hits flash nearest first and stroke labels hold for a moment after their h
   assert.equal(recentStroke(hits, 49), null);
 });
 
+test("marks keep their scene size on a small picture and grow with a large one, up to a cap", () => {
+  assert.equal(markScale({ height: 300 }), 1);
+  assert.equal(markScale({ height: 540 }), 1);
+  assert.equal(markScale({ height: 1080 }), 2);
+  assert.equal(markScale({ height: 4000 }), MARK_MAX_GROWTH);
+});
+
 const labels = (marks: OverlayMark[]) =>
   marks.filter((mark): mark is Extract<OverlayMark, { kind: "label" }> => mark.kind === "label");
 
@@ -194,7 +202,7 @@ test("the scene names identified players and keeps the court side otherwise", ()
   const named = buildOverlayScene({ ...base, rally: rally([stroke(50)], { top: "a", bottom: "b" }) });
   const label = labels(named).find((mark) => mark.align === "start");
   assert.deepEqual(label && { text: label.text, tone: label.tone }, { text: "戴資穎", tone: "a" });
-  assert.ok(named.some((mark) => mark.kind === "line" && mark.tone === "a" && mark.width === 2));
+  assert.ok(named.some((mark) => mark.kind === "line" && mark.tone === "a" && mark.width === 2.5));
   assert.ok(named.some((mark) => mark.kind === "circle" && mark.tone === "hit" && mark.radius === 12 + 24));
   const strokeLabel = labels(named).find((mark) => mark.align === "center");
   assert.deepEqual(strokeLabel && [strokeLabel.text, strokeLabel.at], ["殺球 0.91", [110, 180]]);

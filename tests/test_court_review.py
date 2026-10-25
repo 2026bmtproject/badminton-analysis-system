@@ -94,20 +94,40 @@ def test_legacy_preview_reuses_composite_without_detector(tmp_path, monkeypatch)
     assert result["image"].startswith("data:image/png;base64,")
 
 
-def test_service_blocks_save_while_same_match_is_active(tmp_path):
+def running_task(manager, *, court="queued", current=None, scope=("court_detection", "pose", "event_detection")):
+    manager.active_id = "a" * 32
+    manager.store.save({"id": manager.active_id, "matchId": "Sample", "status": "running", "createdAt": "2026-01-01",
+                        "currentStage": current, "plan": {"requiredStages": list(scope)},
+                        "stageStates": {name: {"status": court if name == "court_detection" else "queued"}
+                                        for name in scope}})
+
+
+def test_service_blocks_save_until_the_running_task_has_its_court(tmp_path):
     match = court_match(tmp_path)
     manager = TaskManager(match.parent, tmp_path / "tasks")
     view = manager.court("Sample")
     request = {"matchId": "Sample", "revision": view["revision"], "corners": view["corners"]}
-    manager.active_id = "a" * 32
-    manager.store.save({"id": manager.active_id, "matchId": "Sample", "status": "running", "createdAt": "2026-01-01",
-                        "currentStage": None})
+    running_task(manager, court="queued")
     assert manager.court("Sample")["saveBlocked"] is True
     with pytest.raises(WorkerBusy):
         manager.court_save(request)
     assert artifact_fingerprint(match, "court_detection") == view["revision"]
     with pytest.raises(ValueError, match="matchId"):
         manager.court("../Sample")
+
+
+def test_court_saves_mid_task_and_names_the_stages_the_worker_reruns(tmp_path):
+    match = court_match(tmp_path)
+    manager = TaskManager(match.parent, tmp_path / "tasks")
+    revision = manager.court("Sample")["revision"]
+    write_status(stage_path(match, "pose"), StageState(name="pose", status=StageStatus.COMPLETED,
+        inputs={"court_detection": revision}))
+    running_task(manager, court="succeeded", current="event_detection", scope=("court_detection", "pose", "event_detection"))
+    assert manager.court("Sample")["saveBlocked"] is False
+    result = manager.court_save({"matchId": "Sample", "revision": revision,
+        "corners": [[12, 12], [88, 12], [12, 88], [88, 88]]})
+    assert sorted(result["rerunStages"]) == ["event_detection", "pose"]
+    assert "pose" not in result["staleStages"]
 
 
 def test_unconfirmed_court_does_not_gate_downstream_plan(tmp_path):
