@@ -6,9 +6,10 @@ import StageProgress from "./ui/StageProgress.vue";
 import { stageLabel } from "../data/stageLabels";
 import { useTaskFeed } from "../composables/useTaskFeed";
 import { importLocalMatch } from "../data/matchRepository";
+import { COURT_STAGE, courtCheck, courtReaders, courtSaveLock } from "../data/courtCalibration";
 import {
-  CANCEL_CONFIRM, LOG_PAGE_SIZE, cancelPipelineTask, getPipelineLogs, listPipelineStages, planReasonLabel, previewPipeline,
-  retryTask, startPipeline, taskElapsed, taskProgress, taskStatusLabel,
+  CANCEL_CONFIRM, COMMENTARY_STAGE_NOTE, LOG_PAGE_SIZE, cancelPipelineTask, getPipelineLogs, listPipelineStages, planReasonLabel, previewPipeline,
+  retryRequest, retryTask, startPipeline, taskElapsed, taskProgress, taskStatusLabel,
   type LocalAnalysisMatch, type PipelinePlan, type PipelineStage, type PipelineTask,
 } from "../data/pipelineTasks";
 
@@ -25,7 +26,7 @@ const cancelling = ref(false);
 const importing = ref(false);
 const importError = ref("");
 const error = ref("");
-const { tasks, now, reviewSync, syncReview, refresh: refreshTasks } = useTaskFeed();
+const { tasks, now, reviewSync, syncReview, refresh: refreshTasks, courtChecked, acknowledgeCourtCheck } = useTaskFeed();
 const showLogs = ref(false);
 const lines = ref<string[]>([]);
 const logOffset = ref(0);
@@ -49,6 +50,13 @@ const runRows = computed(() => plan.value?.stages.filter(row => row.action === "
 const skipRows = computed(() => plan.value?.stages.filter(row => row.action === "skip") ?? []);
 /** The shared feed publishes a succeeded task's Review; this panel only reports on it. */
 const review = computed(() => task.value ? reviewSync.value[task.value.id] : undefined);
+const readers = computed(() => courtReaders(stages.value));
+const check = computed(() => task.value && task.value.id !== courtChecked.value ? courtCheck(task.value, readers.value) : null);
+const courtLock = computed(() => courtSaveLock(task.value));
+/** The match list refreshes slower than the task feed, so a court this task just detected counts at once. */
+const courtAvailable = computed(() => props.match.completedStages.includes(COURT_STAGE) ||
+  (running.value && task.value?.stageStates[COURT_STAGE]?.status === "succeeded"));
+const runsCommentary = computed(() => runRows.value.some(row => row.name === "commentary"));
 
 /** The plan follows the selection, so there is no separate "preview" step before starting. */
 async function refreshPlan() {
@@ -114,10 +122,10 @@ async function retry() {
     finally { busy.value = false; }
     return;
   }
-  const { requestedStages, mode: previousMode } = task.value.plan;
-  selected.value = [...requestedStages]; mode.value = previousMode;
+  const { stages: unfinished, mode: previousMode } = retryRequest(task.value);
+  selected.value = [...unfinished]; mode.value = previousMode;
   error.value = ""; busy.value = true;
-  try { await launch(await previewPipeline(props.match.id, requestedStages, previousMode)); }
+  try { await launch(await previewPipeline(props.match.id, unfinished, previousMode)); }
   catch (cause) { error.value = cause instanceof Error ? cause.message : "無法重新開始分析"; }
   finally { busy.value = false; }
 }
@@ -217,13 +225,14 @@ onMounted(async () => {
         <p v-if="planning" class="secondary">正在計算要執行的階段…</p>
         <template v-else-if="plan">
           <p v-if="!runRows.length" class="secondary">勾選的項目都已是最新結果，不需要執行。</p>
-          <ol v-else><li v-for="row in runRows" :key="row.name"><strong>{{ stageLabel(row.name) }}</strong><span class="secondary">{{ planReasonLabel(row) }}</span></li></ol>
+          <ol v-else><li v-for="row in runRows" :key="row.name"><strong>{{ stageLabel(row.name) }}</strong><span class="secondary">{{ planReasonLabel(row) }}</span>
+            <small v-if="row.name === 'commentary'" class="pipeline-plan-note">{{ COMMENTARY_STAGE_NOTE }}</small></li></ol>
           <details v-if="skipRows.length" class="pipeline-plan-skipped">
             <summary>其餘 {{ skipRows.length }} 項沿用既有結果</summary>
             <ul><li v-for="row in skipRows" :key="row.name">{{ stageLabel(row.name) }} · {{ planReasonLabel(row) }}</li></ul>
           </details>
           <p v-if="plan.affectedOutsideScope.length" class="warning">完成後，這些未勾選的階段結果會過期：{{ plan.affectedOutsideScope.map(stageLabel).join("、") }}</p>
-          <p v-if="plan.includesGemini" class="warning">此計畫會呼叫 Gemini API。</p>
+          <p v-if="plan.includesGemini" class="warning">此計畫會呼叫 Gemini API<template v-if="runsCommentary">（賽評只生成 3 段）</template>。</p>
         </template>
       </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -237,7 +246,7 @@ onMounted(async () => {
       </header>
       <StageProgress :status="task.status" :progress="overall.fraction" label="整體進度" />
       <ul class="task-stage-list"><li v-for="(stage, name) in task.stageStates" :key="name">
-        <span>{{ stageLabel(String(name)) }}</span><span>{{ taskStatusLabel(stage.status) }}<template v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</template></span>
+        <span>{{ stageLabel(String(name)) }}<template v-if="stage.reruns"> · 球場調整後重跑</template></span><span>{{ taskStatusLabel(stage.status) }}<template v-if="stage.progress !== null"> · {{ Math.round(stage.progress * 100) }}%</template></span>
         <StageProgress :status="stage.status" :progress="stage.progress" :label="`${stageLabel(String(name))}進度`" />
       </li></ul>
       <p v-if="task.error" class="error" role="alert">{{ task.error }}</p>
@@ -252,8 +261,8 @@ onMounted(async () => {
 
     <p v-if="task && review?.state === 'failed'" class="error" role="alert">回看更新失敗：{{ review.error }}。原有回看資料仍可使用。 <button type="button" @click="syncReview(task, { verify: false, retry: true })">重新匯入</button></p>
     <p v-if="importError" class="error" role="alert">匯入失敗：{{ importError }}</p>
-    <CourtCalibrationPanel :match-id="match.id" :available="match.completedStages.includes('court_detection')"
-      :running="running" @updated="emit('updated')" @select="pick" />
+    <CourtCalibrationPanel :match-id="match.id" :available="courtAvailable" :running="running" :locked="courtLock"
+      :check="check" :class="{ 'court-calibration--check': check }" @updated="emit('updated')" @select="pick" @checked="task && acknowledgeCourtCheck(task.id)" />
     <button v-if="!hasReview && match.hasSegments && !running" type="button" class="button-secondary" :disabled="importing" @click="importExisting">{{ importing ? "匯入中…" : "匯入已有分析結果" }}</button>
   </section>
 </template>

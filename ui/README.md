@@ -23,7 +23,7 @@ Timeline 的 Full Match／Fit Rally Temporal Lens 共用同一 viewport 與 time
 
 Capabilities 由 Python review exporter 的 stage state 與實際逐片段資料集中產生。optional artifact 缺失或錯誤只關閉對應軌道／內容，不阻止 segments 可用的比賽載入。`null` 保留為缺資料，`0` 保留為合法觀察值。
 
-賽評支援 `stages/commentary/commentary.json` 的 `commentary-rallies-v1` 全場 artifact，以及沒有全場 `status.json` 的 `stages/commentary/segments/segment_*.json` `commentary-segment-v1` 隨選 artifact。全場資料是基底；同片段的有效隨選結果以整個 Rally 為單位覆寫。前端分開保留全場 stage state 與逐片段可用率，不會因一筆隨選結果宣稱全場完成。事件以 full-match `stroke_index` 精確 join `Stroke.eventIndex` 並保留 backend `time_sec`；摘要沒有時間，不進 Timeline。`source_fact_ids` 原樣保留，只有精確的 `rally:<segment>:stroke:<eventIndex>` 可導向既有 Stroke，其他依據安全顯示為未解析 provenance。Review 只呈現已發布結果；Matches 的任務介面要明確選取 commentary 才會執行賽評。
+賽評支援 `stages/commentary/commentary.json` 的 `commentary-rallies-v1` 全場 artifact，以及沒有全場 `status.json` 的 `stages/commentary/segments/segment_*.json` `commentary-segment-v1` 隨選 artifact。全場資料是基底；同片段的有效隨選結果以整個 Rally 為單位覆寫。前端分開保留全場 stage state 與逐片段可用率，不會因一筆隨選結果宣稱全場完成。事件以 full-match `stroke_index` 精確 join `Stroke.eventIndex` 並保留 backend `time_sec`；摘要沒有時間，不進 Timeline。`source_fact_ids` 原樣保留，只有精確的 `rally:<segment>:stroke:<eventIndex>` 可導向既有 Stroke，其他依據安全顯示為未解析 provenance。Review 只呈現已發布結果；Matches 的任務介面要明確選取 commentary 才會執行賽評，且分析流程的賽評只示範幾段（`commentary.stage_segment_limit`，預設 3）：精彩排名前 3 段，沒有精彩排序時取最長的 3 段，其他片段在 Review 單段產生。
 
 Python 本機任務服務執行 `modules/**` pipeline；匯入器讀取完成的 artifacts 並更新回看快取。Vue 仍只載入版本化 Review export，不載入 pose/shuttle 大型 JSON 至首屏。
 
@@ -82,7 +82,7 @@ $env:BADMINTON_MATCHES_DIR='C:\path\to\matches'
 npm.cmd run dev -- --port 5173 --strictPort
 ```
 
-Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時若 worker lock 仍被持有，任務會顯示恢復中並阻擋新任務；lock 釋放後若無法確認結果，才標為 interrupted，不自動重跑。執行中的任務可在分析面板或任務頁按「取消分析」：服務會終止 worker 及其子程序（含 ffmpeg），任務標為 cancelled；已完成的階段保留，被中止的階段標為 failed，下次會重新執行。
+Matches 頁的「分析比賽」可選真實 stages、預覽 continue／rerun-selected 計畫、開始與查看任務。任務在獨立 Python worker 中執行；關閉瀏覽器不會中止任務。成功後由既有匯入流程更新 Review。若更新失敗，分析任務仍為 succeeded，按「重新整理回看資料」可重試。服務重啟時若 worker lock 仍被持有，任務會顯示恢復中並阻擋新任務；lock 釋放後若無法確認結果，才標為 interrupted，不自動重跑。任務會先跑球場偵測、把讀球場的階段（骨架標記與其後）排到最後；球場一偵測完，分析面板就自動展開場地預覽請使用者檢查，其餘階段照常進行。此時保存場地，尚未開始的階段直接讀新球場，已讀過舊球場的階段由 worker 自動重跑。執行中的任務可在分析面板或任務頁按「取消分析」：服務會終止 worker 及其子程序（含 ffmpeg），任務標為 cancelled；已完成的階段保留，被中止的階段標為 failed，下次會重新執行。
 
 私有任務資料預設在 `<repository>/.local/pipeline-tasks/`，可用 `BADMINTON_TASKS_DIR` 覆寫。`--ui-origin` 預設為 `http://127.0.0.1:5173`；改用其他 Vue 連接埠時需在啟動 Python 服務時設定。Vite 將同源 `/api/pipeline/*` 代理至 loopback 服務。未啟動服務時，已匯入 Review 仍可讀取。
 

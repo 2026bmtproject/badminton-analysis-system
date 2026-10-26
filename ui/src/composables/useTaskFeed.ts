@@ -1,4 +1,5 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { courtAwaitsCheck } from "../data/courtCalibration";
 import { isActiveTask, listPipelineTasks, type PipelineTask } from "../data/pipelineTasks";
 
 /*
@@ -13,7 +14,10 @@ const now = ref(Date.now());
 /** Polls failed in a row; one miss (a service still starting, a slow restart) is not yet "offline". */
 const failures = ref(0);
 const SEEN_KEY = "tasks.seenFailure";
-const seenFailure = ref(readSeen());
+const seenFailure = ref(readStored(SEEN_KEY));
+/** The task whose court check the user answered; one is enough, since only the running task asks. */
+const COURT_CHECKED_KEY = "tasks.courtChecked";
+const courtChecked = ref(readStored(COURT_CHECKED_KEY));
 export type ReviewSync = { state: "publishing" | "done" | "failed"; error?: string };
 /** Review refresh state by task ID; each succeeded task is published at most once unless a retry is asked for. */
 const reviewSync = ref<Record<string, ReviewSync>>({});
@@ -25,8 +29,8 @@ let users = 0;
 let generation = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-function readSeen(): string | null {
-  try { return localStorage.getItem(SEEN_KEY); } catch { return null; }
+function readStored(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
 const active = computed(() => tasks.value.find(isActiveTask) ?? null);
@@ -36,6 +40,12 @@ const newest = computed(() => tasks.value[0] ?? null);
 const unseenFailure = computed(() => {
   const task = newest.value;
   return Boolean(task && (task.status === "failed" || task.status === "interrupted") && task.id !== seenFailure.value);
+});
+
+/** The running task whose freshly detected court the user has not looked at yet, wherever they are in the app. */
+const courtCheckTask = computed(() => {
+  const task = active.value;
+  return task && task.id !== courtChecked.value && courtAwaitsCheck(task) ? task : null;
 });
 
 /**
@@ -107,6 +117,12 @@ function acknowledgeFailure() {
   try { localStorage.setItem(SEEN_KEY, task.id); } catch { /* the badge just reappears next session */ }
 }
 
+/** The user looked at the court of this task, judged it fine or saved a repair, so no view asks again. */
+function acknowledgeCourtCheck(taskId: string) {
+  courtChecked.value = taskId;
+  try { localStorage.setItem(COURT_CHECKED_KEY, taskId); } catch { /* the check just asks again next session */ }
+}
+
 export function useTaskFeed() {
   onMounted(() => {
     if (users++ > 0) return;
@@ -118,5 +134,8 @@ export function useTaskFeed() {
     generation++;
     clearTimeout(timer);
   });
-  return { tasks, error, loaded, now, active, offline, unseenFailure, refresh, acknowledgeFailure, reviewSync, reviewVersion, syncReview };
+  return {
+    tasks, error, loaded, now, active, offline, unseenFailure, refresh, acknowledgeFailure, reviewSync, reviewVersion, syncReview,
+    courtChecked, courtCheckTask, acknowledgeCourtCheck,
+  };
 }

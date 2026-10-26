@@ -5,9 +5,17 @@ import { importLocalMatch } from "../data/matchRepository";
 import { clientToCourt, loadCourt, previewCourt, saveCourt, type CourtPoint, type CourtReview } from "../data/courtCalibration";
 import { stageLabel } from "../data/stageLabels";
 
-const props = defineProps<{ matchId: string; available: boolean; running: boolean }>();
-/** `select` asks the analysis panel to tick these stages for the next run. */
-const emit = defineEmits<{ updated: []; select: [stages: string[]] }>();
+const props = defineProps<{
+  matchId: string; available: boolean;
+  /** An analysis is running; it publishes the Review itself once it finishes. */
+  running: boolean;
+  /** Why the court cannot be saved right now, or null. */
+  locked: string | null;
+  /** Set while a running task waits for the user to look at the court it just detected. */
+  check: { ran: string[]; upcoming: string[] } | null;
+}>();
+/** `select` asks the analysis panel to tick these stages for the next run; `checked` ends the court check. */
+const emit = defineEmits<{ updated: []; select: [stages: string[]]; checked: [] }>();
 const open = ref(false);
 const court = ref<CourtReview | null>(null);
 const corners = ref<CourtPoint[]>([]);
@@ -18,6 +26,9 @@ const error = ref("");
 const publishError = ref("");
 const staleStages = ref<string[]>([]);
 const unknownStages = ref<string[]>([]);
+const rerunStages = ref<string[]>([]);
+/** Readers the running task had not reached when the court was saved: they read the new one, nothing reruns. */
+const appliedStages = ref<string[]>([]);
 const drag = ref<number | null>(null);
 const touched = ref<number[]>([]);
 const svg = ref<SVGSVGElement | null>(null);
@@ -37,8 +48,12 @@ function labelPlacement(index: number) {
   return { x: (left ? 1.8 : -1.8) * unit.value, y: (top ? 3.2 : -2) * unit.value, anchor: left ? "start" : "end" };
 }
 const changed = computed(() => court.value !== null && JSON.stringify(corners.value) !== JSON.stringify(court.value.corners));
+/**
+ * Confirming an unchanged court still rewrites court.json, which every reader sees as a new court; mid-task that would
+ * rerun them for nothing, so then only a moved corner saves ("看起來沒問題" covers the rest).
+ */
 const canConfirm = computed(() => court.value !== null &&
-  (court.value.coordinateUnknown ? touched.value.length === 4 : changed.value || !court.value.confirmed));
+  (court.value.coordinateUnknown ? touched.value.length === 4 : changed.value || (!court.value.confirmed && !props.running)));
 
 function reset() {
   if (!court.value) return;
@@ -62,8 +77,23 @@ function toggle() {
 }
 watch(() => props.matchId, () => {
   open.value = false; court.value = null; error.value = ""; staleStages.value = []; unknownStages.value = [];
+  rerunStages.value = []; appliedStages.value = [];
 });
 watch(() => props.available, value => { if (value && open.value) void reload(); });
+// The service's own save lock was read with the court, so it is read again when the task's lock lifts.
+watch(() => props.locked, () => { if (props.available && open.value) void reload(); });
+/** A freshly detected court opens itself, so a crooked one is seen while the stages that do not read it run. */
+watch(() => props.check !== null, pending => {
+  if (!pending || open.value) return;
+  open.value = true;
+  rerunStages.value = []; appliedStages.value = [];
+  if (props.available) void reload();
+}, { immediate: true });
+function looksFine() {
+  open.value = false;
+  reset();
+  emit("checked");
+}
 const outdated = computed(() => [...staleStages.value, ...unknownStages.value]);
 const statusLine = computed(() => {
   if (!court.value) return "";
@@ -123,14 +153,20 @@ function nudge(event: KeyboardEvent, index: number) {
   queuePreview(true);
 }
 async function save() {
-  if (!court.value || !canConfirm.value || props.running || court.value.saveBlocked) return;
+  if (!court.value || !canConfirm.value || props.locked || court.value.saveBlocked) return;
   saving.value = true; error.value = ""; publishError.value = "";
+  const upcoming = props.check?.upcoming ?? [];
   try {
     const result = await saveCourt(props.matchId, court.value.revision, corners.value);
     staleStages.value = result.staleStages;
     unknownStages.value = result.unknownStages;
+    rerunStages.value = result.rerunStages ?? [];
+    appliedStages.value = upcoming.filter(name => !rerunStages.value.includes(name));
     await reload();
     emit("updated");
+    if (props.check) emit("checked");
+    // A running task publishes its own Review when it finishes, from the court it ends up using.
+    if (props.running) return;
     try { await importLocalMatch(props.matchId); emit("updated"); }
     catch (cause) { publishError.value = cause instanceof Error ? cause.message : "回看資料更新失敗"; }
   } catch (cause) { error.value = cause instanceof Error ? cause.message : "保存失敗"; }
@@ -147,6 +183,13 @@ async function save() {
         <button type="button" class="button-secondary" @click="emit('select', ['court_detection'])">勾選{{ stageLabel("court_detection") }}</button>
       </template>
       <template v-else>
+        <div v-if="check" class="court-check" role="status">
+          <p><strong>球場偵測完成，請看一下線有沒有對齊場地。</strong>後面的分析照常進行，不用等。</p>
+          <p>線大致貼著場地邊線就不用調：歪一點點不影響後續，球場只用來判斷誰是場上球員和換算站位。明顯歪掉（邊線偏到場外、角點落在別條線上）才需要拖曳角點調整。</p>
+          <p v-if="check.ran.length">現在調整的話，已經用這個球場跑過的{{ check.ran.map(stageLabel).join("、") }}會自動重跑，需要多花時間。</p>
+          <p v-else-if="check.upcoming.length">現在調整不用重跑任何階段：{{ check.upcoming.map(stageLabel).join("、") }}還沒開始，會直接使用調整後的球場。</p>
+          <button type="button" class="button-secondary" @click="looksFine">看起來沒問題</button>
+        </div>
         <p v-if="loading" role="status" class="secondary">載入場地預覽中…</p>
         <p v-if="court" class="secondary">{{ statusLine }}</p>
         <p v-if="court?.coordinateUnknown" class="warning">舊結果缺少影像尺寸，請在背景上重新拖曳四個角點後保存。</p>
@@ -166,11 +209,13 @@ async function save() {
               :font-size="unit * 1.9">{{ labels[index] }}</text>
           </g>
         </svg>
-        <p v-if="court && (running || court.saveBlocked)" class="warning">分析進行中，暫時不能保存場地。</p>
+        <p v-if="court && (locked || court.saveBlocked)" class="warning">{{ locked ?? "分析進行中，暫時不能保存場地。" }}</p>
         <div v-if="court" class="court-calibration-actions">
           <button type="button" class="button-secondary" :disabled="saving || !changed" @click="reset">還原</button>
-          <button type="button" class="button-primary" :disabled="saving || loading || !canConfirm || running || court.saveBlocked || !!error" @click="save">{{ saving ? "保存中…" : "確認並保存" }}</button>
+          <button type="button" class="button-primary" :disabled="saving || loading || !canConfirm || !!locked || court.saveBlocked || !!error" @click="save">{{ saving ? "保存中…" : "確認並保存" }}</button>
         </div>
+        <p v-if="rerunStages.length" class="warning" role="status">場地已保存。{{ rerunStages.map(stageLabel).join("、") }}用舊球場跑過，分析會自動重跑。</p>
+        <p v-else-if="appliedStages.length" class="secondary" role="status">場地已保存，{{ appliedStages.map(stageLabel).join("、") }}會直接使用新球場，不需重跑。</p>
         <p v-if="error" class="error" role="alert">{{ error }} <button type="button" @click="reload">重新載入</button></p>
         <p v-if="publishError" class="error" role="alert">場地已保存，但回看更新失敗：{{ publishError }}。原有回看仍可使用。</p>
         <p v-if="outdated.length" class="warning court-calibration-outdated">場地已保存，這些階段的結果可能需要重跑：{{ outdated.map(stageLabel).join("、") }}

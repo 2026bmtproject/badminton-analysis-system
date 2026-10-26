@@ -15,6 +15,30 @@ from modules.review_export.contracts import ARTIFACT_MODELS, CommentaryArtifact
 
 MATCH_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 GEMINI_STAGES = frozenset({"score_recognition", "commentary"})
+COURT_STAGE = "court_detection"
+
+
+def court_dependents(modules: dict[str, Any]) -> set[str]:
+    """Every stage that reads the court, directly or through another stage."""
+    found: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for name, module in modules.items():
+            if name not in found and any(dep == COURT_STAGE or dep in found for dep in
+                                         [*module.dependencies, *module.optional_dependencies]):
+                found.add(name)
+                changed = True
+    return found
+
+
+def run_priority(modules: dict[str, Any]) -> dict[str, int]:
+    """The court runs as soon as it can and what reads it as late as it can.
+
+    Everything that does not read the court runs in between, which is the time the user has
+    to check the court and repair it before any stage has used it.
+    """
+    return {COURT_STAGE: -1, **{name: 1 for name in court_dependents(modules)}}
 
 
 def _valid_artifact(match: Path, name: str) -> bool:
@@ -66,7 +90,7 @@ def build_plan(match: Path, requested: list[str], mode: str,
                 pending.append(dependency)
     order = topological_order({name: [dep for dep in
         [*modules[name].dependencies, *modules[name].optional_dependencies] if dep in scope]
-        for name in scope})
+        for name in scope}, run_priority(modules))
     stages: list[dict[str, Any]] = []
     will_run: set[str] = set()
     for name in order:

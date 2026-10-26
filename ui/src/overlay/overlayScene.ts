@@ -13,9 +13,12 @@ export const STROKE_HOLD_FRAMES = 14;
 /** A colour role; the renderer maps it to a theme colour. `method:<name>` is one shuttle tracking method. */
 export type OverlayTone = "court" | "neutral" | "a" | "b" | "hit" | `method:${string}`;
 
-/** Positions are video pixels; widths and radii are screen pixels, so marks keep their size at any zoom. */
+/**
+ * Positions are video pixels; widths and radii are screen pixels at a 540px-tall picture, which the renderer grows
+ * with a larger picture. `casing: false` leaves a mark without the dark edge the renderer gives lines and dots.
+ */
 export type OverlayMark =
-  | { kind: "line"; points: OverlayPoint[]; tone: OverlayTone; width: number; closed?: boolean; alpha?: number }
+  | { kind: "line"; points: OverlayPoint[]; tone: OverlayTone; width: number; closed?: boolean; alpha?: number; casing?: false }
   | { kind: "circle"; center: OverlayPoint; radius: number; tone: OverlayTone; width: number | "fill" }
   | { kind: "label"; at: OverlayPoint | "video-bottom"; text: string; tone: OverlayTone; align: "start" | "center"; lift: number }
   | { kind: "border"; tone: OverlayTone; width: number };
@@ -103,9 +106,9 @@ export function buildOverlayScene(input: OverlaySceneInput): OverlayMark[] {
   if (layers.court && chunk?.court && manifest) {
     const court = chunk.court;
     for (const [from, to] of manifest.courtLines) {
-      if (court[from] && court[to]) marks.push({ kind: "line", points: [court[from], court[to]], tone: "court", width: 1.5 });
+      if (court[from] && court[to]) marks.push({ kind: "line", points: [court[from], court[to]], tone: "court", width: 2.5 });
     }
-    for (const point of court) marks.push({ kind: "circle", center: point, radius: 2.5, tone: "court", width: "fill" });
+    for (const point of court) marks.push({ kind: "circle", center: point, radius: 3, tone: "court", width: "fill" });
   }
 
   for (const side of SIDES) {
@@ -115,13 +118,14 @@ export function buildOverlayScene(input: OverlaySceneInput): OverlayMark[] {
     if (layers.pose) {
       if (pose.bbox) {
         const [x1, y1, x2, y2] = pose.bbox;
-        marks.push({ kind: "line", points: [[x1, y1], [x2, y1], [x2, y2], [x1, y2]], tone, width: 1, closed: true, alpha: 0.6 });
+        marks.push({ kind: "line", points: [[x1, y1], [x2, y1], [x2, y2], [x1, y2]], tone, width: 1, closed: true, alpha: 0.6,
+          casing: false });
       }
       const keypoints = pose.keypoints;
       if (keypoints && manifest) {
         for (const [from, to] of manifest.skeleton) {
           const a = keypoints[from], b = keypoints[to];
-          if (a && b) marks.push({ kind: "line", points: [a, b], tone, width: 2 });
+          if (a && b) marks.push({ kind: "line", points: [a, b], tone, width: 2.5 });
         }
         for (const point of keypoints) if (point) marks.push({ kind: "circle", center: point, radius: 2.5, tone, width: "fill" });
       }
@@ -137,12 +141,12 @@ export function buildOverlayScene(input: OverlaySceneInput): OverlayMark[] {
     for (const method of input.methods) {
       const tone: OverlayTone = `method:${method}`;
       if (layers.trail) {
-        for (const run of shuttleTrail(chunk, method, frame)) marks.push({ kind: "line", points: run, tone, width: 1.5 });
+        for (const run of shuttleTrail(chunk, method, frame)) marks.push({ kind: "line", points: run, tone, width: 2.5 });
       }
       const point = shuttleAt(chunk, method, frame);
       if (point) {
-        marks.push({ kind: "circle", center: point, radius: 7, tone, width: 2 });
-        marks.push({ kind: "circle", center: point, radius: 1.5, tone, width: "fill" });
+        marks.push({ kind: "circle", center: point, radius: 9, tone, width: 2.5 });
+        marks.push({ kind: "circle", center: point, radius: 2, tone, width: "fill" });
       }
     }
   }
@@ -153,8 +157,8 @@ export function buildOverlayScene(input: OverlaySceneInput): OverlayMark[] {
       const method = manifest?.baseMethod ?? input.methods[0];
       const at = method ? shuttleAt(chunk, method, flash.hit.frame) : null;
       // Without a tracked shuttle the whole picture flashes, so a hit never passes unseen.
-      marks.push(at ? { kind: "circle", center: at, radius: 12 + flash.grow, tone: "hit", width: 2.5 }
-        : { kind: "border", tone: "hit", width: 3 });
+      marks.push(at ? { kind: "circle", center: at, radius: 12 + flash.grow, tone: "hit", width: 3 }
+        : { kind: "border", tone: "hit", width: 4 });
     }
   }
 

@@ -16,6 +16,7 @@ from modules.commentary.module import (
     FAILURE_DIAGNOSTIC_NAME,
     identity_mapping_for_segment,
     read_identity_epochs,
+    stage_segment_order,
 )
 from modules.commentary.providers.base import (
     ProviderDiagnostics,
@@ -26,6 +27,7 @@ from modules.commentary.providers.base import (
 from modules.commentary.providers.fake import FakeProvider
 from modules.contracts import (
     PIPELINE,
+    AudioSegmentSignals,
     CommentaryRally,
     CourtCalibration,
     HighlightScore,
@@ -506,6 +508,43 @@ def test_optional_court_confirmation_and_geometry_policy(tmp_path):
     _run(match, providers)
     plan = json.loads(providers.commentator.calls[0].user_prompt)
     assert all(event["court_zone"] is None for event in plan["events"])
+
+
+def test_stage_order_ranks_highlights_then_falls_back_to_longest(tmp_path):
+    segments = [Segment(0, 9, 0, .3, .3), Segment(10, 99, .3, 3.3, 3), Segment(100, 159, 3.3, 5.3, 2),
+                Segment(160, 189, 5.3, 6.3, 1)]
+    assert stage_segment_order(tmp_path, segments) == [1, 2, 3, 0]
+    # Equal scores fall to cheer confidence, then index; unranked segments follow, longest first.
+    _write_stage(tmp_path, "highlight_ranking", [HighlightScore(0, .5), HighlightScore(2, .5), HighlightScore(3, .9)])
+    _write_stage(tmp_path, "audio_highlight", [AudioSegmentSignals(0, .2, None, 0), AudioSegmentSignals(2, .8, None, 0)])
+    assert stage_segment_order(tmp_path, segments) == [3, 2, 0, 1]
+
+
+def test_stage_runs_only_the_limit_and_passes_an_unsupported_place_on(tmp_path):
+    # Segment 0 has no identity epoch, so the top highlight is skipped for the next one.
+    match = _match(tmp_path)
+    _write_stage(match, "highlight_ranking", [HighlightScore(0, .9), HighlightScore(1, .1)])
+    module = CommentaryModule(config=CommentaryModuleConfig(model="offline", stage_segment_limit=1),
+                              providers=_providers())
+    module.run(match)
+    artifact = read_artifact(PIPELINE["commentary"], module.get_output_path(match))
+    assert [rally["segment_index"] for rally in artifact["rallies"]] == [1]
+    assert artifact["unsupported_segments"] == [{"segment_index": 0, "reason": "player_identity_unavailable"}]
+    assert artifact["runtime"]["selection"] == {"policy": "highlight_ranking", "limit": 1, "segments": [1]}
+
+    # Without a ranking the longest goes first, and the stage stops once the limit is met.
+    artifact_path(match, "highlight_ranking").unlink()
+    module.run(match)
+    artifact = read_artifact(PIPELINE["commentary"], module.get_output_path(match))
+    assert artifact["unsupported_segments"] == []
+    assert artifact["runtime"]["selection"] == {"policy": "longest_duration", "limit": 1, "segments": [1]}
+
+
+@pytest.mark.parametrize("bad", [0, -1, 1.5, True])
+def test_stage_segment_limit_is_validated(bad):
+    with pytest.raises(ValueError, match="stage_segment_limit"):
+        CommentaryModuleConfig(model="offline", stage_segment_limit=bad)
+    assert CommentaryModuleConfig(model="offline", stage_segment_limit=None).stage_segment_limit is None
 
 
 @pytest.mark.parametrize("dependency", [
