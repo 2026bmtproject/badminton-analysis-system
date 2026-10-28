@@ -320,27 +320,10 @@
 
 **處理流程總覽：**
 
-```mermaid
-flowchart LR
-    IN[["完整賽事轉播影片"]]:::io
-    S1["1.影格差異訊號<br/>計算相鄰影格 MAD"]:::stage
-    S2["2.自適應門檻<br/>分類高低 MAD 影格"]:::stage
-    S3["3.跨片段一致性篩選<br/>濾除非固定機位比賽片段"]:::stage
-    S4["4.邊界精修"]:::stage
-    OUT[["segments.json"]]:::io
-
-    IN --> S1 --> S2 --> S3 --> S4 --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
-
-**draw.io 樣圖參照：賽事影片分段**
-
-![賽事影片分段（CVPR 風格樣圖）](figures/report/match-segmentation.svg)
-
-[編輯原始檔](figures/report/match-segmentation.drawio) · [向量 PDF](figures/report/match-segmentation.pdf)
+<figure>
+  <img src="./figures/report/match-segmentation.svg">
+  <figcaption>賽事影片分段處理流程</figcaption>
+</figure>
 
 #### 影格差異訊號
 
@@ -490,28 +473,10 @@ $$
  
 **處理流程總覽：**
  
-```mermaid
-flowchart LR
-    IN1[["原始賽事影片"]]:::io
-    IN2[["segments.json"]]:::io
-    S1["1. 多幀合成前處理"]:::stage
-    S2["2. VLM 轉錄比分"]:::stage
-    D{"相鄰片段分差<br/> ≥ 2 ?"}:::stage
-    S3["3. 二分遞迴定位回合邊界"]:::stage
-    OUT[["scores.json"]]:::io
- 
-    IN1 --> S1
-    IN2 --> S1
-    S1 --> S2
-    S2 --> D
-    D -- "否：片段屬單一回合" --> OUT
-    D -- "是：片段含有多個回合" --> S3
-    S3 -. "對每個子區間重跑" .-> S1
- 
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
+<figure>
+  <img src="./figures/report/score-recognition.svg">
+  <figcaption>比分辨識處理流程</figcaption>
+</figure>
 
 #### 多幀合成前處理
  
@@ -560,35 +525,10 @@ flowchart LR
 
 **處理流程總覽：**
 
-```mermaid
-flowchart TD
-    IN1[["原始賽事影片"]]:::io
-    IN2[["segments.json"]]:::io
-    S1["1. 球員遮擋前處理"]:::stage
-    S2["2. 球場區域定位"]:::stage
-    S3["3. 場線偵測"]:::stage
-    S4["4. 外角候選"]:::stage
-    S5["5. 角點重估與邊界修正"]:::stage
-    S6["6. 結果驗證與評分"]:::stage
-    CRIT{{"單應性 + 吻合度評分"}}:::data
-    OUT[["court.json"]]:::io
-
-    IN1 --> S1
-    IN2 --> S1
-    S1 -->|乾淨球場影像| S2
-    S2 -->|ROI| S3
-    S3 -->|候選線段| S4
-    S4 -->|候選四角| S5
-    S5 -->|精修四角與 H| S6
-    S6 --> OUT
-    CRIT -. 裁決 .-> S4
-    CRIT -. 裁決 .-> S5
-    CRIT -. 裁決 .-> S6
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
+<figure>
+  <img src="./figures/report/court-detection.svg">
+  <figcaption>場地偵測處理流程</figcaption>
+</figure>
 
 #### 球員遮擋前處理
 
@@ -759,41 +699,10 @@ $$S = \underbrace{\frac{1}{12}\sum_{k=1}^{12}\mathrm{cov}_k}_{\text{貼合度}} 
 
 **處理流程總覽：**
 
-```mermaid
-flowchart TD
-    IN1[["原始賽事影片"]]:::io
-    IN2[["segments.json"]]:::io
-    IN3[["court.json"]]:::io
-
-    subgraph P1["感知（GPU）"]
-        direction TB
-        S1["1. 人體位置偵測"]:::stage
-        S2["2. 球場範圍預篩"]:::stage
-        S3["3. 姿態估計"]:::stage
-        S1 --> S2 --> S3
-    end
-
-    CACHE[["全幀所有人骨架快取"]]:::io
-
-    subgraph P2["選人（CPU）"]
-        direction TB
-        S4["4. 腳點反投影"]:::stage
-        S5["5. 公尺身高 / 靜態錨點 / 記憶追蹤"]:::stage
-        S4 --> S5
-    end
-
-    OUT[["pose.json"]]:::io
-
-    IN1 --> S1
-    IN2 --> S1
-    IN3 --> S2
-    S3 --> CACHE --> S4
-    IN3 --> S4
-    S5 --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-```
+<figure>
+  <img src="./figures/report/pose-tracking.svg">
+  <figcaption>球員骨架追蹤處理流程</figcaption>
+</figure>
 
 #### 感知：人體偵測與姿態估計
 
@@ -841,26 +750,10 @@ flowchart TD
 
 **處理流程總覽：**
 
-```mermaid
-flowchart LR
-    IN1[["原始賽事影片"]]:::io
-    IN2[["segments.json"]]:::io
-    S1["1. 熱圖偵測（TrackNetV3）"]:::stage
-    C1[["熱圖快取"]]:::data
-    A1["2a. 軌跡修補<br/>InpaintNet 補洞"]:::stage
-    B1["2b. 多候選修補<br/>低門檻候選 + Viterbi"]:::stage
-    OUT[["shuttle.json"]]:::io
-
-    IN1 --> S1
-    IN2 --> S1
-    S1 --> C1
-    C1 --> A1 --> OUT
-    C1 --> B1 --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
+<figure>
+  <img src="./figures/report/shuttle-tracking.svg">
+  <figcaption>球體追蹤與軌跡重建處理流程</figcaption>
+</figure>
 
 #### 熱圖偵測與快取
 
@@ -910,45 +803,10 @@ flowchart LR
 在 8 場未參與開發的比賽上，本模組在 ±5 影格容差下召回率 90.90%、精確率 95.49%（見[實驗結果](#四實驗結果)）。
 
 **處理流程總覽：**
-```mermaid
-flowchart LR
-    SH[["shuttle.json"]]:::io
-    POSE[["pose.json"]]:::io
-    SCORE[["scores.json<br/>選用"]]:::optional
-
-    BST["BST 逐幀密集掃描"]:::stage
-    CACHE[["逐幀球種機率快取"]]:::data
-
-    CAND["候選生成與篩選"]:::stage
-
-    FILL["結構性補漏"]:::stage
-
-    PRUNE["誤判修剪"]:::stage
-
-    OUT[["events.json"]]:::io
-
-    SH --> BST
-    POSE --> BST
-    BST --> CACHE
-
-    SH --> CAND
-    POSE --> CAND
-    CACHE --> CAND
-
-    CAND --> FILL
-    CACHE --> FILL
-
-    FILL --> PRUNE
-    CACHE --> PRUNE
-    SCORE -.-> PRUNE
-
-    PRUNE --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef optional fill:#f4f4f4,stroke:#888,stroke-dasharray:5 4,color:#333;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
+<figure>
+  <img src="./figures/report/event-detection.svg">
+  <figcaption>擊球時刻偵測處理流程</figcaption>
+</figure>
 
 #### 逐幀球種證據
 
@@ -1058,28 +916,10 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 **處理流程總覽：**
 
-```mermaid
-flowchart TD
-    EV[["events.json"]]:::io
-    SEG[["segments.json"]]:::io
-    POSE[["pose.json"]]:::io
-    SH[["shuttle.json"]]:::io
-    CO[["court.json"]]:::io
-
-    S1["BST"]:::stage
-    OUT[["strokes.json"]]:::io
-
-    EV --> S1
-    SEG --> S1
-    POSE --> S1
-    SH --> S1
-    CO --> S1
-    S1 --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
+<figure>
+  <img src="./figures/report/stroke-classification.svg">
+  <figcaption>球種分類處理流程</figcaption>
+</figure>
 
 #### 分類流程
 
@@ -1109,25 +949,10 @@ flowchart TD
 
 **處理流程總覽：**
 
-```mermaid
-flowchart LR
-    VID[["賽事影片音軌"]]:::io
-    SEG[["segments.json"]]:::io
-    S1["1.音訊切窗"]:::stage
-    S2["2.歡呼分類"]:::stage
-    S3["3.歡呼強度"]:::stage
-    S4["4.片段層級聚合"]:::stage
-    OUT[["audio_signals.json"]]:::io
-
-    VID --> S1
-    SEG --> S1
-    S1 --> S2 --> S3 --> S4 --> OUT
-    S2 --> S4
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-    classDef data fill:#fbf9ef,stroke:#b39a4d,stroke-width:1px,color:#3a3218;
-```
+<figure>
+  <img src="./figures/report/audio-cheer.svg">
+  <figcaption>歡呼音訊量測處理流程</figcaption>
+</figure>
 
 #### 音訊切窗
 
@@ -1218,17 +1043,10 @@ H_s=0.5C_s+0.5I_s^{effective}.
 
 **處理流程總覽：**
 
-```mermaid
-flowchart LR
-    IN[["audio_signals.json"]]:::io
-    S1["歡呼分數與強度合成"]:::stage
-    OUT[["highlights.json"]]:::io
-
-    IN --> S1 --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-```
+<figure>
+  <img src="./figures/report/highlight-ranking.svg">
+  <figcaption>精彩片段排序處理流程</figcaption>
+</figure>
 
 ## 賽事理解
 
@@ -1242,40 +1060,10 @@ flowchart LR
 
 **處理流程總覽：**
 
-```mermaid
-flowchart TD
-    SC[["scores.json"]]:::io
-    ST[["strokes.json"]]:::io
-    DENSE[["逐幀球種機率快取<br/>選用"]]:::optional
-    POSE[["pose.json<br/>選用"]]:::optional
-
-    EP["依規則切出換邊時段"]:::stage
-    ROW["比分變化 → 發球選手"]:::stage
-    SIDE["首拍為發球 → 發球半場"]:::stage
-    VOTE["逐時段投票"]:::stage
-    FILL["依計分板慣例補齊"]:::stage
-    HSV["球衣色彩比對"]:::stage
-    OUT[["identity.json"]]:::io
-
-    SC --> EP
-    SC --> ROW
-    ST --> SIDE
-    DENSE -.-> SIDE
-
-    EP --> VOTE
-    ROW --> VOTE
-    SIDE --> VOTE
-
-    VOTE --> FILL
-    FILL --> OUT
-    FILL -->|仍未判定| HSV
-    POSE -.-> HSV
-    HSV --> OUT
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef optional fill:#f4f4f4,stroke:#888,stroke-dasharray:5 4,color:#333;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-```
+<figure>
+  <img src="./figures/report/identity-mapping.svg">
+  <figcaption>球員身分對應處理流程</figcaption>
+</figure>
 
 #### 判定流程
 
@@ -1293,21 +1081,10 @@ flowchart TD
 
 **使用流程總覽：**
 
-```mermaid
-flowchart LR
-    LIB["比賽庫"]:::stage
-    SET["分析設定"]:::stage
-    TASK["任務進度"]:::stage
-    IMP["匯入既有結果"]:::stage
-    REV[["回看工作區"]]:::io
-
-    LIB --> SET --> TASK -->|完成後自動更新| REV
-    LIB -->|已有分析結果| IMP --> REV
-    LIB -->|已可回看| REV
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-```
+<figure>
+  <img src="./figures/report/ui-workflow.svg">
+  <figcaption>使用者介面操作流程</figcaption>
+</figure>
 
 比賽庫列出比賽資料夾中的每一場比賽及其分析狀態。尚未分析的比賽從「分析設定」選擇要執行的項目，分析在背景執行，完成後回看資料自動更新。已在其他環境完成分析的比賽，則可直接匯入既有結果，不需重新計算。
 
@@ -1403,26 +1180,10 @@ flowchart LR
 
 介面以 Vue 3 與 TypeScript 開發，並以 Electron 包裝為 Windows 桌面程式。分析本身仍由本機的 Python 服務執行，介面只負責送出分析任務與顯示進度。分析完成後，匯入程式會先驗證各階段的 JSON 是否完整、是否與影片相符，再整合成一份回看資料，介面只讀取這一份資料，不直接讀取各階段的原始輸出。骨架、軌跡等資料量較大的疊圖內容則按回合分開儲存，只在使用者打開疊圖時才讀取目前與下一個回合，避免開啟比賽時長時間等待。
 
-```mermaid
-flowchart LR
-    ST[["各階段 JSON"]]:::io
-    VID[["比賽影片"]]:::io
-    IMP["匯入程式<br/>（驗證、整合）"]:::stage
-    REV[["回看資料"]]:::io
-    OVL[["逐回合疊圖資料"]]:::io
-    UI["使用者介面"]:::stage
-    SVC["本機分析服務"]:::stage
-    PIPE["分析管線"]:::stage
-
-    ST --> IMP
-    VID --> IMP
-    IMP --> REV --> UI
-    IMP --> OVL -. 打開疊圖時讀取 .-> UI
-    UI -->|送出任務| SVC --> PIPE --> ST
-
-    classDef io fill:#dfe8f5,stroke:#3f5f8f,stroke-width:1.5px,color:#12233f;
-    classDef stage fill:#f2f5fb,stroke:#5477ac,stroke-width:1px,color:#12233f;
-```
+<figure>
+  <img src="./figures/report/ui-architecture.svg">
+  <figcaption>使用者介面實作架構</figcaption>
+</figure>
 
 
 # 四、實驗結果

@@ -1,6 +1,24 @@
 # 報告圖表：CVPR 論文方法圖風格樣圖
 
-目前包含 `match-segmentation`（賽事影片分段）及 `system-architecture`（系統架構）兩張樣圖。`match-segmentation` 有 `.drawio`、`.svg` 與 `.pdf`。其餘十二張尚未轉換。原報告所有 Mermaid 語法保留，樣圖附在對應區塊下方。
+報告中的流程圖已全部改為 draw.io 圖，報告不再使用 Mermaid。`match-segmentation`（賽事影片分段）有 `.drawio`、`.svg` 與 `.pdf`。
+
+第三章其餘模組的處理流程圖由 `make_flowcharts.py` 從各圖的座標規格產生 `.drawio` 與 `.svg`（`uv run python docs/figures/report/make_flowcharts.py docs/figures/report [圖名 ...]`，不指定圖名時產生全部）。這些圖目前沒有 PDF，需要時再以 draw.io 匯出。
+
+| 檔名 | 對應章節 |
+| --- | --- |
+| `score-recognition` | 比分辨識 |
+| `court-detection` | 場地偵測 |
+| `pose-tracking` | 球員骨架追蹤 |
+| `shuttle-tracking` | 球體追蹤與軌跡重建 |
+| `event-detection` | 擊球時刻偵測 |
+| `stroke-classification` | 球種分類 |
+| `audio-cheer` | 歡呼音訊量測 |
+| `highlight-ranking` | 精彩片段排序 |
+| `identity-mapping` | 球員身分對應 |
+| `ui-workflow` | 使用者介面：使用流程 |
+| `ui-architecture` | 使用者介面：實作概要 |
+
+流程圖的處理步驟沿用 `system-architecture` 中所屬分組的模組配色。JSON 產物畫成折角文件，快取畫成圓柱，影片與音軌輸入畫成圖示框，選用的輸入與相依以虛線表示。若在 draw.io 中手動修改了某張圖，之後重新執行產生器會覆蓋它，此時請改用圖名只產生其他圖。
 
 `system-architecture` 已重畫為第三章的導覽圖：分組對應第三章各節，只畫直接相依，選用相依以虛線表示。它由 `make_system_architecture.py` 從同一份座標產生 `.drawio` 與 `.svg`（`uv run python docs/figures/report/make_system_architecture.py docs/figures/report`），已直接取代報告中的舊圖；PDF 待以 draw.io 匯出。
 
