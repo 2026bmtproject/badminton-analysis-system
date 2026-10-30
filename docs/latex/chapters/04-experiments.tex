@@ -1,0 +1,569 @@
+\chapter{實驗結果}
+\label{ch:experiments}
+
+\section{資料集與重現方式}
+\label{sec:datasets}
+
+本章視覺模組的實驗共用下述影片庫。音訊模型另使用四場開發比賽與一場偵測器外部驗證，資料角色與結果另列於\secref{sec:exp-cheer}。資料集由 16 支 YouTube 羽球單打完整轉播構成，涵蓋 2018 至 2023 年的國際賽事。影片皆為 1920 $\times$ 1080，幀率為 25 或 30 fps，編碼格式包含 H.264、AV1 與 VP9。全部影片合計約 18.09 小時。為避免同一場比賽的資料同時出現在開發與評估中，資料以影片為單位切分為 7 場開發集與 9 場測試集（\tabref{tab:dataset-split}）。開發集用於設計與調整規則，測試集不參與開發，僅在完成後用於報告測試結果。由於其中 15 支影片來自 BWF 官方製作，跨轉播單位的泛化能力仍待後續驗證。
+
+\begin{table}[H]
+  \centering
+  \caption{資料集切分}
+  \label{tab:dataset-split}
+  \begin{tabular}{|l|r|r|}
+    \hline
+    資料分割 & 影片數 & 影格數 \\ \hline
+    開發集 & 7 & 852,297 \\ \hline
+    測試集 & 9 & 851,704 \\ \hline
+    合計 & 16 & 1,704,001 \\ \hline
+  \end{tabular}
+\end{table}
+
+為使影格編號可被他人重現，\file{experiments/dataset/videos.json} 與 \file{videos.md} 記錄每支影片的 YouTube 來源、解析度、幀率、影格數、編碼、SHA-256 雜湊及影格指紋。下載影片後，應先放至 \texttt{matches/<代號>/input/}，並執行下列指令確認檔案與標記時所用影片一致：
+
+\begin{Verbatim}
+uv sync
+uv run python experiments/dataset/verify_video.py --all
+\end{Verbatim}
+
+驗證程式依序檢查檔案雜湊、影格數／幀率／長度，以及固定影格的畫面指紋。即使檔案經重新壓縮，只要影格序列相同仍可通過指紋檢查。
+
+各視覺模組的真值、標記與評分程式及逐場結果置於 \file{experiments/}，影片清單與驗證程式在 \file{experiments/dataset/}。音訊研究的程式與凍結文件另在 badminton-audio-highlight 儲存庫（\url{https://github.com/2026bmtproject/badminton-audio-highlight}，核對 commit \texttt{f72eb4c}），其 labels、features 與結果 JSON 未納入 Git 追蹤，來源雜湊與重現限制見 \file{experiments/audio_highlight/README.md}。
+
+\section{各模組結果}
+\label{sec:module-results}
+
+\subsection{賽事影片分段}
+\label{sec:exp-segmentation}
+
+在 9 場未參與開發的比賽、670 個真值片段上，本模組在 IoU $\geq$ 0.9 下達到 Precision 98.37\%、Recall 98.96\%，邊界誤差中位數為 0 影格。16 場、1354 個片段的整體 F1 為 99.01\%，其中 11 場零錯誤。分段結果會直接決定下游分析範圍，因此本節分別驗證片段偵測、邊界精度，並分析所有失配案例。
+
+真值、標記程式、評分程式與逐場結果皆公開於 \file{experiments/match_segmentation/}。
+
+本模組的真值定義為「固定主機位之連續比賽畫面」的起訖影格，起訖兩端均包含。所有真值由同一位標記者完成。
+
+\subsubsection{偵測準確率}
+
+配對規則為 IoU $\geq$ 0.9、一對一，未配對的輸出段計為 FP、未配對的真值段計為 FN（\tabref{tab:seg-accuracy}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{賽事影片分段的偵測準確率（\%）}
+  \label{tab:seg-accuracy}
+  \begin{tabular}{|l|r|r|r|r|r|r|r|r|}
+    \hline
+    範圍 & 真值 & 輸出 & 配對 & FP & FN & Precision & Recall & F1 \\ \hline
+    開發集 & 684 & 687 & 681 & 6 & 3 & 99.13 & 99.56 & 99.34 \\ \hline
+    測試集 & 670 & 674 & 663 & 11 & 7 & 98.37 & 98.96 & 98.66 \\ \hline
+    合計 & 1354 & 1361 & 1344 & 17 & 10 & 98.75 & 99.26 & 99.01 \\ \hline
+  \end{tabular}
+\end{table}
+
+16 場中有 11 場零錯誤，全部 27 筆失配集中在 5 支影片上。
+
+\subsubsection{邊界精度}
+
+誤差定義為「輸出 $-$ 真值」，單位為影格，只計算配對成功的段。起點為正代表系統比真值晚開始（切掉了開頭），終點為負代表系統比真值早結束（切掉了結尾）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{賽事影片分段的邊界誤差（影格）}
+  \label{tab:seg-boundary}
+  \begin{tabular}{|l|r|r|r|r|r|r|}
+    \hline
+    範圍 & 起點中位數 & 起點 MAE & 起點最大偏移 & 終點中位數 & 終點 MAE & 終點最大偏移 \\ \hline
+    開發集 & +0.0 & 0.31 & +6 & +0.0 & 0.01 & $-3$ \\ \hline
+    測試集 & +0.0 & 0.19 & +4 & +0.0 & 0.05 & $-10$ \\ \hline
+    合計 & +0.0 & 0.26 & +6 & +0.0 & 0.03 & $-10$ \\ \hline
+  \end{tabular}
+\end{table}
+
+1344 個配對段中沒有任何一段的邊界誤差超過 10 影格（\tabref{tab:seg-boundary}）。只要一個回合被完整切出來，它的邊界幾乎一定是準的。
+
+\subsubsection{失敗案例與限制}
+
+27 筆失配可歸為三類，且各自集中於特定影片（\tabref{tab:seg-failures}）。其中漏掉表示回合未被完整切出，多切則表示產生額外片段。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{賽事影片分段的失配成因}
+  \label{tab:seg-failures}
+  \begin{tabularx}{\linewidth}{|L|r|r|>{\raggedright\arraybackslash}p{13em}|}
+    \hline
+    成因 & 多切 & 漏掉 & 影響的比賽 \\ \hline
+    一、播報圖卡動畫把回合切成碎片 & 11 & 6 & TTY\_vs\_ASY\_2023、test1、test2、test3 \\ \hline
+    二、全域亮度變化使跨片段篩選失效 & 1 & 2 & test4 \\ \hline
+    三、門檻邊緣的高強度回合被切斷 & 5 & 2 & test6 \\ \hline
+    合計 & 17 & 10 & \\ \hline
+  \end{tabularx}
+\end{table}
+
+\textbf{一、播報圖卡動畫。}轉播在回合開始或結束時播放球員名條、比分卡等動畫，使 MAD 超過門檻，將回合切成碎片。動畫持續 3--6 秒，遠超過邊界精修可橋接的 12 影格，因此無法重新連接。
+
+\textbf{二、全域亮度變化。}test4 開賽後前兩個回合整段消失。MAD 中位數與正常回合相近，表示門檻判斷本身沒有問題。真正失效的是跨片段一致性篩選。由於開賽初期場館燈光逐漸變亮，兩段畫面與其他回合雖然構圖相同，整體像素差卻明顯較高，因而被誤判為非比賽畫面。此類錯誤表現為整段消失，而非邊界偏移。
+
+\textbf{三、門檻邊緣的高強度回合。}test6 有兩個高強度回合被切成數段，其中一個 11.4 秒的回合被切成三段。切斷處與保留區段的 MAD 均接近門檻，顯示球員劇烈移動使畫面差異在門檻附近波動。由於目前採用全片固定門檻，無法適應此類時間上的動態變化。
+
+\textbf{已知但未在本資料集上觸發的限制。}若影片包含大量且相似的非比賽畫面，跨片段一致性篩選可能失效。系統亦假設存在穩定主機位，不適用於手持或多機快切影片。此外，16 支影片中有 15 支來自 BWF 官方製作，因此跨轉播單位的泛化能力尚未驗證。
+
+\subsection{場地偵測}
+\label{sec:exp-court}
+
+在 9 場未參與開發的比賽、36 個球場外角上，本模組的角點定位誤差中位數為 2.79 像素，命中率 72.22\%，9 場中有 6 場四角全中。16 場、64 個外角的整體誤差中位數為 3.05 像素，命中率 76.56\%，11 場四角全中。
+
+真值、標記程式、評分程式與逐場結果皆公開於 \file{experiments/court_detection/}。
+
+\textbf{真值定義。}球場外緣是有寬度的白線，邊線與底線在外角交疊成一個小四邊形，本節稱為「角區」。標記時不直接點選角點，而是在合成圖上標出外框四條線各自的外緣與內緣，共 8 條邊緣，每個角區由相交的兩條底線邊緣與兩條邊線邊緣的 4 個交點構成。所有真值由同一位標記者完成。
+
+\subsubsection{定位誤差}
+
+誤差定義為偵測角點到角區中心的歐氏距離，單位為像素（\tabref{tab:court-error}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{場地偵測的角點定位誤差（像素）}
+  \label{tab:court-error}
+  \begin{tabular}{|l|r|r|r|r|r|r|}
+    \hline
+    範圍 & 角數 & 遠端中位數 & 近端中位數 & 全部中位數 & 全部平均 & 全部最大 \\ \hline
+    開發集 & 28 & 0.97 & 3.59 & 3.34 & 31.95 & 395.72 \\ \hline
+    測試集 & 36 & 1.00 & 4.83 & 2.79 & 33.71 & 440.27 \\ \hline
+    合計 & 64 & 1.00 & 3.62 & 3.05 & 32.94 & 440.27 \\ \hline
+  \end{tabular}
+\end{table}
+
+中位數與平均值相差十倍，顯示誤差分布呈兩極，多數角點的誤差只有數像素，少數完全失敗的角則偏離數百像素。近端的像素誤差大於遠端，推測是鏡頭畸變使部分影片中近端底線彎曲造成。
+
+\subsubsection{命中率}
+
+命中定義為偵測角點落在角區內，或在角區外緣 2 像素容差內（\tabref{tab:court-hit}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{場地偵測的命中率}
+  \label{tab:court-hit}
+  \begin{tabular}{|l|r|r|r|r|r|r|}
+    \hline
+    範圍 & 場數 & 遠端命中 & 近端命中 & 全部命中 & 命中率（\%） & 四角全中場數 \\ \hline
+    開發集 & 7 & 11/14 & 12/14 & 23/28 & 82.14 & 5/7 \\ \hline
+    測試集 & 9 & 14/18 & 12/18 & 26/36 & 72.22 & 6/9 \\ \hline
+    合計 & 16 & 25/32 & 24/32 & 49/64 & 76.56 & 11/16 \\ \hline
+  \end{tabular}
+\end{table}
+
+若不給容差、只計嚴格落在線寬內的角點，命中為 33/64（51.56\%）。有 16 個角點落在角區外緣 2 像素內，這類偏移已小於一條白線的寬度，在後續換算球場座標時可視為已對準。
+
+\subsubsection{失敗案例與限制}
+
+15 個未命中的角中，14 個來自同一根因，底線旁的地面廣告字樣在線段分群時與底線合併，導致代表線偏移（\tabref{tab:court-failures}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{場地偵測的未命中成因}
+  \label{tab:court-failures}
+  \begin{tabularx}{\linewidth}{|L|r|r|l|}
+    \hline
+    成因 & 未命中角數 & 到角區中心距離 & 影響的比賽 \\ \hline
+    底線被廣告字樣污染，收縮至內部矩形 & 8 & 17--440 px & CTC\_vs\_CL\_2019、test5 \\ \hline
+    底線被廣告字樣污染，外擴至字樣邊緣 & 6 & 17--70 px & test8、test6 \\ \hline
+    遠端角輕微偏移 & 1 & 10 px & ASG\_vs\_AA\_2020 \\ \hline
+    合計 & 15 & & \\ \hline
+  \end{tabularx}
+\end{table}
+
+\textbf{底線被廣告字樣污染。}轉播場館常在場地墊印製贊助商字樣，距底線僅約 10--40 像素。由於字樣位於球場遮罩內，白色字母會被視為線像素，並經霍夫轉換產生大量與底線平行的短線段，其方向正確，因此無法由消失點過濾排除。
+
+將人工標記的真值四角直接代入同一套吻合度評分，test5 與 CTC\_vs\_CL\_2019 分別得到 0.825 與 0.922，明顯高於實際錯誤解的約 0.45，顯示評分本身能辨識正確解，問題主要發生在候選生成階段。
+
+進一步僅修改線段分群方式並重跑 16 場，將合併距離由 14 像素縮為 6 像素，或改以最長線段為錨點並依線段長度加權擬合，命中數皆由 49/64 提升至 61/64，且上述四場全部恢復命中。由於這些修正是在觀察測試集失敗後才提出，因此不能將修正後結果視為未參與開發的測試結果，修正列為後續改進方向。
+
+\textbf{系統無法察覺自身失敗。}三場四角全錯的比賽中，模組皆正常輸出四角與單應性，未標記為偵測失敗。原因是吻合度目前僅用於候選間比較，沒有絕對門檻判斷最佳解是否可信，因此錯誤結果仍會傳入下游模組。
+
+\textbf{已知但未觸發的限制。}本模組假設機位固定，且球場大致位於畫面中央偏下，並從該區域取樣參考色。若機位偏移使取樣區域落在場外，顏色分割可能整體失效。
+
+\subsection{擊球時刻偵測}
+\label{sec:exp-events}
+
+在 8 場未參與開發的比賽、6990 拍上，本模組在 $\pm$5 幀容差下達到 Precision 95.49\%、Recall 90.90\%，配對成功的擊球時間誤差中位數為 $-1$ 幀。14 場、12163 拍的整體 F1 為 92.10\%。
+
+真值、評分程式與逐場結果皆公開於 \file{experiments/event_detection/}。
+
+\textbf{真值來源。}本模組的真值取自公開資料集 ShuttleSet~\cite{shuttleset}（MIT 授權），以原檔形式收錄。16 場中有 14 場在 ShuttleSet 內，因此本節的開發集為 6 場、測試集為 8 場。答案幀原樣使用，唯一的調整是 \texttt{test5} 與 \texttt{test8}，我們取得的影片版本開頭多出一段賽前畫面，整體差了整數分鐘（+15000 與 +12000 幀），先予補回。
+
+\textbf{評分範圍。}真值只涵蓋 ShuttleSet 收錄的回合，系統輸出也只存在於分段模組切出的片段內。因此只在兩者重疊的時間評分，以每個回合的第一拍到最後一拍（前後各放寬容差 tol）與片段取交集。全真值中有 97.9\% 落在評分範圍內。
+
+\subsubsection{偵測準確率}
+
+配對規則為偵測幀與答案幀相差 $\leq$ 5 幀、一對一，由相差最小者開始配對。未配對的偵測計為 FP，未配對的答案計為 FN（\tabref{tab:event-accuracy}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{擊球時刻偵測的準確率（\%，容差 $\pm$5 影格）}
+  \label{tab:event-accuracy}
+  \begin{tabular}{|l|r|r|r|r|r|r|r|r|}
+    \hline
+    範圍 & 真值 & 輸出 & 配對 & FP & FN & Precision & Recall & F1 \\ \hline
+    開發集 & 5173 & 4981 & 4605 & 376 & 568 & 92.45 & 89.02 & 90.70 \\ \hline
+    測試集 & 6990 & 6654 & 6354 & 300 & 636 & 95.49 & 90.90 & 93.14 \\ \hline
+    合計 & 12163 & 11635 & 10959 & 676 & 1204 & 94.19 & 90.10 & 92.10 \\ \hline
+  \end{tabular}
+\end{table}
+
+容差放寬或收緊時的變化如\tabref{tab:event-tolerance}。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{不同容差下的擊球時刻偵測準確率（\%，全部 14 場）}
+  \label{tab:event-tolerance}
+  \begin{tabular}{|r|r|r|r|}
+    \hline
+    容差（影格） & Precision & Recall & F1 \\ \hline
+    3 & 89.07 & 84.16 & 86.54 \\ \hline
+    5 & 94.19 & 90.10 & 92.10 \\ \hline
+    10 & 95.68 & 92.65 & 94.14 \\ \hline
+  \end{tabular}
+\end{table}
+
+\subsubsection{時間誤差}
+
+誤差定義為「偵測 $-$ 答案」，單位為影格，只計算配對成功的擊球（\tabref{tab:event-timing}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{擊球時刻偵測的時間誤差（影格）}
+  \label{tab:event-timing}
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    範圍 & 中位數 & 平均 & MAE \\ \hline
+    開發集 & $-1$ & $-1.46$ & 1.80 \\ \hline
+    測試集 & $-1$ & $-1.15$ & 1.55 \\ \hline
+    合計 & $-1$ & $-1.28$ & 1.66 \\ \hline
+  \end{tabular}
+\end{table}
+
+以毫秒計，整體誤差中位數為 $-40$ ms，MAE 為 64.6 ms。多數擊球被系統抓在真值前 1 至 2 影格，推測是因為本模組偵測的是軌跡轉折點，而人工標記的是球拍接觸的畫面。
+
+\subsubsection{失敗案例與限制}
+
+以下分析測試集的 636 個 FN 與 300 個 FP，根據失配前後 $\pm$5 影格的模組內部紀錄，將失配依成因分類（\tabref{tab:event-failures}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{擊球時刻偵測的失配成因（測試集）}
+  \label{tab:event-failures}
+  \begin{tabular}{|l|r|r|}
+    \hline
+    成因 & FN & FP \\ \hline
+    抓到但時間差 6--10 影格 & 192 & 148 \\ \hline
+    遠端擊球在影像中沒有轉折 & 159 & — \\ \hline
+    篩選與修剪規則誤刪 & 182 & — \\ \hline
+    發球未產生候選 & 63 & — \\ \hline
+    同一拍重複偵測 & — & 74 \\ \hline
+    其他 & 40 & 78 \\ \hline
+    合計 & 636 & 300 \\ \hline
+  \end{tabular}
+\end{table}
+
+最大宗的失配為時間偏移，FN 的 30\%、FP 的 49\% 屬於系統已在正確位置附近偵測到，但與真值相差 6--10 影格，因此同一拍同時形成 FN 與 FP。將容差由 5 影格放寬至 10 影格後，F1 由 92.10\% 提升至 94.14\%，顯示部分誤差來自擊球時間定位差異。
+
+FN 主要來自兩類。其一是遠端擊球缺乏軌跡轉折，部分遠端球員擊球時，球在影像中的運動方向未改變，僅速度微小改變，因此無法觸發以軌跡轉折為核心的候選訊號。其二是候選遭後續規則刪除，主要涉及同側去重、回合脈絡判斷與尾段修剪。
+
+FP 則主要來自同一拍的重複偵測。同一擊球可能產生多個候選，若其擊球側判斷不同，現有去重規則無法合併。其餘補漏規則誤觸發與球體追蹤雜訊合計僅占少數。
+
+本實驗的評分範圍只延伸至回合最後一拍後 5 影格，因此無法完整評估回合結束後落地彈跳造成的誤判，以及尾段修剪規則的實際效果。
+
+\subsection{球種分類}
+\label{sec:exp-strokes}
+
+在 3 場 BST 未曾看過的比賽、1601 拍上，本模組的 8 類球種準確率為 87.38\%，Macro-F1 為 84.71\%，擊球者（上方／下方）準確率為 97.88\%。若把擊球時刻偵測漏掉的拍也算錯，端到端準確率為 78.99\%。
+
+真值、評分程式與逐場結果皆公開於 \file{experiments/stroke_classification/}。
+
+\textbf{真值來源。}本節與擊球時刻偵測使用同一份 ShuttleSet 真值，評分範圍與配對規則也完全相同。ShuttleSet 的 18 種球種先依 BST 訓練時的方式併為 12 類，再併為系統輸出的 8 類。
+
+\textbf{BST 看過的比賽。}本模組使用的 BST 權重即以 ShuttleSet 訓練~\cite{bst}。依 BST 公開的切分，14 場中有 11 場屬於其訓練集，在這些比賽上量得的準確率可能偏高，只有 3 場未參與 BST 訓練。因此本節以這 3 場為主要結果，其餘 11 場僅作對照。
+
+\subsubsection{分類準確率}
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{球種分類的準確率（\%）}
+  \label{tab:stroke-accuracy}
+  \begin{tabular}{|l|r|r|r|r|r|}
+    \hline
+    範圍 & 計分拍數 & 球種 Acc & Macro-F1 & 端到端 Acc & 擊球者 Acc \\ \hline
+    \textbf{BST 沒看過（3 場）} & \textbf{1601} & \textbf{87.38} & \textbf{84.71} & \textbf{78.99} & \textbf{97.88} \\ \hline
+    BST 看過（11 場） & 9333 & 88.32 & 86.36 & 80.06 & 98.02 \\ \hline
+    合計（14 場） & 10934 & 88.18 & 86.22 & 79.90 & 98.00 \\ \hline
+  \end{tabular}
+\end{table}
+
+BST 看過與沒看過的兩組只相差約 1 個百分點（\tabref{tab:stroke-accuracy}），可見在 BST 看過的比賽上量得的結果沒有明顯偏高。推測原因是 BST 訓練時的骨架與球軌跡由其原作者的流程產生，本系統則由自己的姿態與球體追蹤模組產生。
+
+沒看過的 3 場各球種表現如\tabref{tab:stroke-per-class}。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{各球種的分類表現（BST 沒看過的 3 場，\%）}
+  \label{tab:stroke-per-class}
+  \begin{tabular}{|l|r|r|r|r|}
+    \hline
+    球種 & 真值拍數 & Precision & Recall & F1 \\ \hline
+    高遠球 & 531 & 92.28 & 90.02 & 91.13 \\ \hline
+    發球 & 93 & 98.81 & 89.25 & 93.79 \\ \hline
+    小球 & 387 & 95.03 & 88.89 & 91.86 \\ \hline
+    平快球 & 136 & 59.63 & 70.59 & 64.65 \\ \hline
+    殺球 & 174 & 87.85 & 91.38 & 89.58 \\ \hline
+    切球 & 189 & 85.71 & 88.89 & 87.27 \\ \hline
+    撲球 & 19 & 93.33 & 73.68 & 82.35 \\ \hline
+    勾球 & 72 & 75.00 & 79.17 & 77.03 \\ \hline
+  \end{tabular}
+\end{table}
+
+\subsubsection{上游影響}
+
+為區分錯誤來自擊球時刻還是 BST 本身，另將擊球幀換成真值的擊球幀重跑一次球種分類，其他輸入（骨架、球軌跡、場地、權重）不變（\tabref{tab:stroke-upstream}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{以系統偵測或真值擊球幀進行球種分類的比較（\%）}
+  \label{tab:stroke-upstream}
+  \begin{tabular}{|l|r|r|r|r|}
+    \hline
+    擊球幀 & 計分拍數 & 球種 Acc & Macro-F1 & 擊球者 Acc \\ \hline
+    系統偵測 & 1601 & 87.38 & 84.71 & 97.88 \\ \hline
+    真值 & 1771 & 88.54 & 84.98 & 98.54 \\ \hline
+  \end{tabular}
+\end{table}
+
+即使擊球時刻完全正確，準確率也只提升 1.16 個百分點。
+
+\subsubsection{失敗案例與限制}
+
+沒看過的 3 場中共有 202 拍判錯，依重跑結果分類如\tabref{tab:stroke-failures}。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{球種分類的錯誤成因（BST 沒看過的 3 場）}
+  \label{tab:stroke-failures}
+  \begin{tabular}{|l|r|}
+    \hline
+    成因 & 拍數 \\ \hline
+    BST 本身判錯（換成真值擊球幀仍錯） & 146 \\ \hline
+    擊球時刻所致（換成真值擊球幀即正確） & 48 \\ \hline
+    判成未知球種 & 8 \\ \hline
+    合計 & 202 \\ \hline
+  \end{tabular}
+\end{table}
+
+BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球與平快球互判（49 + 26 拍），其次是小球與勾球（19 + 10 拍）和殺球與切球（14 + 10 拍）。
+
+\subsection{歡呼偵測與精彩度分析}
+\label{sec:exp-cheer}
+
+\subsubsection{歡呼偵測資料集與評估方式}
+
+歡呼偵測任務以 3 秒窗口為單位，資料來自四場開發比賽。每場以固定 seed 42 的 segment-diverse deterministic sampling 選取 100 個窗口，再由人工進行 blind labeling（\tabref{tab:cheer-dataset}）。標註允許 ambiguous；二元分類資料會排除 ambiguous，本次四場凍結資料沒有 ambiguous 樣本。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{歡呼偵測的標註資料}
+  \label{tab:cheer-dataset}
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    比賽 & 歡呼 & 非歡呼 & 合計 \\ \hline
+    \texttt{match\_001} & 33 & 67 & 100 \\ \hline
+    \texttt{match\_002} & 31 & 69 & 100 \\ \hline
+    \texttt{match\_003} & 55 & 45 & 100 \\ \hline
+    \texttt{match\_004} & 31 & 69 & 100 \\ \hline
+    合計 & 150 & 250 & 400 \\ \hline
+  \end{tabular}
+\end{table}
+
+評估採 Leave-One-Match-Out（LOMO）：每一 fold 以三場共 300 個窗口訓練，剩餘一場的 100 個窗口作為測試資料。StandardScaler 只在該 fold 的訓練資料上 fitting，再套用到 held-out match。相較隨機拆分窗口，此方法以 match ID 隔離訓練與測試資料，避免同場相鄰窗口分散到兩邊；目前缺少完整賽事來源對照，尚不能據此宣稱跨轉播商的獨立性，但四場比賽仍不足以證明模型可普遍泛化。
+
+\subsubsection{跨比賽歡呼偵測結果}
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{歡呼偵測的逐場交叉驗證結果（LOMO）}
+  \label{tab:cheer-lomo}
+  \begin{tabular}{|l|r|r|r|r|r|r|l|}
+    \hline
+    測試比賽 & Accuracy & Precision & Recall & F1 & ROC-AUC & AP & \texttt{[[TN,FP],[FN,TP]]} \\ \hline
+    \texttt{match\_001} & 0.940 & 0.966 & 0.848 & 0.903 & 0.990 & 0.983 & \texttt{[[66,1],[5,28]]} \\ \hline
+    \texttt{match\_002} & 0.870 & 1.000 & 0.581 & 0.735 & 0.934 & 0.904 & \texttt{[[69,0],[13,18]]} \\ \hline
+    \texttt{match\_003} & 0.870 & 0.850 & 0.927 & 0.887 & 0.958 & 0.968 & \texttt{[[36,9],[4,51]]} \\ \hline
+    \texttt{match\_004} & 0.850 & 0.711 & 0.871 & 0.783 & 0.947 & 0.907 & \texttt{[[58,11],[4,27]]} \\ \hline
+    Macro 平均 & 0.883 & 0.882 & 0.807 & 0.827 & 0.957 & 0.940 & — \\ \hline
+  \end{tabular}
+\end{table}
+
+四場 LOMO 的 macro Accuracy 為 0.883、macro F1 為 0.827、macro ROC-AUC 為 0.957（\tabref{tab:cheer-lomo}）。0.957 是 ROC-AUC，不是 95.7\% accuracy。各場 Brier score、Log Loss 與 ECE 顯示 score calibration behavior 存在差異；本研究沒有進行 recalibration，門檻仍固定為 0.5，因此分類器輸出不視為已校準機率。
+
+校準診斷採 10 個等寬 bins，每場 100 個窗口；結果只用於檢查分數分布，沒有重新擬合校準器（\tabref{tab:cheer-calibration}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{歡呼分類器的校準診斷}
+  \label{tab:cheer-calibration}
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    比賽 & Brier score & Log Loss & ECE \\ \hline
+    \texttt{match\_001} & 0.038 & 0.125 & 0.037 \\ \hline
+    \texttt{match\_002} & 0.112 & 0.480 & 0.131 \\ \hline
+    \texttt{match\_003} & 0.101 & 0.340 & 0.096 \\ \hline
+    \texttt{match\_004} & 0.121 & 0.528 & 0.132 \\ \hline
+  \end{tabular}
+\end{table}
+
+另以未參與上述四場訓練的 \texttt{match\_005} 進行偵測器外部驗證。100 個窗口包含 34 個正例與 66 個負例，Accuracy 為 0.840，Precision、Recall 與 F1 均為 0.765，ROC-AUC 為 0.930，Average Precision（AP）為 0.862。\texttt{match\_005} 只對偵測器是 untouched external validation；它後續又參與強度與 segment 聚合方法的開發，因此不能用來證明後兩者的 external generalization。
+
+為比較特徵路線，研究亦評估 RMS、YAMNet 原生 \texttt{Cheering} 分數、YAMNet crowd-combination 分數與 YAMNet embedding + Logistic Regression（\tabref{tab:cheer-features}）：
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{不同歡呼特徵路線的比較（LOMO）}
+  \label{tab:cheer-features}
+  \begin{tabular}{|l|r|r|}
+    \hline
+    方法 & LOMO ROC-AUC & LOMO AP \\ \hline
+    RMS & 0.920 & 0.876 \\ \hline
+    YAMNet \texttt{Cheering} 分數 & 0.839 & 0.750 \\ \hline
+    YAMNet crowd-combination & 0.857 & 0.757 \\ \hline
+    \textbf{YAMNet embedding + Logistic Regression} & \textbf{0.957} & \textbf{0.940} \\ \hline
+  \end{tabular}
+\end{table}
+
+此比較支持 production 採用 embedding + Logistic Regression，而非直接使用 YAMNet 原生類別分數。這些數字是描述性比較，未執行 threshold tuning 或統計顯著性檢定。
+
+最終部署模型再用四場的全部 400 個窗口 fitting scaler 與分類器；此 final fit 不是新的測試結果。LOMO 的 scaler 則各自只用當 fold 的 300 個訓練窗口。模型權重與 feature dataset hashes 記錄於 \file{models/yamnet_mean_lr_v1/metadata.json}。
+
+\subsubsection{歡呼強度方法選擇}
+
+強度實驗使用 \texttt{match\_005} 中 34 個已確認的歡呼窗口。單一主要標註者在不查看候選特徵值的情況下完成 60 組配對比較，其中 39 組有明確較強者、21 組平手、0 組無法判斷（\tabref{tab:cheer-intensity}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{歡呼強度候選方法與人工配對比較的一致性}
+  \label{tab:cheer-intensity}
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    候選方法 & Strict concordance & Coverage & Tie-adjusted concordance \\ \hline
+    \texttt{log\_rms\_db} & 0.692 & 1.000 & 0.692 \\ \hline
+    \texttt{cheer\_probability} & 0.667 & 1.000 & 0.667 \\ \hline
+    \texttt{temporal\_occupancy} & 0.457 & 0.897 & 0.462 \\ \hline
+    \texttt{relative\_loudness\_db} & 0.436 & 1.000 & 0.436 \\ \hline
+  \end{tabular}
+\end{table}
+
+\texttt{log\_rms\_db} 的描述性 concordance 最高且 coverage 完整，也能將分類器信心與聲學強度分開，因此選為凍結的 intensity feature。然而，它與 \texttt{cheer\_probability} 的差距不大，實驗沒有顯著性檢定，而且同一窗口會出現在多組配對中，60 組觀察值並不獨立。因此，此結果不能解讀為 \texttt{log\_rms\_db} 在其他資料上必然優於分類器分數。
+
+\subsubsection{Segment 聚合方法選擇}
+\label{sec:exp-aggregation}
+
+Segment 聚合實驗使用 \texttt{match\_005} 的 106 個 segments、1142 個重疊窗口與 420 個 detector-positive 窗口。人工 segment detection 標註包含 75 個 cheer 與 31 個 no-cheer segments；尖峰強度實驗則由 60 組人工配對構成，其中 45 組有明確結果、15 組平手（\tabref{tab:cheer-aggregation}）。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{片段層級聚合方法的比較}
+  \label{tab:cheer-aggregation}
+  \begin{tabularx}{\linewidth}{|l|r|r|r|>{\raggedleft\arraybackslash}X|}
+    \hline
+    方法 & 偵測 ROC-AUC & 偵測 AP & Peak-pair concordance & 移除單一窗口的最大分數差異，中位數 / Q95（偵測） \\ \hline
+    mean & 0.624 & 0.749 & 0.600 & 0.066 / 0.144 \\ \hline
+    max & 0.710 & 0.862 & 0.711 & 0.005 / 0.489 \\ \hline
+    p95 linear & 0.718 & 0.863 & 0.711 & 0.021 / 0.391 \\ \hline
+    top-2 mean & 0.719 & 0.867 & 0.733 & 0.026 / 0.430 \\ \hline
+    top-3 mean & 0.717 & 0.862 & 0.733 & 0.134 / 0.333 \\ \hline
+  \end{tabularx}
+\end{table}
+
+Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 top-3 則是 secondary diagnostics。雖然 top-2 與 top-3 的部分 point estimates 較高，但不能在看到結果後將 secondary diagnostics 改稱勝出方法；各候選也沒有統計上的 winner claim。
+
+最終選擇 linear p95 是工程折衷，而非實驗證明它是最佳聚合器。P95 保留對局部尖峰的敏感度，其人工 detection 與 peak-pair 表現和 max 接近；在移除單一窗口的診斷中，p95 的極端尾端敏感度又低於 max。因此，正式系統以 p95 同時聚合窗口機率與非空值強度。
+
+本節數字逐項核對既有研究 JSON，未重跑模型或重新標註。Intensity strict concordance 以特徵可區分的人工明確配對為分母，coverage 表示明確配對中可區分的比例；人工平手不納入該分母。Segment peak-pair 比較的 45 組明確配對皆可由各候選區分。來源 commit、JSON hashes 與重現限制見 \file{experiments/audio_highlight/README.md}。
+
+\section{端到端結果}
+\label{sec:end-to-end}
+
+本節時間表沿用既有七個視覺階段的量測，未計入本次新增說明的音訊量測、精彩度排序、身分對應與賽評生成成本，不能用作完整十一階段流程的耗時。
+
+在 5 支影片中，回合總長 1.63 小時，整條管線從空快取開始執行共耗時 4.42 小時。主要計算只作用在回合片段，因此處理時間以回合總長衡量，E2E 時間為回合總長的 2.71 倍，扣除比分辨識等待 Gemini API 的時間後為 1.96 倍。
+
+量測程式、環境紀錄與逐場結果皆公開於 \file{experiments/end_to_end/}。
+
+\textbf{量測方式。}每場另建只含原始影片的資料夾，所有 stage 都從空快取開始實際執行。E2E 時間由外層計時包住 runner 取得，各 stage 時間取自各自的狀態紀錄。比分辨識的耗時主要取決於 API 速率上限而非本機效能，因此另列扣除該 stage 後的「本機時間」。賽評不在預設管線內，不列入。測試環境為 Windows 11 與 RTX 3060 Ti（8 GB）。
+
+\subsection{處理時間}
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{端到端處理時間}
+  \label{tab:e2e-time}
+  \begin{tabularx}{\linewidth}{|l|l|>{\raggedleft\arraybackslash}X|>{\raggedleft\arraybackslash}X|>{\raggedleft\arraybackslash}X|>{\raggedleft\arraybackslash}X|>{\raggedleft\arraybackslash}X|>{\raggedleft\arraybackslash}X|}
+    \hline
+    比賽 & 編碼／幀率 & 片長（分） & 回合總長（分） & E2E（分） & 本機（分） & E2E ÷ 回合總長 & 本機 ÷ 回合總長 \\ \hline
+    test1 & VP9／25 & 8.2 & 5.3 & 19.5 & 10.8 & 3.65 & 2.02 \\ \hline
+    test5 & H.264／25 & 57.3 & 15.0 & 38.0 & 26.8 & 2.53 & 1.79 \\ \hline
+    test4 & VP9／25 & 71.9 & 18.3 & 42.5 & 32.9 & 2.32 & 1.80 \\ \hline
+    test2 & H.264／25 & 100.9 & 31.4 & 74.9 & 57.2 & 2.38 & 1.82 \\ \hline
+    TTY\_vs\_ASY\_2023 & AV1／30 & 94.0 & 27.8 & 90.1 & 63.8 & 3.24 & 2.29 \\ \hline
+    合計 & & 332.3 & 97.8 & 264.9 & 191.5 & 2.71 & 1.96 \\ \hline
+  \end{tabularx}
+\end{table}
+
+以回合總長正規化後，本機時間在 3 場 25 fps 的完整比賽間相當一致（\tabref{tab:e2e-time}）。TTY\_vs\_ASY\_2023 為 30 fps，同樣長度的回合多出 20\% 影格，加上 AV1 解碼較重，比例較其他場高。
+
+\subsection{時間分布}
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{各階段佔總處理時間的比例}
+  \label{tab:e2e-breakdown}
+  \begin{tabular}{|l|r|}
+    \hline
+    stage & 佔比 \\ \hline
+    \texttt{shuttle\_tracking} & 34.6\% \\ \hline
+    \texttt{score\_recognition} & 27.8\% \\ \hline
+    \texttt{pose} & 27.6\% \\ \hline
+    \texttt{match\_segmentation} & 7.0\% \\ \hline
+    其餘 6 個 stage & 3.0\% \\ \hline
+  \end{tabular}
+\end{table}
+
+前三個 stage 合計約 90\%（\tabref{tab:e2e-breakdown}）。球體追蹤與骨架追蹤的耗時與回合影格數成正比，在 25 fps 的影片上分別約為每影格 33 ms 與 27--31 ms。
+
+\subsection{限制}
+
+\begin{itemize}
+  \item \textbf{偶發崩潰。}TTY\_vs\_ASY\_2023 第一次執行時，骨架追蹤在開始約 11 秒後發生原生程式崩潰，重跑後正常完成，表中為重跑結果。原因尚未查明。
+  \item \textbf{量測範圍。}每場只執行一次，未估計量測變異，也只在單一硬體上測試。
+\end{itemize}
+
+\subsection{應用於延遲直播的可能性}
+
+以上結果顯示，系統稍加調整後，或許能用於延遲一段時間播出的比賽直播。本機計算時間約為回合長度的 1.8--2.3 倍，而完整比賽中回合只佔播出時間的 25--31\%，平均而言處理速度跟得上播出，因此若改為逐回合處理，計算量不會隨比賽進行而累積。以本機時間約為回合長度的 1.8--2.3 倍估算，最長的 55.7 秒回合約需 2 分鐘以上為依本次量測推估的結果，尚未實作驗證。

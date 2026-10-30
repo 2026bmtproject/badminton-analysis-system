@@ -1,0 +1,126 @@
+% 羽球比賽分析系統 專題報告
+% 版面依照 docs/專題報告範本（report 類別、標楷體、1.5 倍行距、2cm 邊界）
+% 編譯：在本目錄執行 latexmk（設定見 latexmkrc，使用 LuaLaTeX + biber）
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%    一、紙張
+%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[12pt]{report}
+\usepackage[a4paper, left=2cm, right=2cm, top=2cm, bottom=2cm]{geometry}
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%    二、文字
+%%%%%%%%%%%%%%%%%%%%%%%%
+% 中文排版（只處理中文字型與斷行，標題、目錄等版式維持 report 原樣）
+\usepackage[scheme=plain, fontset=none]{ctex}
+% 內文標楷體；標楷體沒有粗體字重，以加粗筆畫模擬
+% 標點用 zh_TW 全形規則
+\setCJKmainfont{kaiu.ttf}[Path = C:/Windows/Fonts/, JFM = {zh_TW/{+quanjiao}}, AutoFakeBold = 2.5]
+\setCJKsansfont{kaiu.ttf}[Path = C:/Windows/Fonts/, JFM = {zh_TW/{+quanjiao}}, AutoFakeBold = 2.5]
+\setCJKmonofont{kaiu.ttf}[Path = C:/Windows/Fonts/, JFM = {zh_TW/{+quanjiao}}]
+% 標楷體不含簡體字，引用簡體標題時用 \sctext{...}
+\setCJKfamilyfont{sc}{SimSun}
+\newcommand{\sctext}[1]{{\CJKfamily{sc}#1}}
+
+% 行距 1.5 倍
+\usepackage[onehalfspacing]{setspace}
+% 首行縮排兩字、段落後間距
+\usepackage{indentfirst}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{14pt}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% 中英混排的段落含較長的英文詞或路徑時，允許行內略為拉開，避免文字超出版心
+\tolerance=2000
+\emergencystretch=2em
+
+% 不讓段落的第一行留在頁底、最後一行單獨跑到下一頁（孤行），寧可把多一行一起移到下一頁
+\widowpenalty=10000
+\clubpenalty=10000
+
+% ①②③ 等圈號：英文字型與標楷體都沒有這些字，改用微軟正黑體顯示
+\newfontfamily\circfont{msjh.ttc}[Path = C:/Windows/Fonts/]
+\newcommand{\circnum}[1]{{\circfont #1}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%    三、圖表
+%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage{graphicx}
+\graphicspath{{../figures/report/}{../report_pic/}}
+\usepackage{float}
+\usepackage{array}
+\usepackage{tabularx}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+% 表格內用較緊的行距，避免沿用內文 1.5 倍行距讓表格過高
+\usepackage{etoolbox}
+\AtBeginEnvironment{table}{\setstretch{1.1}}
+\renewcommand{\figurename}{圖}
+\renewcommand{\tablename}{表}
+
+% 圖內文字大小統一的規則：
+% - 數據圖（report_pic/，tools/report_pic_make 產生）一律以 \linewidth 放入；
+%   畫布同為 15 吋寬，字級在 common.py 依此設定（約 8–10 pt）。
+% - 流程圖（figures/report/*.pdf）一律以 \flowscale 放入，不指定寬度；
+%   SVG 的 1 px 在每張圖都印成同樣大小，1300 px 寬的圖剛好等於版心寬（23 px 字 ≈ 8.5 pt）。
+%   流程圖的 PDF 由 figures/report/svg2pdf.sh 轉出（1 px = 0.75 pt）。
+\newcommand{\flowscale}{0.4942}
+% - 介面截圖（report_pic/ui/）以同一螢幕比例放入：寬度 = 截圖像素 ÷ 1100 × 版心寬；
+%   寬於 1100 px 的整窗截圖與時間軸則以 \linewidth 放入（字會略小）。
+
+% 環境表格（\begin{table}）以外的程式碼區塊
+\usepackage{fancyvrb}
+\fvset{fontsize=\small, xleftmargin=2em}
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%    四、目錄與參考文獻
+%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage{enumitem}
+\usepackage{refcount}
+\usepackage[style=ieee, backend=biber, sorting=none]{biblatex}
+\addbibresource{refs.bib}
+\usepackage[hidelinks]{hyperref}
+
+\renewcommand{\contentsname}{\centering 目錄}
+\renewcommand{\listfigurename}{\centering 圖目錄}
+\renewcommand{\listtablename}{\centering 表目錄}
+\setcounter{tocdepth}{2}
+
+% 交叉引用：\figref{fig:xxx} → 「圖 1.1」；\secref{sec:xxx} → 「1.1 節」
+\newcommand{\figref}[1]{\hyperref[#1]{圖~\getrefnumber{#1}}}
+\newcommand{\tabref}[1]{\hyperref[#1]{表~\getrefnumber{#1}}}
+\newcommand{\secref}[1]{\hyperref[#1]{\getrefnumber{#1}~節}}
+% \chapref{ch:xxx} → 「第三章」
+\newcommand{\chapref}[1]{\hyperref[#1]{第\zhnumber{\getrefnumber{#1}}章}}
+% 檔案路徑：可在 / 處斷行
+\newcommand{\file}[1]{\path{#1}}
+
+\begin{document}
+
+%%%%    【封面】不編頁碼
+\pagenumbering{gobble}
+\input{chapters/00-title}
+
+%%%%    【目錄區】
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+
+%%%%    【摘要】從這頁開始編頁碼
+\pagenumbering{arabic}
+\input{chapters/00-abstract}
+
+%%%%    【內文】
+\input{chapters/01-introduction}
+\input{chapters/02-related-work}
+\input{chapters/03-system-design}
+\input{chapters/04-experiments}
+\input{chapters/05-conclusion}
+\appendix
+\input{chapters/appendix}
+
+\printbibliography[heading=bibintoc, title={參考文獻}]
+
+\end{document}
