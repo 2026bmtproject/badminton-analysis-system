@@ -1,13 +1,14 @@
-import type { CheerWindowModel } from "../domain/models";
+import type { CheerWindowModel, RallyModel } from "../domain/models";
+import { highlightRanks } from "./rallyOutcome";
 import { GAME_LABEL_WIDTH_PX, type LeadModel, type LeadSide } from "./scoreLead";
 import { timeToPercent, type TimelineViewport } from "./timeline";
 
 /** A smoothed window at or above this probability counts as cheering. */
 export const CHEER_THRESHOLD = 0.5;
-/** How many peaks the lane labels, match-wide. */
-export const CHEER_PEAK_COUNT = 5;
-/** Width of a peak triangle, matching `.cheer-peak`. */
-const CHEER_PEAK_WIDTH_PX = 18;
+/** How many highlight places the lane marks, match-wide. */
+export const HIGHLIGHT_MARK_PLACES = 5;
+/** Width of a highlight triangle, matching `.highlight-mark`. */
+const HIGHLIGHT_MARK_WIDTH_PX = 18;
 /** About two triangles: a game label moved further reads as loose text rather than the separator's. */
 const CHEER_LABEL_MAX_SHIFT_PX = 40;
 
@@ -99,77 +100,33 @@ export function cheerWavePaths(
   return paths;
 }
 
-/** The longest cheer of one Rally; `seconds` runs from the first window centre to the last. */
-export type CheerPeak = {
-  rank: number;
-  segmentIndex: number;
-  start: number;
-  end: number;
-  seconds: number;
-};
+/** A highlight place marked on the lane, at the Rally's centre as a Timeline percent. */
+export type HighlightMark = { rank: number; rallyId: number; x: number };
 
 /**
- * The Rallies with the longest sustained cheer, one peak per Rally, best first.
- * The model saturates near 1 at almost every point's end, so the height of a
- * peak says nothing; how long the crowd stays above the threshold does. Ties
- * go to the louder stretch, then the earlier one.
- */
-export function cheerPeaks(runs: CheerRun[], count = CHEER_PEAK_COUNT): CheerPeak[] {
-  const best = new Map<number, Omit<CheerPeak, "rank"> & { mean: number }>();
-  for (const run of runs) {
-    let from = -1;
-    run.smoothed.forEach((score, index) => {
-      const above = score >= CHEER_THRESHOLD;
-      if (above && from < 0) from = index;
-      const closes = from >= 0 && (!above || index === run.smoothed.length - 1);
-      if (!closes) return;
-      const to = above ? index : index - 1;
-      const stretch = run.smoothed.slice(from, to + 1);
-      const candidate = {
-        segmentIndex: run.segmentIndex,
-        start: run.windows[from]!.time,
-        end: run.windows[to]!.time,
-        seconds: run.windows[to]!.time - run.windows[from]!.time,
-        mean: stretch.reduce((sum, value) => sum + value, 0) / stretch.length,
-      };
-      from = -1;
-      const current = best.get(run.segmentIndex);
-      if (!current || candidate.seconds > current.seconds ||
-        (candidate.seconds === current.seconds && candidate.mean > current.mean))
-        best.set(run.segmentIndex, candidate);
-    });
-  }
-  return [...best.values()]
-    .sort((a, b) => b.seconds - a.seconds || b.mean - a.mean || a.start - b.start)
-    .slice(0, count)
-    .map(({ mean: _mean, ...peak }, index) => ({ ...peak, rank: index + 1 }));
-}
-
-/** A ranked Rally marked on the lane, at the Rally's centre as a Timeline percent. */
-export type CheerPeakMark = { rank: number; segmentIndex: number; x: number };
-
-/**
- * One mark per peak, centred on its whole Rally rather than on the cheer, so
- * it points at the Rally the tooltip names. Crowded marks overlap instead of
+ * One mark per Rally in the top highlight places, best first, numbered with the
+ * place the Rally tooltip gives, so Rallies tied on a place share its number.
+ * Marks centre on the whole Rally and overlap where they crowd instead of
  * moving, so each one always sits over its own Rally.
  */
-export function cheerPeakMarks(
-  peaks: CheerPeak[],
-  rallies: { id: number; start: number; end: number }[],
+export function highlightMarks(
+  rallies: RallyModel[],
   view: TimelineViewport,
-): CheerPeakMark[] {
-  return [...peaks]
-    .sort((a, b) => a.rank - b.rank)
-    .map((peak) => {
-      const rally = rallies.find((item) => item.id === peak.segmentIndex);
-      const centre = rally ? (rally.start + rally.end) / 2 : (peak.start + peak.end) / 2;
-      return { rank: peak.rank, segmentIndex: peak.segmentIndex, x: timeToPercent(centre, view) };
+  places = HIGHLIGHT_MARK_PLACES,
+): HighlightMark[] {
+  const ranks = highlightRanks(rallies);
+  return rallies
+    .flatMap((rally) => {
+      const rank = ranks.get(rally.id);
+      if (rank === undefined || rank > places) return [];
+      return [{ rank, rallyId: rally.id, x: timeToPercent((rally.start + rally.end) / 2, view) }];
     })
-    .filter((mark) => mark.x >= 0 && mark.x <= 100);
+    .filter((mark) => mark.x >= 0 && mark.x <= 100)
+    .sort((a, b) => a.rank - b.rank || a.rallyId - b.rallyId);
 }
 
 /**
- * Game labels moved right past any peak triangle in their way. A triangle
+ * Game labels moved right past any highlight triangle in their way. A triangle
  * cannot leave its Rally, so the label gives way, staying on its game's side
  * of the separator; pushed further than CHEER_LABEL_MAX_SHIFT_PX it would
  * float free of the separator, so it is dropped and the separator alone marks
@@ -186,8 +143,8 @@ export function cheerGameLabels<T extends { x: number }>(
     const origin = (label.x / 100) * trackWidth;
     let left = origin;
     for (const centre of centres) {
-      if (centre + CHEER_PEAK_WIDTH_PX / 2 > left && centre - CHEER_PEAK_WIDTH_PX / 2 < left + GAME_LABEL_WIDTH_PX)
-        left = centre + CHEER_PEAK_WIDTH_PX / 2;
+      if (centre + HIGHLIGHT_MARK_WIDTH_PX / 2 > left && centre - HIGHLIGHT_MARK_WIDTH_PX / 2 < left + GAME_LABEL_WIDTH_PX)
+        left = centre + HIGHLIGHT_MARK_WIDTH_PX / 2;
     }
     if (left - origin > CHEER_LABEL_MAX_SHIFT_PX) return [];
     return [{ ...label, x: (left / trackWidth) * 100 }];

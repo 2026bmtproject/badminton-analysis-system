@@ -1,6 +1,6 @@
 import type { CheerWindowModel, RallyModel } from "../../domain/models";
 import { formatPreciseTime, playerName, scoreText } from "../../format";
-import { cheerScoreMoments, type CheerPeak } from "../../temporal/cheerCurve";
+import { cheerScoreMoments } from "../../temporal/cheerCurve";
 import { RALLY_BREAK_LABELS, highlightRanks, type RallyBreak } from "../../temporal/rallyOutcome";
 import { leadEntryAt, type LeadModel } from "../../temporal/scoreLead";
 import {
@@ -54,6 +54,13 @@ function rallyIndex(rally: RallyModel) {
   return `片段 ${String(rally.id + 1).padStart(3, "0")}`;
 }
 
+/** A ranking score, not a probability: only the place is meaningful. */
+function highlightPlaceLine(rallies: RallyModel[], rallyId: number) {
+  const ranks = highlightRanks(rallies);
+  const rank = ranks.get(rallyId);
+  return rank === undefined ? [] : [`精華排名 #${rank} / ${ranks.size}`];
+}
+
 function leadPreview(rally: RallyModel, lead: LeadPreviewContext): TimelineHoverPreview | null {
   const entry = leadEntryAt(lead.model, rally.start);
   if (!entry || entry.rally.id !== rally.id) return null;
@@ -76,17 +83,14 @@ export function timelineHoverPreview(
   rallies: RallyModel[],
   cheerWindows: CheerWindowModel[] = [],
   lead?: LeadPreviewContext,
-  cheerPeaks: CheerPeak[] = [],
 ): TimelineHoverPreview | null {
   if (!mark) return null;
   if (mark.kind === "cheer-window") {
     const window = cheerWindows[Number(mark.id)];
     if (!window) return null;
     // The raw window value, not the smoothed one the lane draws.
-    const lines = [`歡呼機率 ${window.score.toFixed(2)}`];
+    const lines = [`歡呼機率 ${window.score.toFixed(2)}`, ...highlightPlaceLine(rallies, window.segmentIndex)];
     const rally = rallies.find((item) => item.id === window.segmentIndex);
-    const peak = cheerPeaks.find((item) => item.segmentIndex === window.segmentIndex);
-    if (peak) lines.push(`歡呼高峰 #${peak.rank} · 持續 ${Math.round(peak.seconds)} 秒`);
     // Read against the score: what this point was played at, and what it did.
     if (rally && lead) {
       const name = (side: "a" | "b") => playerName(lead.players[side], side.toUpperCase());
@@ -106,10 +110,7 @@ export function timelineHoverPreview(
     // Review reasons: a raw recogniser note can run long, so only its start is shown.
     if (rally.scoreIssue !== undefined) lines.push(`比分無法辨識：${shorten(rally.scoreIssue, 60)}`);
     if (rally.gameConflict !== undefined) lines.push(rally.gameConflict);
-    // A ranking score, not a probability: only the place is meaningful.
-    const ranks = highlightRanks(rallies);
-    const rank = ranks.get(rally.id);
-    if (rank !== undefined) lines.push(`精華排名 #${rank} / ${ranks.size}`);
+    lines.push(...highlightPlaceLine(rallies, rally.id));
     // Availability only: commentary text can say who won the point.
     if (rally.commentary.status === "available") lines.push("有賽評");
     return { title: "", lines };
