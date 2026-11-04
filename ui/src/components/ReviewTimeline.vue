@@ -30,10 +30,9 @@ import {
 import {
   CHEER_THRESHOLD,
   cheerGameLabels,
-  cheerPeakMarks,
-  cheerPeaks,
   cheerRuns,
   cheerWavePaths,
+  highlightMarks,
 } from "../temporal/cheerCurve";
 import { strokeLaneMarks, strokeSpacingSec } from "../temporal/strokeRhythm";
 import {
@@ -115,7 +114,7 @@ const STROKE_SWING_PX = 18;
 const STROKE_BAR_BASELINE_PX = 62;
 const STROKE_BAR_EXTENT_PX = 48;
 /**
- * Cheer lane geometry in track pixels: the label row (peak places and game
+ * Cheer lane geometry in track pixels: the label row (highlight places and game
  * labels) above a wave mirrored about CHEER_MID_Y_PX.
  */
 const CHEER_TRACK_HEIGHT_PX = 64;
@@ -190,7 +189,7 @@ const hoverPreview = computed(() =>
       : timelineHoverPreview(hoveredMark.value, props.model.rallies, props.model.cheerTimeline, {
           model: leadModel.value,
           players: props.model.players,
-        }, cheerPeakList.value),
+        }),
     inspectionTime.value === null
       ? null
       : doubleClickHint(fit.value, activeRallyAt(props.model.rallies, inspectionTime.value)),
@@ -440,15 +439,14 @@ const showCheerCurveLane = computed(() =>
 );
 /** Smoothed once per match; only the projection follows the viewport. */
 const cheerRunList = computed(() => cheerRuns(props.model.cheerTimeline ?? []));
-const cheerPeakList = computed(() => cheerPeaks(cheerRunList.value));
 const cheerPaths = computed(() =>
   cheerWavePaths(cheerRunList.value, renderViewport.value, { mid: CHEER_MID_Y_PX, amp: CHEER_AMP_PX }),
 );
 /** Lowest place first, so where marks overlap the better one is drawn on top. */
 const cheerMarks = computed(() =>
-  cheerPeakMarks(cheerPeakList.value, props.model.rallies, renderViewport.value).reverse(),
+  highlightMarks(props.model.rallies, renderViewport.value).reverse(),
 );
-/** Game labels share the label row with the peaks and give way to them. */
+/** Game labels share the label row with the highlight marks and give way to them. */
 const cheerGameLabelList = computed(() =>
   cheerGameLabels(leadMarks.value.labels, cheerMarks.value, trackWidth.value),
 );
@@ -458,7 +456,7 @@ const cheerThresholdY = [
   CHEER_MID_Y_PX + CHEER_THRESHOLD * CHEER_AMP_PX,
 ] as const;
 const cheerDescription =
-  "現場氣氛：上下對稱的歡呼波形，越寬越可能在歡呼，超出虛線的部分代表歡呼；標出持續最久的前 5 次歡呼";
+  "現場氣氛：上下對稱的歡呼波形，越寬越可能在歡呼，超出虛線的部分代表歡呼；三角形標出精華排名前 5 名的片段";
 const position = (timeSec: number) =>
   timeToPercent(timeSec, renderViewport.value);
 const playheadFraction = computed(() =>
@@ -1221,8 +1219,8 @@ function scoreMarkHovered(rallyId: number) {
                    in track-width units like the rally numbers. -->
               <span
                 v-for="mark in cheerMarks"
-                :key="`peak-${mark.rank}`"
-                class="cheer-peak"
+                :key="`highlight-${mark.rallyId}`"
+                class="highlight-mark"
                 :style="{ transform: `translateX(calc(${mark.x}cqw - 50%))` }"
                 aria-hidden="true"
               >{{ mark.rank }}</span>
