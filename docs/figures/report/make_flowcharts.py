@@ -408,6 +408,46 @@ def identity_mapping():
     return f
 
 
+def commentary_generation():
+    f = Fig("commentary-generation", 1300, 610)
+    f.note("REQ", 15, 15, 190, 160, ["segments.json", "events.json", "strokes.json", "scores.json",
+                                     "identity.json"], size=20)
+    f.note("OPT", 15, 195, 190, 130, ["highlights.json", "pose.json", "court.json",
+                                      "shuttle.json"], dashed=True, size=20)
+    f.box("FACT", 275, 75, 200, 100, ["建立", "回合事實"], SEM)
+    f.group("TAC", 530, 25, 755, 180, "#FFFFFF", "戰術觀察")
+    f.box("GEN", 555, 75, 210, 100, ["提出觀察", "（Gemini）"], SEM)
+    f.box("GROUND", 815, 75, 190, 100, ["核對引用", "（程式）"], SEM)
+    f.box("TREV", 1055, 75, 210, 100, ["審查觀察", "（Gemini）"], SEM)
+    f.group("COM", 255, 300, 815, 295, "#FFFFFF", "")
+    f.text("t-com", 445, 306, 300, 28, "賽評撰寫與審查", 20, "left")
+    f.box("WRITE", 275, 350, 210, 100, ["撰寫賽評", "（Gemini）"], SEM)
+    f.box("REV", 555, 350, 210, 100, ["語意審查", "（Gemini）"], SEM)
+    f.box("GATE", 840, 350, 190, 100, ["規則檢查", "（程式）"], SEM)
+    f.box("TPL", 680, 510, 190, 64, ["模板句"], SEM)
+    f.note("OUT", 1115, 368, 170, 64, ["commentary.json"], size=19)
+    f.edge("REQ", "FACT", [(205, 110), (275, 110)])
+    f.edge("OPT", "FACT", [(205, 260), (240, 260), (240, 145), (275, 145)], dashed=True)
+    f.edge("FACT", "GEN", [(475, 125), (555, 125)])
+    f.edge("GEN", "GROUND", [(765, 125), (815, 125)])
+    f.edge("GROUND", "TREV", [(1005, 125), (1055, 125)])
+    f.edge("FACT", "WRITE", [(335, 175), (335, 350)])
+    f.text("t-noscore", 345, 205, 110, 56, "不含比分", 20, "left")
+    f.edge("TREV", "WRITE", [(1160, 175), (1160, 262), (425, 262), (425, 350)])
+    f.text("t-obs", 560, 222, 420, 34, "通過的觀察（可為空）", 20)
+    f.edge("WRITE", "REV", [(485, 400), (555, 400)])
+    f.edge("REV", "GATE", [(765, 400), (840, 400)])
+    f.text("t-pass1", 765, 362, 75, 30, "通過", 20)
+    f.edge("GATE", "OUT", [(1030, 400), (1115, 400)])
+    f.text("t-pass2", 1035, 362, 75, 30, "通過", 20)
+    f.edge("REV", "TPL", [(660, 450), (660, 542), (680, 542)])
+    f.text("t-fail1", 545, 478, 108, 30, "未通過", 20, "right")
+    f.edge("GATE", "TPL", [(935, 450), (935, 525), (870, 525)])
+    f.text("t-fail2", 945, 470, 90, 30, "未通過", 20, "left")
+    f.edge("TPL", "OUT", [(870, 558), (1200, 558), (1200, 432)])
+    return f
+
+
 def ui_workflow():
     f = Fig("ui-workflow", 1090, 320)
     f.box("LIB", 15, 140, 150, 64, ["比賽庫"], UI)
@@ -452,8 +492,8 @@ def ui_architecture():
 
 
 FIGURES = [score_recognition, court_detection, pose_tracking, shuttle_tracking, event_detection,
-           stroke_classification, audio_cheer, highlight_ranking, identity_mapping, ui_workflow,
-           ui_architecture]
+           stroke_classification, audio_cheer, highlight_ranking, identity_mapping,
+           commentary_generation, ui_workflow, ui_architecture]
 
 if __name__ == "__main__":
     out, only = Path(sys.argv[1]), set(sys.argv[2:])
