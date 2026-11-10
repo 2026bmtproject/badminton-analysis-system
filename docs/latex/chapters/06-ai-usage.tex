@@ -1,7 +1,10 @@
-\chapter{人工智慧的使用}
+% 不編號、不冠「Appendix」的附屬章節，仍列入目錄
+\chapter*{人工智慧的使用}
+\addcontentsline{toc}{chapter}{人工智慧的使用}
 \label{app:ai-usage}
 
-\section{開發過程中的生成式 AI}
+\section*{開發過程中的生成式 AI}
+\addcontentsline{toc}{section}{開發過程中的生成式 AI}
 
 \textbf{使用的工具。}主要使用 Claude Code（Claude Opus 4.8、5.5），讓模型直接在專案目錄中讀寫程式與文件；另以 ChatGPT（Terra 5.6）作為不同來源的第二個模型，用於討論與交叉檢查。
 
@@ -11,7 +14,8 @@
 
 \textbf{報告與展示。}AI 參與了討論章節的內容整理、全文順稿與排版，並撰寫報告圖片的生成程式。專題競賽的影片分鏡、模組介紹動畫的程式與海報版面規劃也由 AI 協助。報告中的數據皆來自實驗程式的輸出，並非由 AI 生成。
 
-\section{確保正確性的做法}
+\section*{確保正確性的做法}
+\addcontentsline{toc}{section}{確保正確性的做法}
 
 AI 產出的程式與文字可能看似合理卻有錯，因此我們依影響程度採取不同的檢查方式：
 
@@ -24,8 +28,3 @@ AI 產出的程式與文字可能看似合理卻有錯，因此我們依影響�
 \end{enumerate}
 
 AI 大幅縮短了實作所需的時間，讓小組能把心力放在設計與驗證上。代價是組員對部分實作細節並不熟悉，因此我們把人工閱讀集中在評分程式這類直接影響結論的部分。
-
-\chapter{音訊實驗來源與待補資料}
-\label{app:audio-sources}
-
-模型、資料角色、指標來源、JSON hashes、實作對照與重現限制見 \file{experiments/audio_highlight/README.md}。待補內容包含 \texttt{match\_001} 至 \texttt{match\_004} 的真實賽事來源、完整 cheer／no-cheer 標註規範、多標註者一致性，以及 labels／features／結果的可重現封存。這些缺口不由比賽資料夾名稱或模型輸出推導。

@@ -28,7 +28,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 驗證程式依序檢查檔案雜湊、影格數／幀率／長度，以及固定影格的畫面指紋。即使檔案經重新壓縮，只要影格序列相同仍可通過指紋檢查。
 
-各視覺模組的真值、標記與評分程式及逐場結果置於 \file{experiments/}，影片清單與驗證程式在 \file{experiments/dataset/}。音訊研究的程式與凍結文件另在 badminton-audio-highlight 儲存庫（\url{https://github.com/2026bmtproject/badminton-audio-highlight}，核對 commit \texttt{f72eb4c}），其 labels、features 與結果 JSON 未納入 Git 追蹤，來源雜湊與重現限制見 \file{experiments/audio_highlight/README.md}。
+本章各實驗的真值、評分程式與逐場結果皆置於本系統儲存庫 badminton-analysis-system（\url{https://github.com/2026bmtproject/badminton-analysis-system}）的 \file{experiments/} 下，依模組分為子目錄。音訊研究的程式另見 badminton-audio-highlight 儲存庫（\url{https://github.com/2026bmtproject/badminton-audio-highlight}），重現說明見 \file{experiments/audio_highlight/README.md}。
 
 \section{各模組結果}
 \label{sec:module-results}
@@ -37,8 +37,6 @@ uv run python experiments/dataset/verify_video.py --all
 \label{sec:exp-segmentation}
 
 在 9 場未參與開發的比賽、670 個真值片段上，本模組在 IoU $\geq$ 0.9 下達到 Precision 98.37\%、Recall 98.96\%，邊界誤差中位數為 0 影格。16 場、1354 個片段的整體 F1 為 99.01\%，其中 11 場零錯誤。分段結果會直接決定下游分析範圍，因此本節分別驗證片段偵測、邊界精度，並分析所有失配案例。
-
-真值、標記程式、評分程式與逐場結果皆公開於 \file{experiments/match_segmentation/}。
 
 本模組的真值定義為「固定主機位之連續比賽畫面」的起訖影格，起訖兩端均包含。所有真值由同一位標記者完成。
 
@@ -113,8 +111,6 @@ uv run python experiments/dataset/verify_video.py --all
 \label{sec:exp-court}
 
 在 9 場未參與開發的比賽、36 個球場外角上，本模組的角點定位誤差中位數為 2.79 像素，命中率 72.22\%，9 場中有 6 場四角全中。16 場、64 個外角的整體誤差中位數為 3.05 像素，命中率 76.56\%，11 場四角全中。
-
-真值、標記程式、評分程式與逐場結果皆公開於 \file{experiments/court_detection/}。
 
 \textbf{真值定義。}球場外緣是有寬度的白線，邊線與底線在外角交疊成一個小四邊形，本節稱為「角區」。標記時不直接點選角點，而是在合成圖上標出外框四條線各自的外緣與內緣，共 8 條邊緣，每個角區由相交的兩條底線邊緣與兩條邊線邊緣的 4 個交點構成。所有真值由同一位標記者完成。
 
@@ -191,8 +187,6 @@ uv run python experiments/dataset/verify_video.py --all
 \label{sec:exp-events}
 
 在 8 場未參與開發的比賽、6990 拍上，本模組在 $\pm$5 幀容差下達到 Precision 95.49\%、Recall 90.90\%，配對成功的擊球時間誤差中位數為 $-1$ 幀。14 場、12163 拍的整體 F1 為 92.10\%。
-
-真值、評分程式與逐場結果皆公開於 \file{experiments/event_detection/}。
 
 \textbf{真值來源。}本模組的真值取自公開資料集 ShuttleSet~\cite{shuttleset}（MIT 授權），以原檔形式收錄。16 場中有 14 場在 ShuttleSet 內，因此本節的開發集為 6 場、測試集為 8 場。答案幀原樣使用，唯一的調整是 \texttt{test5} 與 \texttt{test8}，我們取得的影片版本開頭多出一段賽前畫面，整體差了整數分鐘（+15000 與 +12000 幀），先予補回。
 
@@ -286,8 +280,6 @@ FP 則主要來自同一拍的重複偵測。同一擊球可能產生多個候�
 \label{sec:exp-strokes}
 
 在 3 場 BST 未曾看過的比賽、1601 拍上，本模組的 8 類球種準確率為 87.38\%，Macro-F1 為 84.71\%，擊球者（上方／下方）準確率為 97.88\%。若把擊球時刻偵測漏掉的拍也算錯，端到端準確率為 78.99\%。
-
-真值、評分程式與逐場結果皆公開於 \file{experiments/stroke_classification/}。
 
 \textbf{真值來源。}本節與擊球時刻偵測使用同一份 ShuttleSet 真值，評分範圍與配對規則也完全相同。ShuttleSet 的 18 種球種先依 BST 訓練時的方式併為 12 類，再併為系統輸出的 8 類。
 
@@ -455,7 +447,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 此比較支持 production 採用 embedding + Logistic Regression，而非直接使用 YAMNet 原生類別分數。這些數字是描述性比較，未執行 threshold tuning 或統計顯著性檢定。
 
-最終部署模型再用四場的全部 400 個窗口 fitting scaler 與分類器；此 final fit 不是新的測試結果。LOMO 的 scaler 則各自只用當 fold 的 300 個訓練窗口。模型權重與 feature dataset hashes 記錄於 \file{models/yamnet_mean_lr_v1/metadata.json}。
+最終部署模型再用四場的全部 400 個窗口 fitting scaler 與分類器；此 final fit 不是新的測試結果。LOMO 的 scaler 則各自只用當 fold 的 300 個訓練窗口。
 
 \subsubsection{歡呼強度方法選擇}
 
@@ -503,7 +495,7 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 
 最終選擇 linear p95 是工程折衷，而非實驗證明它是最佳聚合器。P95 保留對局部尖峰的敏感度，其人工 detection 與 peak-pair 表現和 max 接近；在移除單一窗口的診斷中，p95 的極端尾端敏感度又低於 max。因此，正式系統以 p95 同時聚合窗口機率與非空值強度。
 
-本節數字逐項核對既有研究 JSON，未重跑模型或重新標註。Intensity strict concordance 以特徵可區分的人工明確配對為分母，coverage 表示明確配對中可區分的比例；人工平手不納入該分母。Segment peak-pair 比較的 45 組明確配對皆可由各候選區分。來源 commit、JSON hashes 與重現限制見 \file{experiments/audio_highlight/README.md}。
+本節數字逐項核對既有研究 JSON，未重跑模型或重新標註。Intensity strict concordance 以特徵可區分的人工明確配對為分母，coverage 表示明確配對中可區分的比例；人工平手不納入該分母。Segment peak-pair 比較的 45 組明確配對皆可由各候選區分。
 
 \section{端到端結果}
 \label{sec:end-to-end}
@@ -511,8 +503,6 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 本節時間表沿用既有七個視覺階段的量測，未計入本次新增說明的音訊量測、精彩度排序、身分對應與賽評生成成本，不能用作完整十一階段流程的耗時。
 
 在 5 支影片中，回合總長 1.63 小時，整條管線從空快取開始執行共耗時 4.42 小時。主要計算只作用在回合片段，因此處理時間以回合總長衡量，E2E 時間為回合總長的 2.71 倍，扣除比分辨識等待 Gemini API 的時間後為 1.96 倍。
-
-量測程式、環境紀錄與逐場結果皆公開於 \file{experiments/end_to_end/}。
 
 \textbf{量測方式。}每場另建只含原始影片的資料夾，所有 stage 都從空快取開始實際執行。E2E 時間由外層計時包住 runner 取得，各 stage 時間取自各自的狀態紀錄。比分辨識的耗時主要取決於 API 速率上限而非本機效能，因此另列扣除該 stage 後的「本機時間」。賽評不在預設管線內，不列入。測試環境為 Windows 11 與 RTX 3060 Ti（8 GB）。
 
