@@ -1,0 +1,107 @@
+\chapter{文獻探討}
+\label{ch:related-work}
+
+本章回答一個問題：既有整合系統能否把一支未經處理的轉播影片，自動轉換為逐拍資料？如果不能，卡在哪些環節？回顧範圍限於以單一轉播視角影片為輸入的方法。我們先在系統層級比較既有的整合系統與開源專案各自自動化了哪些環節，再逐一檢視這些環節的既有方法與前提，最後收斂出研究缺口與本系統的定位。
+
+\section{系統層級的比較}
+\label{sec:system-comparison}
+
+要從轉播影片取得逐拍資料，最直接的方式是使用現成的整合系統。\tabref{tab:system-comparison}依本系統面對的子任務，比較五個學術整合系統與三個 GitHub 開源專案在各環節的做法。開源專案的內容以其 README 與程式碼的描述為準。
+
+沒有一個系統能不經人工，從原始轉播一路產出逐拍資料。回合範圍常由資料集或使用者提供~\cite{guo2025coach,monotrack,rallylens}，或需由使用者選定參考畫面、模板~\cite{bosi2021thesis,rallylive}。能自動切割回合的系統，則以人工標記的資料訓練分類器~\cite{chien2023hitframe,ghosh2018structured}。比分方面，沒有系統直接讀取計分板，最多只推算回合勝方~\cite{guo2025coach,ghosh2018structured}。
+
+三個開源專案都沒有提供任何準確率等量化評估，結果是否可靠無從判斷~\cite{rallylens,visionai,rallylive}。
+
+文字報告方面，RallyLens 以 Gemini 生成回合分析報告，並讓數字全由程式計算、模型只負責詮釋，以避免數字幻覺~\cite{rallylens}。
+
+\begin{table}[H]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{3.5pt}
+  \caption{既有整合系統與開源專案在各子任務的做法}
+  \label{tab:system-comparison}
+  \begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash\hyphenpenalty=10000}p{6.6em}|L|L|L|L|L|L|>{\centering\arraybackslash}p{2.2em}|}
+    \hline
+    {系統} & {輸入} & {回合切割} & {球場偵測} & {擊球偵測} & {球種辨識} & {比分} & {量化評估} \\
+    \hline
+    \multicolumn{8}{|l|}{\textbf{學術整合系統}} \\
+    \hline
+    Ghosh 等人~\cite{ghosh2018structured} & 完整比賽 & HOG＋SVM & 未說明 & 無 & TCN 逐幀動作分段 & 由發球者推算勝方 & 有 \\
+    \hline
+    Chien 與 Yu~\cite{chien2023hitframe} & 完整比賽 & CNN 分類拍攝角度 & Court R-CNN & 姿態 Transformer & 無 & 無 & 有 \\
+    \hline
+    Bosi~\cite{bosi2021thesis} & 完整比賽 & 與使用者選定的參考畫面比對 & 使用者點選四角 & 軌跡幾何＋音訊 & 無 & 列為目標但未實現 & 有 \\
+    \hline
+    MonoTrack~\cite{monotrack} & 回合片段 & 無 & 幾何式 & HitNet & 無 & 無 & 有 \\
+    \hline
+    Guo 等人~\cite{guo2025coach} & 回合片段 & 無 & Hough 幾何式 & 擊球者切換＋羽球角度 & 手工特徵＋邏輯迴歸 & 只判回合勝方 & 有 \\
+    \hline
+    \multicolumn{8}{|l|}{\textbf{GitHub 開源專案}} \\
+    \hline
+    RallyLens~\cite{rallylens} & 使用者截取的片段 & 無 & Hough 自動，可人工點選 & 手腕與羽球距離規則 & 無 & 無 & 無 \\
+    \hline
+    Badminton-VisionAI~\cite{visionai} & 完整比賽 & README 稱自動，未說明方法 & 預設讀取固定關鍵點檔 & 未說明 & Roboflow 雲端模型 & 無 & 無 \\
+    \hline
+    RallyLive~\cite{rallylive} & 完整比賽或直播串流 & 與使用者選定的球場模板比對 & 比對白／黃場線模型，可人工修正 & 實驗功能 & 無 & 無 & 無 \\
+    \hline
+  \end{tabularx}
+\end{table}
+
+\section{關鍵子任務的既有方法}
+\label{sec:subtask-methods}
+
+\subsection{回合切割}
+
+既有方法多利用「回合進行時，轉播固定以俯拍主機位拍攝」的慣例，把回合切割化約為逐幀判斷是否為比賽畫面。一類是監督式分類，Ghosh 等人以 HOG 特徵搭配 SVM 分類，再以 Kalman 濾波平滑~\cite{ghosh2018structured}。Chien 與 Yu 以 CNN 分類拍攝角度，單幀準確率達 99.76\%，換算成回合後 F1 卻只有 89.27\%，作者歸因於轉播鏡頭形式多變~\cite{chien2023hitframe}。另一類是與參考畫面比對，Bosi 計算每幀與使用者選定之參考畫面的 RGB 差與 PSNR，以經驗門檻判斷~\cite{bosi2021thesis}。
+
+\subsection{球場偵測}
+
+學習式方法以標記資料訓練場地關鍵點偵測器，例如以 Court R-CNN 輸出單打場地的 6 個關鍵點~\cite{chien2023hitframe}，或以 YOLO 架構偵測 14 個場地地標~\cite{singha2025hybrid}。幾何式方法利用場線結構與已知尺寸，不需訓練。AI-Powered Badminton Coach 以 Hough 直線取得候選線，再做透視校正~\cite{guo2025coach}。MonoTrack 把標準球場模型對到候選線上，並指出原演算法寫死的角度門檻使約四分之一的影片失敗，改良後成功率由 73.9\% 提升至 85.5\%~\cite{monotrack}。Bosi 的系統則由使用者人工點出球場四角~\cite{bosi2021thesis}。
+
+\subsection{球體追蹤}
+
+羽球小、快且常被遮擋，既有方法分為熱圖式與偵測框式兩條路線。熱圖式以 TrackNet 家族為代表，輸入連續數幀、輸出標示球位置的熱圖~\cite{tracknet}。TrackNetV2 被多個整合系統直接採用~\cite{guo2025coach,bosi2021thesis}，TrackNetV3 再加入背景估計與 inpainting 軌跡修補~\cite{tracknetv3}。偵測框式如 Singha 等人修改 YOLOv8，移除大物件偵測頭以強化小物件偵測~\cite{singha2025hybrid}。此外，多數系統另以 ARIMA、內插等後處理修正軌跡~\cite{guo2025coach,bosi2021thesis}。
+
+\subsection{擊球偵測}
+
+既有方法依所用訊號可分為四種思路：
+
+\begin{enumerate}
+  \item \textbf{軌跡幾何。}在球的 Y 座標找峰值、X 座標找極值~\cite{bosi2021thesis}，開源專案 SoloShuttlePose \cite{soloshuttlepose} 亦屬此類。殺球前後球的運動方向連貫，此法容易漏抓~\cite{bosi2021thesis}。
+  \item \textbf{球員姿態。}以 Transformer 由雙方骨架序列預測羽球飛行方向，方向轉換處即為擊球幀。容差由 $\pm$15 收緊到 $\pm$5 幀時，F1 由 79.55\% 降至 63.92\%~\cite{chien2023hitframe}。
+  \item \textbf{多源學習式。}MonoTrack 的 HitNet 以 GRU 讀取球場角點、姿態與羽球位置，逐幀判斷是否擊球，再以動態規劃施加「最短間隔、擊球者交替」約束，F1 由 0.866 提升至 0.946~\cite{monotrack}。AI-Powered Badminton Coach 先判斷擊球者並以其切換處分段，再依羽球角度變化定位擊球幀~\cite{guo2025coach}。
+  \item \textbf{音訊。}以 LPC 殘差偵測擊球聲，但球評、觀眾等背景噪音使召回率不理想~\cite{bosi2021thesis}。
+\end{enumerate}
+
+\subsection{球種辨識}
+
+既有方法的差異主要在輸入型態，AI-Powered Badminton Coach 以 131 維手工特徵搭配邏輯迴歸~\cite{guo2025coach}。Singha 等人以 SlowFast 與 TimeSformer 直接處理原始影像~\cite{singha2025hybrid}。BST 則以球員骨架、羽球軌跡與場上位置為輸入~\cite{bst}。BST 須先知道擊球時刻才能切出每一拍的片段，並依賴姿態估計、羽球追蹤與場線偵測三個既有模型的輸出~\cite{bst}。
+
+\subsection{比分辨識}
+
+羽球文獻中鮮少直接辨識計分板，Ghosh 等人以下一回合的發球者推算上一回合的勝方，比分只在建立資料集時由人工標記~\cite{ghosh2018structured}。AI-Powered Badminton Coach 只判斷回合勝方、不讀比分~\cite{guo2025coach}。Bosi 雖把比分列為目標，最終並未實現~\cite{bosi2021thesis}。網球的 SmartTennisTV 自動定位計分板後以 OCR 辨識，再以計分規則修正錯誤，但指出 Tesseract 需依賽事人工設定前處理~\cite{smarttennistv}。
+
+\section{研究缺口與本系統定位}
+\label{sec:research-gap}
+
+綜合前兩節，既有工作仍有兩項缺口。第一，沒有系統能從原始轉播影片一路自動產出逐拍資料。回合範圍、球場位置等上游前提多由資料集或使用者提供，也尚無系統直接讀取計分板，連 HitNet、BST 等較強的模型也假設這些輸入已經就緒。第二，已經自動化的環節多需以逐幀或場地標記訓練，換賽事、換轉播形式就可能失準。開源專案則普遍沒有量化評估，難以判斷結果是否可靠。
+
+本系統定位為一條批次執行的分析管線。上游步驟不需另外訓練模型，也不需針對每支影片人工標記或調整參數，讓既有的成熟模型能直接用在未經處理的轉播影片上，並以公開的真值與評分程式評估各模組。在此基礎上再產生精彩片段排序與自然語言賽評。各子任務的路線如\tabref{tab:positioning}。
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{本系統在各子任務採用的路線}
+  \label{tab:positioning}
+  \begin{tabularx}{\linewidth}{|l|L|r|}
+    \hline
+    {子任務} & {本系統的路線} & {詳見} \\ \hline
+    回合切割 & 影格差異訊號，門檻由影片自身分布估計 & \secref{sec:match-segmentation} \\ \hline
+    比分辨識 & VLM 轉錄計分板 & \secref{sec:score-recognition} \\ \hline
+    球場偵測 & 幾何式，不預設球場顏色，由內部場線反推球場範圍 & \secref{sec:court-detection} \\ \hline
+    球體追蹤 & 預訓練 TrackNetV3，加上多候選 Viterbi 後處理 & \secref{sec:shuttle-tracking} \\ \hline
+    擊球偵測 & 融合軌跡、骨架與球種模型，以結構約束補漏拍 & \secref{sec:hit-detection} \\ \hline
+    球種分類 & 預訓練 BST & \secref{sec:stroke-classification} \\ \hline
+    歡呼偵測 & YAMNet 特徵辨識觀眾歡呼，作為精彩度訊號 & \secref{sec:cheer-audio} \\ \hline
+  \end{tabularx}
+\end{table}
