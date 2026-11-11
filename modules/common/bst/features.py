@@ -1,3 +1,7 @@
+# Portions of this file are derived from BST
+# (https://github.com/Va6lue/BST-Badminton-Stroke-type-Transformer),
+# Copyright (c) 2025 Jing-Yuan Chang, licensed under the MIT License.
+# See THIRD_PARTY_NOTICES.md.
 """Turning one rally's raw geometry into the tensors BST eats.
 
 A :class:`SegmentFeatures` holds one rally segment, already normalized, as three

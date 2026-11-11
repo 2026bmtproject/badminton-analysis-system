@@ -1,3 +1,7 @@
+# Portions of this file are derived from BST
+# (https://github.com/Va6lue/BST-Badminton-Stroke-type-Transformer),
+# Copyright (c) 2025 Jing-Yuan Chang, licensed under the MIT License.
+# See THIRD_PARTY_NOTICES.md.
 """The BST network (BST_CG_AP) and its checkpoint loader.
 
 Badminton Stroke-type Transformer, Clean-Gate / Aim-Player variant. Given a short
