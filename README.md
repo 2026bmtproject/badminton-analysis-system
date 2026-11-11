@@ -1,393 +1,297 @@
-# 羽球比賽分析系統 (Badminton Analysis System)
+# 羽球比賽分析系統
 
-> 本地端系統：輸入一整場羽球比賽轉播影片，自動切割回合、逐球分析、挑選精彩片段，並產生 AI 賽評播報後合成成精華影片。
+**Badminton Analysis System**：從羽球單打轉播影片，全自動產出逐拍資料。
 
-TrackNetV3 權重下載：https://drive.google.com/file/d/1CfzE87a0f6LhBp0kniSl1-89zaLCZ8cA/view?usp=sharing
-BST 權重下載：https://drive.google.com/drive/folders/1D4172WZDJWPvpJdpaHDhy_cA-s8F-zR5?usp=sharing(請下載 bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt)
-下載後解壓縮檔案並把 `TrackNet_best.pt` 與 `InpaintNet_best.pt` 與 `bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt` 放進 `models/`。
+![回看介面：影片疊上球場線、球員骨架、羽球軌跡與擊球標記，右側為逐拍擊球序列，下方為全場時間軸](docs/report_pic/ui/review_workspace_clean.jpg)
 
-## 架構概覽
+輸入一支完整、未經剪輯的羽球單打轉播影片，系統會找出每個比賽片段、讀出比分，逐拍標出擊球時刻、擊球者與球種，並追蹤雙方球員的骨架與羽球軌跡。在這些資料之上，系統還能依觀眾歡呼排出精彩片段，並以大型語言模型撰寫有事實依據的賽評。所有結果都能在回看介面中對照影片檢視。
 
-一條分析管線，逐階段處理，最終在 UI 呈現結果。各模組對應一個處理階段：
+## 目錄
 
-```
-modules/
-├── match_segmentation/   # 回合切割
-├── score_recognition/    # 比分辨識 (Gemini API)
-├── court_detection/      # 球場邊界辨識
-├── pose/                 # 骨架標記 (RTMPose)
-├── shuttle_tracking/     # 羽球軌跡 (TrackNetV3)
-├── event_detection/      # 擊球偵測
-├── stroke_classification/# 球種辨識 (BST)
-├── player_identity/      # 球員身分對應（記分板列 <-> 場地半場）
-├── audio_highlight/      # 音訊歡呼訊號 / audio measurements
-├── highlight_ranking/    # 精彩片段排序 / downstream ranking policy
-├── commentary/           # 賽評契約、生成與 production runtime
-├── common/               # 共用工具
-│   └── bst/              # BST 球種模型（event_detection 與 stroke_classification 共用）
-├── base.py               # BaseModule 介面 + 階段狀態 (status.json)
-├── contracts.py          # 階段間資料契約 + 依賴圖 (single source of truth)
-└── runner.py             # 管線 runner：拓樸排序、跳過已完成、失敗即停
+- [羽球比賽分析系統](#羽球比賽分析系統)
+  - [目錄](#目錄)
+  - [為什麼做這個](#為什麼做這個)
+  - [成果](#成果)
+  - [功能](#功能)
+    - [分析管線](#分析管線)
+    - [延伸階段](#延伸階段)
+    - [回看介面](#回看介面)
+  - [系統架構](#系統架構)
+  - [快速開始](#快速開始)
+    - [環境需求](#環境需求)
+    - [1. 安裝](#1-安裝)
+    - [2. 下載模型權重](#2-下載模型權重)
+    - [3. 設定 API key](#3-設定-api-key)
+    - [4. 分析一場比賽](#4-分析一場比賽)
+    - [5. 開啟回看介面](#5-開啟回看介面)
+  - [進階使用](#進階使用)
+    - [管線選項](#管線選項)
+    - [單獨執行階段](#單獨執行階段)
+    - [執行測試](#執行測試)
+  - [重現實驗](#重現實驗)
+  - [專案結構](#專案結構)
+  - [已知限制](#已知限制)
+  - [文件](#文件)
+  - [致謝](#致謝)
 
-ui/        # 共用 Vue 回看介面、Vite 開發服務與 Electron 桌面入口
-matches/   # 每場分析的資料（不進 repo）
-```
+## 為什麼做這個
 
-階段間的輸入輸出格式（每個 `stages/*/*.json` 的 schema）與依賴關係都定義在
-[`modules/contracts.py`](modules/contracts.py)。
+國際賽事的完整轉播影片大量公開在網路上。教練想歸納對手的慣用球路，研究者想統計戰術或訓練模型，他們需要的都不是影片本身，而是**逐拍資料**：每回合打了幾拍、每一拍是誰打的、打的是什麼球。這些資料目前仍靠人工標記。
 
-賽評已完成 production integration，但因每個 rally 通常需要 3–4 次 Gemini request，
-預設 runner 只跑 upstream analysis，不會自動產生全場賽評。使用者可按 segment
-on demand 生成；`commentary.json` 的全場 batch 模式需明確 opt in。欄位、依賴與
-相容性說明見 [Commentary contract v1](docs/commentary-contract.md) 與
-[Commentary production integration](docs/commentary-production-integration.md)。
+學術上已有不少單項方法，例如追蹤羽球的 TrackNetV3、分類球種的 BST，但它們大多假設輸入已經整理好，比賽片段的起訖、球場範圍與擊球時刻都由人工提供。面對一支未經處理的轉播影片，這些前提無從取得。
 
-音訊階段已實作並註冊至 runner：`audio_highlight` 以 `audio_signals.json`
-分別輸出每個 segment 的 `cheer_confidence`、`cheer_intensity` 與
-`n_cheer_windows`，這些 measurement 在 stage boundary 保持分離。後續
-`highlight_ranking` 已實作並註冊至 runner，使用下述 audio-only v1 政策產生 `HighlightScore`。
+本專案把這些上游步驟全部自動化，讓既有模型能直接在真實轉播影片上運作，補上從「原始影片」到「逐拍資料」之間的落差。
 
-### 精彩片段排序（highlight_ranking）
+|              |                                                                                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------- |
+| **輸入**     | 一支完整的羽球單打轉播影片，以 BWF 國際賽事常見的固定俯拍主機位為主                                             |
+| **輸出**     | 每個比賽片段的起訖時間與比分、每一拍的擊球影格、擊球者與球種，以及球員骨架、球場範圍與羽球軌跡                  |
+| **延伸**     | 精彩片段排序、AI 賽評生成（皆為選用）                                                                           |
+| **運作方式** | 賽後批次處理，單機一張消費級 GPU 即可執行。除比分辨識與賽評會呼叫 Gemini API 外，其餘都在本機完成，影片不需上傳 |
 
-只依賴已完成的 `audio_highlight`，採用透明啟發式政策 `audio_additive_v1`：
+## 成果
 
-```text
-I_effective = cheer_intensity if cheer_intensity is not None else 0.0
-score = 0.5 * cheer_confidence + 0.5 * I_effective
-```
+以 16 支 YouTube 公開的國際賽事單打完整轉播（約 18 小時）建立評估資料，以影片為單位切成 7 場開發集與 9 場測試集。下表數字皆來自**未參與開發的測試比賽**。
 
-權重是固定政策參數，不是學得的係數。confidence 是 detector evidence，不是校準機率；
-intensity 沿用既有同場相對量測，不做百分位重算。null intensity 貢獻零分，來源中的有效
-`0.0` 仍與 null 有別。score 範圍為 `[0,1]`，越高表示此政策下越精彩；分數部分依賴
-同場尺度，不是機率，也未做跨場校準。`n_cheer_windows` 僅驗證支持數一致性，不參與加分。
-v1 不融合比分、球種或回合時長，也不做 top-N、threshold、clip selection 或 rendering。
+| 模組         | 評估資料                        | 主要指標                   | 其他指標                                 |
+| ------------ | ------------------------------- | -------------------------- | ---------------------------------------- |
+| 賽事影片分段 | 9 場、670 個片段                | **F1 98.66%**（IoU ≥ 0.9） | 邊界誤差中位數 0 影格                    |
+| 擊球時刻偵測 | 8 場、6,990 拍                  | **F1 93.14%**（±5 影格）   | Precision 95.49%、Recall 90.90%          |
+| 球種分類     | 3 場 BST 未看過的比賽、1,601 拍 | **8 類準確率 87.38%**      | 擊球者準確率 97.88%、Macro-F1 84.71%     |
+| 場地偵測     | 9 場、36 個球場外角             | **命中率 72.22%**          | 誤差中位數 2.79 像素，6 場四角全中       |
+| 歡呼偵測     | 4 場逐場留一交叉驗證            | **Macro F1 82.70%**        | ROC-AUC 0.96                             |
+| 處理時間     | 5 場、片長 332 分鐘             | **回合總長的 2.71 倍**     | 扣除 API 等待後為 1.96 倍（RTX 3060 Ti） |
 
-每筆輸入產生一筆分數，寫入 `stages/highlight_ranking/highlights.json` 的 `highlights` 陣列，
-按 `segment_index` 升冪儲存；頂層 `policy` 記錄公式參數與排序規則。消費端若需要排名，
-以 score 降冪、來源 cheer_confidence 降冪、segment_index 升冪排序，使用完整浮點值，
-不先四捨五入、不使用 epsilon 判定同分。空輸入或無效量測會明確失敗。
+完整實驗設計與失敗案例分析見[專題報告](docs/latex/report.pdf)第四章。
 
-```bash
-uv run python -m modules.highlight_ranking matches/TTYvsASY
-```
+## 功能
 
-### 音訊歡呼訊號（audio_highlight）
+### 分析管線
 
-輸入為原始影片的第一個音軌與 `stages/match_segmentation/segments.json`，輸出為
-`stages/audio_highlight/audio_signals.json`（`signals` 陣列，每個 segment 一筆）。
-新產生的 artifact 另有 `windows` 陣列，保存推論時已算出的每個 3 秒窗口之
-`segment_index`、`start_sec`、`end_sec` 與 `cheer_probability`。Review 時間軸以
-`(start_sec + end_sec) / 2` 對應全場絕對時間，繪製窗口機率曲線；不跨無資料區間連線。
-舊 artifact 若沒有 `windows`，時間軸顯示無窗口資料，不會用 segment p95 假造曲線。
+| 階段                                 | 做什麼                                               | 怎麼做                                                                                                |
+| ------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 賽事影片分段<br>`match_segmentation` | 找出固定主機位的比賽片段，排除重播、特寫與計分板畫面 | 以相鄰影格差異（MAD）為訊號，搭配自適應門檻與跨片段一致性篩選。不需訓練，也不需逐片調參               |
+| 比分辨識<br>`score_recognition`      | 讀出每個片段計分板上的比分與局數                     | 多幀合成凸顯計分板，由 Gemini 視覺語言模型逐字轉錄，再由程式挑出當前局比分                            |
+| 場地偵測<br>`court_detection`        | 定位球場四個外角，建立畫面與球場平面的對應           | 偵測場線，以單應性吻合度評分選出最佳外角，可在介面中手動校正                                          |
+| 球員骨架追蹤<br>`pose`               | 從裁判、線審與觀眾中挑出兩名球員，輸出 17 個關節點   | YOLOX 偵測人體、RTMPose 估計骨架，再把腳點投影到球場平面選人                                          |
+| 球體追蹤<br>`shuttle_tracking`       | 逐影格定位羽球、重建軌跡                             | TrackNetV3 產生熱圖，InpaintNet 與 Viterbi 兩種軌跡並存，供下游各取所需                               |
+| 擊球時刻偵測<br>`event_detection`    | 找出每一次擊球的影格                                 | 融合羽球軌跡、球員骨架與 BST 逐幀球種機率，經候選生成、篩選、結構性補漏與誤判修剪四步                 |
+| 球種分類<br>`stroke_classification`  | 判斷每一拍的球種與擊球者                             | BST（Badminton Stroke-type Transformer），輸出高遠球、發球、小球、平快球、殺球、切球、撲球、勾球 8 類 |
 
-- `cheer_confidence`：所有窗口 detector evidence 的 p95，並非校準過的 segment probability。
-- `cheer_intensity`：同場偵測為歡呼的窗口，以 log RMS 的 average rank percentile 計算，再取 segment p95；無歡呼時為 `null`，有效的 `0.0` 會保留。
-- `n_cheer_windows`：重疊歡呼窗口的支持數，不是獨立歡呼事件數。
+### 延伸階段
 
-```bash
-uv run python -m modules.audio_highlight matches/MK_vs_CT_2019
-```
+| 階段                                | 做什麼                                       | 怎麼做                                                                                                                              |
+| ----------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 球員身分對應<br>`player_identity`   | 把畫面上方或下方的球員，對應到計分板上的選手 | 由比分變化推出發球方，再與發球拍的擊球者互相印證，以換邊區間為單位投票                                                              |
+| 歡呼音訊量測<br>`audio_highlight`   | 量測每個片段結束前後的觀眾歡呼               | YAMNet 音訊特徵加上輕量分類器，以 3 秒窗口逐段計分                                                                                  |
+| 精彩片段排序<br>`highlight_ranking` | 為每個片段打出精彩度分數                     | 歡呼信心與歡呼強度各占一半                                                                                                          |
+| 賽評生成<br>`commentary`            | 為回合撰寫逐拍賽評與一句摘要                 | 擊球順序、擊球者與球種由程式從管線結果組成，Gemini 只負責措辭。每句再經模型與規則兩層審查，沒有資料支持的句子改用只陳述事實的模板句 |
 
-需在 PATH 安裝 FFmpeg。固定使用 mono / 16 kHz / float32 與 hard clipping、3 秒窗口、
-1 秒 hop、3 秒 post-padding（不截在下一個 segment，只保留完整窗口）。某段無完整窗口時會失敗。
-`cache/audio/audio.f32le` 可重用，來源路徑、大小、mtime 或音訊格式版本改變時重建。
+### 回看介面
 
-### 回看資料匯出（review_export）
+以 Vue 撰寫，可在瀏覽器開發模式使用，也提供 Windows 桌面版（Electron）。
 
-回看工作區由 Python 將 stage artifacts 驗證並 join 成版本化的
-`review-export-v1`。此命令只讀取既有結果，不執行 pipeline、模型或外部 API：
+- **影片疊圖**：球場線、球員骨架、羽球與拖尾、擊球閃圈、球種標籤，可逐層開關
+- **回合分析欄**：逐拍擊球序列、精彩度排名，並可針對單一回合按需生成賽評
+- **多軌時間軸**：回合、比分、歡呼、精彩度與擊球標記，支援全場與單回合兩種縮放
+- **分析任務**：直接從介面選擇階段、預覽執行計畫並啟動分析，球場偵測完成後可立即檢查與校正
 
-```bash
-uv run python -m modules.review_export matches/Kunlavut --output review.json
-```
+## 系統架構
 
-可用 `--title`、`--player-a`、`--player-b`、`--video-url`、`--duration` 與
-`--scenario` 提供發布環境資料。輸出摘要如下：
+![系統架構：影片前處理、場景與人體理解、球體分析三組分析管線，以及音訊與精彩度分析、賽事理解兩組延伸階段](docs/figures/report/system-architecture.svg)
 
-```json
-{
-  "schemaVersion": "review-export-v1",
-  "states": {
-    "scores": { "status": "available", "usable": true, "fingerprint": "..." },
-    "pose": { "status": "missing", "usable": false, "message": "artifact is missing" }
-  },
-  "rallies": [],
-  "source": { "matchId": "Kunlavut", "fingerprints": {}, "limitations": [] }
-}
-```
+管線共 11 個階段，每個階段讀取上游產物、輸出一個 JSON 產物。設計上有四個約定，讓每個階段都能單獨開發、替換與重跑：
 
-`available` 表示結構與 dependency fingerprints 已驗證；`unknown` 是舊結果未記錄
-輸入指紋但結構可讀；`stale` 表示依賴已變動且不會呈現；`missing` 與 `error`
-分別代表不存在與無法驗證。optional artifact 的問題只停用對應功能。JSON Schema
-由 `uv run python -m modules.review_export.schema` 產生，測試會檢查 checked-in schema
-沒有與 Python contract 漂移。
-改換原始影片後，請重跑相關階段或使用 runner 的 `--force`。
+1. **統一的資料契約**：各階段只透過 JSON 產物溝通，所有欄位與相依關係集中定義在 [`modules/contracts.py`](modules/contracts.py)。
+2. **以完整比賽時間對齊**：視覺結果記錄原始影片的絕對影格編號，音訊記錄整場比賽中的秒數，彼此可直接對照。
+3. **依內容判斷是否重跑**：執行器記下每個上游產物的內容雜湊。上游一改，下游自動判為過期並重算，重跑上游得到相同結果則不算變動。
+4. **兩相設計與片段快取**：吃 GPU 的階段（球體追蹤、骨架追蹤、擊球時刻偵測）先把模型輸出存進快取，再做純幾何與門檻運算。調參只需重跑第二相，以秒計且不碰 GPU。快取以片段為單位，中斷後可續跑。
 
-凍結的 NumPy detector 與 metadata 隨 repo 放在 `models/yamnet_mean_lr_v1/`，
-執行時驗證 SHA-256；不需 sklearn。這個 16 KB 的分類器是執行所需的固定資產，
-來源與雜湊見該目錄的 README。YAMNet 首次從 TFHub 下載，之後重用快取。
-預設快取位於系統暫存目錄（必要時使用家目錄的 `.cache`），須為 ASCII 路徑；
-可用 `TFHUB_CACHE_DIR` 指定可寫入的 ASCII 路徑。載入前會檢查 SavedModel；
-若 TFHub 留下非空但不完整的模型目錄，會在獨立的 `verified` 快取重新下載，
-成功後供後續任務重用，不需每次手動更換快取目錄。
+## 快速開始
 
-### 每場分析的目錄結構（match 路徑）
+### 環境需求
 
-一場比賽（match）對應 `matches/{比賽}/`，即該場的 **match 路徑**（程式中的 `match_path`）。原始影片放在 `input/`，
-各階段的產出寫進 `stages/{階段名}/`：
+| 項目           | 需求                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| 作業系統       | 主要在 Windows 11 開發與測試，Linux 亦可安裝                                               |
+| Python         | 3.12，由 [uv](https://docs.astral.sh/uv/) 自動管理                                         |
+| FFmpeg         | 需在 `PATH` 中                                                                             |
+| GPU            | 建議 NVIDIA RTX 20 系列以上（CUDA 12.8），4 GB VRAM 即可。沒有 GPU 也能跑完，但會慢很多    |
+| Node.js        | 22.12 以上，僅回看介面需要                                                                 |
+| Gemini API key | 比分辨識與賽評需要，可至 [Google AI Studio](https://aistudio.google.com/app/api-keys) 申請 |
 
-```
-matches/MK_vs_CT_2019/          # = match_path
-├── input/
-│   └── match.mp4               # 原始轉播影片（第一個影片檔即為輸入）
-├── cache/                      # 可重建的衍生媒體（可刪，不進 repo）
-│   ├── match_480p.mp4          # 若原片 > 480p，降解析度快取；多個階段可共用
-│   ├── heatmaps/               # shuttle_tracking 的 TrackNet heatmap，一段一個 .npz
-│   ├── pose/                   # pose 的逐幀人體偵測（球場附近的候選人），一段一個 .npz
-│   ├── dense_scan/             # event_detection 的 BST 逐幀 25 類機率，一段一個 .npz
-│   └── scores/                 # score_recognition 讀過的比分，一段一個小 JSON
-└── stages/
-    └── match_segmentation/
-        ├── status.json         # 該階段執行狀態（pending/running/completed/failed）+ 上游輸入指紋
-        └── segments.json       # 該階段的產出（資料契約，見 contracts.py）
-```
-
-三種目錄語意分開：`input/` 是原始檔、`stages/{名}/` 是各階段的契約產出（JSON）、
-`cache/` 是可重建的衍生媒體。
-
-### 快取以內容定址
-
-每個快取檔的檔名是「它是什麼的函數」的雜湊：全域參數（權重、閾值、來源影片）、該段起訖幀、
-以及上游資料的指紋。
-
-`stages/{名}/status.json` 另外記下每個上游產出的內容指紋，所以 runner 分得出「跑完了」和
-「還是最新的」：上游一改，下游自動判為 stale 並重跑。指紋用內容而非 mtime，重跑上游得到
-同樣答案不算變動。
-
-
-## 命名約定（Glossary）
-
-| 名詞                 | 中文         | 意義                                                  | 程式中的用法                                              |
-| -------------------- | ------------ | ----------------------------------------------------- | --------------------------------------------------------- |
-| **match**            | 一場比賽     | 一整場羽球比賽（一支轉播影片）                        | `matches/{match}/`、`match_path`（該場路徑）、`match.mp4` |
-| **game**             | 一局         | 比賽中的一局                                          | `game_index`                                              |
-| **rally**            | 一回合／一分 | 一次得分回合；分段不保證與它一對一                    | UI 沿用 rally 名稱；artifact 不可據此假設一段只有一回合   |
-| **segment**          | 一個影片片段 | 依鏡頭切出的起訖 frame，可能含零個、一個或多個回合    | `Segment`、`segments.json`、`segment_index`               |
-| **player**           | 球員         | 場上兩位球員，固定以 `a`/`b` 標示，不隨換邊改變       | `player: "a"/"b"`                                         |
-| **score a/b**        | 比分觀察     | segment 取樣看到的記分板列值；不保證是回合前或回合後 | `score_a`、`score_b`；固定綁 `a`/`b`                      |
-| **stage**            | 階段         | 管線中的一個處理階段                                  | `stages/{stage}/`、`StageSpec`                            |
-| **downscaled video** | 低解析度影片 | 為加速掃描／辨識而降解析度的快取影片                  | `downscaled_video()`、`cache/match_480p.mp4`              |
-
-## 開始使用
-
-Vue 開發模式、Electron Windows unpacked 版、外部 Python checkout 與使用者資料位置，
-統一見 [UI 操作與架構文件](ui/README.md)。
+### 1. 安裝
 
 ```bash
+git clone https://github.com/2026bmtproject/badminton-analysis-system.git
+cd badminton-analysis-system
 uv sync
-cp config.yaml.example config.yaml   # 填入你的設定
 ```
 
-> 註：Python 固定使用 3.12，`uv sync` 會自動挑對版本。
+### 2. 下載模型權重
 
-## 執行管線
+以下權重請手動下載後放進 `models/`：
 
-把原始影片放到 `matches/{比賽}/input/` 後，用 runner 跑整條管線。runner 會依模組
-依賴做拓樸排序、跳過已 `completed` 的階段、任一階段失敗即停：
+| 檔案                                                               | 用途                          | 下載                                                                                                                   |
+| ------------------------------------------------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `TrackNet_best.pt`、`InpaintNet_best.pt`                           | 球體追蹤（TrackNetV3）        | [Google Drive](https://drive.google.com/file/d/1CfzE87a0f6LhBp0kniSl1-89zaLCZ8cA/view?usp=sharing)，下載後解壓縮       |
+| `bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt` | 擊球時刻偵測、球種分類（BST） | [Google Drive](https://drive.google.com/drive/folders/1D4172WZDJWPvpJdpaHDhy_cA-s8F-zR5?usp=sharing)，只需下載這個檔案 |
+
+其餘模型不需手動處理：RTMPose 與 YOLOX 首次執行時由 rtmlib 自動下載，YAMNet 首次執行時從 TensorFlow Hub 下載，歡呼分類器已隨專案附在 `models/yamnet_mean_lr_v1/`。
+
+### 3. 設定 API key
 
 ```bash
-# 跑一整場（讀 matches/MK_vs_CT_2019/input/ 的影片，產出寫進 stages/）
-uv run python -m modules.runner matches/MK_vs_CT_2019
-
-# 強制重跑（忽略既有的 completed 狀態）
-uv run python -m modules.runner matches/MK_vs_CT_2019 --force
-
-# 連「status.json 早於輸入指紋機制」的階段也一併重跑（預設會保留不動）
-uv run python -m modules.runner matches/MK_vs_CT_2019 --strict-stale
-
-# 只為選定 rally 產生賽評（--segment 可重複）
-uv run python -m modules.commentary matches/MK_vs_CT_2019 --segment 7
-
-# 明確 opt in 全場賽評
-uv run python -m modules.runner matches/MK_vs_CT_2019 --with-commentary
+cp config.yaml.example config.yaml
 ```
 
-## 命令列工具（單一工具 / 任意路徑）
+在 `config.yaml` 填入 `gemini_api_key`，或改設環境變數 `GEMINI_API_KEY`（環境變數優先）。`config.yaml` 已被 Git 忽略，不會被提交。
 
-各工具亦可單獨執行（於專案根目錄），輸入輸出接受任意路徑，不受 match 路徑 約束：
+### 4. 分析一場比賽
+
+把轉播影片放進 `matches/<比賽代號>/input/`，再執行整條管線：
 
 ```bash
-# 回合切割：輸出片段 JSON（含 fps 與 segments 陣列）
-# 預設會先讀取影片畫質，若高於 480p 會自動先降到 480p 再掃描；用 --scan-max-height 0 可關閉、改用原畫質掃描。
-uv run python -m modules.match_segmentation MATCH.mp4 segments.json
-
-# 手動降解析度（單獨使用；回合切割已內建自動降解析度）
-uv run python -m modules.common.downscale MATCH.mp4 --height 480
-
-# 依片段 JSON 剪輯影片：給 match 路徑 即自動找影片與 segments.json
-uv run python -m modules.common.video_cutter matches/MK_vs_CT_2019            # 預設 separate
-uv run python -m modules.common.video_cutter matches/MK_vs_CT_2019 -m merge   # 合併
-
-# 或完全指定路徑（separate / merge / inverse-merge）
-uv run python -m modules.common.video_cutter -v MATCH.mp4 -s segments.json -m separate -o ./segments
-
-# 比分辨識：對每個 segment 直接從原片抽 frame、合成後送 Gemini 讀比分
-# 需先設定 GEMINI_API_KEY 環境變數
-uv run python -m modules.score_recognition matches/MK_vs_CT_2019
-
-# 預設會跳出視窗讓你拖曳四個角點微調（Enter 確認 / ESC 用自動結果 / R 重設）
-uv run python -m modules.court_detection matches/MK_vs_CT_2019
-# 不做人工確認、直接寫入自動偵測結果（無顯示器環境用；runner 跑管線時一律走此模式）
-uv run python -m modules.court_detection matches/MK_vs_CT_2019 --no-confirm
-
-# 羽球軌跡：對每個 segment 跑 TrackNet 產生 heatmap（存 cache），再跑兩種軌跡萃取
-uv run python -m modules.shuttle_tracking matches/MK_vs_CT_2019
-# 只做 GPU 的 heatmap 推論（之後調整軌跡萃取就不必再動 GPU）
-uv run python -m modules.shuttle_tracking matches/MK_vs_CT_2019 --only-heatmap
-# 用既有的 heatmap cache 重跑單一 tracker（換補洞方式試效果，不重算 heatmap）
-uv run python -m modules.shuttle_tracking matches/MK_vs_CT_2019 --method viterbi --fill kalman
-
-# 骨架標記：對每個 segment 跑人體偵測 + RTMPose（存 cache），再用球場座標選出兩名球員
-uv run python -m modules.pose matches/MK_vs_CT_2019
-# 只做 GPU 的偵測推論（之後調整選人邊界就不必再動 GPU）
-uv run python -m modules.pose matches/MK_vs_CT_2019 --only-detect
-# 用既有的 cache 重新選人（放寬底線外擴，不重算骨架）
-uv run python -m modules.pose matches/MK_vs_CT_2019 --y-margin 0.35
-# GPU 太快、等解碼等到閒置時，加開同時處理的回合數（預設會自己挑，執行時會印出來）
-uv run python -m modules.pose matches/MK_vs_CT_2019 --workers 8
-# 把選人結果畫在真實畫面上檢查（含起跳中的球員）
-uv run python -m modules.pose matches/MK_vs_CT_2019 --debug-overlay overlays/
-# 另外匯出 BST 吃的逐 segment 骨架 CSV
-uv run python -m modules.pose matches/MK_vs_CT_2019 --csv-dir skeletons/
-
-# 擊球偵測：先跑 BST 逐幀 dense scan（存 cache），再跑四階段偵測
-uv run python -m modules.event_detection matches/ASG_vs_AA_2020
-# 用既有的 dense scan cache 重跑偵測（調參零 GPU 成本），並輸出 18 欄除錯 CSV
-uv run python -m modules.event_detection matches/ASG_vs_AA_2020 --debug-csv hitevents/
-# 關掉計分板死時間規則（即使 scores.json 存在）
-uv run python -m modules.event_detection matches/ASG_vs_AA_2020 --no-scores
-
-# 球種辨識：對每一拍跑一次 BST（947 拍約 2 秒）
-uv run python -m modules.stroke_classification matches/ASG_vs_AA_2020
-# 附每拍的除錯 CSV（窗口範圍、前三名、p_top/p_bottom）
-uv run python -m modules.stroke_classification matches/ASG_vs_AA_2020 --debug-csv strokes.csv
-
-# 影格合成工具（單獨使用；把影片抽樣的 frame 合成以凸顯靜態元素如記分板）
-uv run python -m modules.common.frame_composite MATCH.mp4 -n 30 -o composites/
+uv run python -m modules.runner matches/<比賽代號>
 ```
 
-## 各階段簡介
-
-三個吃 GPU 的階段（`shuttle_tracking`、`pose`、`event_detection`）都拆成**兩相**：第一相跑模型、
-結果存進 `cache/`，第二相是純幾何與門檻。所以調參只重跑第二相，秒級、不碰 GPU。
-
-### 羽球軌跡（shuttle_tracking）
-
-TrackNetV3。權重放 `models/`：`TrackNet_best.pt`（heatmap 網路）、`InpaintNet_best.pt`（軌跡修補）。
-
-1. **Heatmap**：每個回合逐幀產生信心 heatmap，存進 `cache/heatmaps/`（唯一吃 GPU 的部分，可中斷續跑）。
-2. **軌跡**：`inpaint` 與 `viterbi` 兩種萃取法各跑一次，**兩份結果都寫進 `shuttle.json`**（以 `method` 欄位
-   區分），因為 `event_detection` 兩者都要——`inpaint` 積極補得多，`viterbi` 保守寧缺勿濫。
-
-### 骨架標記（pose）
-
-RTMPose，top-down 兩階段：YOLOX 先找出畫面上所有人，RTMPose 再逐一裁切放大重估骨架。輸出 COCO-17
-關節，座標已還原回原始畫面像素。兩個模型都是 ONNX，**首次執行由 rtmlib 自動下載**，`models/` 不必放東西。
-
-1. **偵測**：逐幀跑 YOLOX，再對**所有可能是球員的人**（不只最後選中的兩位）跑 RTMPose，存進
-   `cache/pose/`（唯一吃 GPU 的部分，可中斷續跑）。
-2. **選人**：用 `court_detection` 的 homography 把每個人投影到球場座標，選出兩名球員，寫進 `pose.json`。
-
-
-`--x-margin` / `--y-margin` 把判界擴到球場外一圈：球員撲救會衝出邊線、起跳殺球的腳踝騰空會被反投影到
-底線外，判界太緊就會在最關鍵的幀弄丟球員。`--debug-overlay` 把選人結果畫在真實畫面上。
-
-第一相**同時跑多個回合**，每個 worker 各自開一份解碼器：解碼與兩個模型的前處理都是 CPU，序列化跑
-的話 GPU 就在旁邊乾等——換好卡卻沒變快就是這個原因。worker 數預設看裝置決定（GPU 取核心數一半、
-上限 4；CPU 固定 1），執行時會印出來，用 `--workers` 覆蓋。
-
-### 擊球偵測（event_detection）
-
-輸出 `events.json`：**一場比賽裡每一次擊球的幀號**，就這樣，沒有別的欄位。球員是誰由
-`stroke_classification` 回答；幀號是絕對的，落在哪個回合去 `segments.json` 查。偵測過程用到的證據走
-`--debug-csv`，不進契約。
-
-1. **Dense scan**：對每個回合的每一幀跑一次 BST，把 25 類機率存進 `cache/dense_scan/`（唯一吃 GPU 的部分）。
-2. **偵測**：四階段的純幾何 + 門檻——候選訊號 → 閘門 → 結構補洞 → 修剪。
-
-存的是完整 25 類機率而非 argmax，因為這個階段幾乎每個參數都是「機率上的門檻」。實測
-ASG_vs_AA_2020：dense scan 約 25 秒，之後每次重跑偵測 **4.6 秒、不碰 GPU**。
-
-### 球種辨識（stroke_classification）
-
-輸出 `strokes.json`：`events.json` 裡的每一拍對應一筆，順序相同（`event_index` 就是它在 `events.json`
-的位置）。每筆記錄球種（8 類）、**擊球者**（`top`/`bottom`）、信心，以及所屬 segment。
-
-單相位、沒有 cache、沒有門檻：BST 對每一拍只跑一次（一整場約 900–1000 個窗，GPU 上 2 秒），argmax
-就是答案。
-
-### 球員身分對應（player_identity）
-
-輸出 `identity.json`：`epochs` 陣列，每個**換邊區間**一筆，記錄那段期間記分板的哪一列
-（`RallyScore` 的 `a` / `b`）在球場的哪一半（`top` / `bottom`）。這是整條管線唯一把**場地位置**
-（幾何）接上**身分**（記分板列）的地方，所以上游沒有任何階段會去斷言它。
-
-換邊時機由規則決定，不必看影像：第一局結束、第二局結束、決勝局領先方到 11 分。區間內映射恆定。
-
-政策 `serve_vote_v1` 讓兩個獨立訊號在每個回合交會：
+執行器會依相依關係排序各階段，已完成且未過期的階段自動跳過，任一階段失敗即停止。結果寫在同一場比賽的資料夾內：
 
 ```text
-發球的是哪一列 = 比分較前一回合增加的那一列   （得分制下，贏球者發下一球）
-發球的是哪一邊 = 該回合第一拍的擊球者          （但僅限那一拍被判為「發球」時）
+matches/<比賽代號>/
+├── input/      原始影片
+├── stages/     各階段的 JSON 產物與執行狀態
+└── cache/      可重建的中間結果（降解析度影片、熱圖、骨架偵測等），可隨時刪除
 ```
 
-那個 gate 是整個政策的關鍵。`event_detection` 在一段裡的第一拍**經常是回擊而不是發球**，而把回擊
-當成發球不是增加雜訊，是把答案**反過來**。不設 gate 時同樣的投票只有 55–82%，而且會在真實比賽上
-自信地答錯；設了 gate 是 92–100%。寧可丟掉四成到八成的回合。
+> 預設不產生賽評。每個回合約需 3 至 4 次 Gemini 請求，建議在回看介面中針對感興趣的回合按需生成，或參考[進階使用](#進階使用)。
 
-票以區間為單位匯集。票數足夠（`MIN_VOTES`）就自己解出（`resolved_by: "vote"`）；太稀疏的區間改由
-**記分板慣例**補（`"convention"`）—— 慣例本身也是推出來的，不是寫死的：比較已解出的區間是否隨換邊
-翻轉，得到 `fixed_rows`（轉播記分板列不動，映射每次換邊翻轉）或 `tracked_rows`（graphic 跟著場地
-換行，映射恆定）。兩種都解不出來的區間**不會進 `epochs`**，而是連同票數進 envelope 的 `unresolved`：
-對下游賽評來說，看得見的缺口遠好過猜出來的身分。
+### 5. 開啟回看介面
 
-`agreement` 是該區間中與**這筆記錄的映射**一致的票數比例，不是校準過的機率。
+以 Windows 桌面版為例：
 
-`cache/dense_scan/`（`event_detection` 的逐幀掃描）若存在會被當作**補丁**使用，只填 gate 拒絕掉的
-回合，不覆蓋 gate 的答案 —— 固定視窗的掃描在「誰擊的球」這件事上比錨在兩拍之間的窗口糊，兩者在重疊
-處約每六筆不一致一筆，而錨定的那個是對的。快取不存在、來自不同權重、或 segment 幀範圍已經對不上時，
-就只是少幾張票。
+```powershell
+cd ui
+npm ci
+npm run desktop:run
+```
+
+> 若 PowerShell 的執行原則擋下 `npm`，改用 `npm.cmd`。
+
+首次開啟時，依序選擇 `matches` 資料夾、已執行過 `uv sync` 的本專案資料夾，以及 `uv.exe` 的位置。之後在 Matches 頁按「匯入比賽」載入已分析完成的比賽，或按「分析比賽」直接從介面啟動分析。
+
+瀏覽器開發模式、打包 unpacked 版本與介面架構，見 [`ui/README.md`](ui/README.md)。
+
+## 進階使用
+
+### 管線選項
 
 ```bash
-uv run python -m modules.player_identity matches/MK_vs_CT_2019
-uv run python -m modules.player_identity matches/MK_vs_CT_2019 --no-dense
+# 忽略已完成的狀態，全部重跑
+uv run python -m modules.runner matches/<比賽代號> --force
+
+# 一併執行賽評階段（預設只示範精彩度最高的 3 個回合，可在 config.yaml 調整）
+uv run python -m modules.runner matches/<比賽代號> --with-commentary
+
+# 只為指定片段生成賽評（--segment 可重複）
+uv run python -m modules.commentary matches/<比賽代號> --segment 7
 ```
 
-只是兩份既有 artifact 上的算術，重跑是毫秒等級 —— 這正是它獨立成一個 stage 而不是寄生在
-`stroke_classification` 的原因：runner 會在上游變動時把階段標記為 stale，而 `score_recognition`
-偏偏是最常被重讀重調的階段，把那條 staleness 掛在一個沒有 cache 的階段上，等於每次比分一改就重跑
-整場 BST。
+### 單獨執行階段
 
-### 球種模型（common/bst）
+每個階段都能單獨執行，格式皆為 `uv run python -m modules.<階段名稱> matches/<比賽代號>`。
 
-BST（Badminton Stroke-type Transformer）同時被 `event_detection` 與 `stroke_classification` 用到，
-所以住在 `modules/common/bst/` 而不在任何一個階段裡。權重是合併過的 25 類（`0=未知球種`、
-`1–12=Top_<球種>`、`13–24=Bottom_<球種>`）。對使用者呈現時再併成 8 類，artifact 存中文 8 類。
+<details>
+<summary>常用範例</summary>
 
-權重：`models/bst_CG_JnB_bone_between_2_hits_with_max_limits_seq_100_merged.pt`（不進 repo，下載連結見本文件開頭）。
+```bash
+# 場地偵測：跳出視窗拖曳四個角點微調（Enter 確認、ESC 採用自動結果、R 重設）
+uv run python -m modules.court_detection matches/<比賽代號>
 
-## GPU 與環境
+# 球體追蹤：只跑 GPU 的熱圖推論，或用既有熱圖改試其他軌跡萃取法
+uv run python -m modules.shuttle_tracking matches/<比賽代號> --only-heatmap
+uv run python -m modules.shuttle_tracking matches/<比賽代號> --method viterbi --fill kalman
 
-執行時第一行就會印出實際用到的裝置，**沒吃到 GPU 會大聲警告**。沒有NVIDIA 顯卡的機器會自動退回 
-CPU 並印出警告，**仍然跑得完**（TrackNet 實測 CPU 約 12 fps、GPU 約 90 fps）。
-若希望「拿不到 GPU 就當作錯誤」，加 `--device cuda` 讓它直接失敗。
+# 骨架追蹤：用既有快取重新選人，並把結果畫在畫面上檢查
+uv run python -m modules.pose matches/<比賽代號> --y-margin 0.35 --debug-overlay overlays/
 
-- **torch**：`pyproject.toml` 讓 Windows / Linux 從 PyTorch 的 CUDA 12.8 index 取 torch（PyPI 的 Windows
-  wheel 只有 CPU 版），macOS 則走 PyPI。
-- **onnxruntime-gpu 釘在 `<1.23`**：1.23 以上是用 CUDA 13 編的，跟本專案的 CUDA 12.8 版 torch 對不上，
-  會建不起 CUDA provider 然後**默默用 CPU 跑完**（慢約 3 倍且看起來一切正常）。釘住之後它直接複用 torch
-  已經帶在 `torch/lib` 裡的 DLL，不必額外安裝任何東西。**要解除這個 pin，必須連同 torch 的 CUDA 版本一起升。**
-- **VRAM**：`--batch-size` 預設依剩餘 VRAM 自動決定。遇到 CUDA OOM 會自動對半拆再試，最差退到一次一張，
-  4 GB 的顯卡也跑得完。
-- **主記憶體**：shuttle_tracking 實測峰值約 1.0 GB（最長的回合，1011 幀）。由 `--chunk-frames` 封頂
-  （預設 1200），記憶體吃緊調低即可（例如 600 → 峰值約 0.7 GB）。
+# 擊球時刻偵測：用既有快取重跑偵測，並輸出除錯 CSV
+uv run python -m modules.event_detection matches/<比賽代號> --debug-csv hitevents/
+
+# 依分段結果剪出每個片段
+uv run python -m modules.common.video_cutter matches/<比賽代號>
+```
+
+</details>
+
+各階段的完整參數、快取設計與 GPU 環境細節，見[開發者文件](docs/development.md)。
+
+### 執行測試
+
+```bash
+uv run pytest
+```
+
+## 重現實驗
+
+報告中的真值、評分程式與逐場結果都公開在 [`experiments/`](experiments/README.md)。下載影片後，先確認與實驗所用的是同一支：
+
+```bash
+uv run python experiments/dataset/verify_video.py --all
+```
+
+驗證程式依序比對檔案雜湊、影格數與幀率，以及固定影格的畫面指紋，即使影片經過重新壓縮，只要影格序列相同仍可通過。接著跑完管線，再執行各模組的評分程式，例如：
+
+```bash
+uv run python experiments/match_segmentation/eval_segments.py
+uv run python experiments/event_detection/eval_events.py
+```
+
+影片來源與開發集、測試集切分見 [`experiments/dataset/videos.md`](experiments/dataset/videos.md)。
+
+## 專案結構
+
+```text
+badminton-analysis-system/
+├── modules/               分析管線
+│   ├── runner.py          執行器：相依排序、過期判斷、失敗即停
+│   ├── contracts.py       各階段的資料契約與相依關係
+│   ├── <各階段>/          每個階段一個子套件，皆可單獨執行
+│   ├── common/            共用工具與 BST 模型
+│   ├── review_export/     把各階段產物整合成回看介面讀取的格式
+│   └── local_tasks/       本機分析任務服務，供介面啟動分析
+├── ui/                    回看介面（Vue、Electron）
+├── experiments/           真值、評分程式與實驗結果
+├── tests/                 單元測試
+├── docs/                  專題報告、設計文件與圖表
+├── models/                模型權重
+└── matches/               每場比賽的影片與分析結果（不進版本控制）
+```
+
+## 已知限制
+
+- **依賴轉播形式**：規則建立在 BWF 轉播的慣例上，例如固定俯拍主機位，且只處理單打。手持或多機快切的影片無法分段，資料集 16 支影片中有 15 支來自 BWF，跨轉播單位的泛化能力尚未驗證。
+- **無法察覺自身錯誤**：場地偵測遇到底線旁的廣告字樣容易失準，且失敗時仍正常輸出。系統目前沒有信心度判斷，只能靠使用者回看時發現並在介面中校正。
+- **球種資料的瓶頸**：把擊球時刻換成真值後，球種準確率只提升 1.16 個百分點，主要誤差來自 BST 本身。擊球時刻的漏偵測則使端到端準確率再低約 8 個百分點。
+- **外部 API**：比分辨識與賽評依賴 Gemini API，比分辨識約占總處理時間的 28%。
+- **非即時**：處理時間約為回合總長的 2.7 倍，目前只適合賽後分析。
+
+## 文件
+
+| 文件                                    | 內容                                       |
+| --------------------------------------- | ------------------------------------------ |
+| [專題報告](docs/latex/report.pdf)       | 完整的動機、方法、實驗與討論               |
+| [開發者文件](docs/development.md)       | 各階段的參數、快取與目錄結構、GPU 環境細節 |
+| [回看介面](ui/README.md)                | 介面架構、桌面版與開發模式、本機任務 API   |
+| [實驗](experiments/README.md)           | 真值來源、評分方式與各模組結果             |
+| [賽評契約](docs/commentary-contract.md) | 賽評產物的欄位與相容性                     |
+
+## 致謝
+
+本專案建立在以下研究與開源專案之上：
+
+- **TrackNetV3**：Chen and Wang, *TrackNetV3: Enhancing ShuttleCock Tracking with Augmentations and Trajectory Rectification*, MMAsia 2023. [[論文]](https://doi.org/10.1145/3595916.3626370)
+- **BST**：Chang, *BST: Badminton Stroke-type Transformer for Skeleton-based Action Recognition in Racket Sports*, 2025. [[arXiv]](https://arxiv.org/abs/2502.21085)
+- **ShuttleSet**：Wang et al., *ShuttleSet: A Human-Annotated Stroke-Level Singles Dataset for Badminton Tactical Analysis*, KDD 2023。擊球時刻與球種的評估真值取自此資料集。[[arXiv]](https://arxiv.org/abs/2306.04948)
+- **RTMPose**：透過 [rtmlib](https://github.com/Tau-J/rtmlib) 執行人體偵測與姿態估計。[[arXiv]](https://arxiv.org/abs/2303.07399)
+- **YAMNet**：Google 以 AudioSet 訓練的音訊分類模型。[[GitHub]](https://github.com/tensorflow/models/tree/master/research/audioset/yamnet)
