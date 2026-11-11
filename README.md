@@ -33,6 +33,7 @@
   - [已知限制](#已知限制)
   - [文件](#文件)
   - [致謝](#致謝)
+  - [授權](#授權)
 
 ## 為什麼做這個
 
@@ -295,3 +296,9 @@ badminton-analysis-system/
 - **ShuttleSet**：Wang et al., *ShuttleSet: A Human-Annotated Stroke-Level Singles Dataset for Badminton Tactical Analysis*, KDD 2023。擊球時刻與球種的評估真值取自此資料集。[[arXiv]](https://arxiv.org/abs/2306.04948)
 - **RTMPose**：透過 [rtmlib](https://github.com/Tau-J/rtmlib) 執行人體偵測與姿態估計。[[arXiv]](https://arxiv.org/abs/2303.07399)
 - **YAMNet**：Google 以 AudioSet 訓練的音訊分類模型。[[GitHub]](https://github.com/tensorflow/models/tree/master/research/audioset/yamnet)
+
+## 授權
+
+本專案的原創程式碼以 [MIT License](LICENSE) 授權。
+
+專案中移植了 TrackNetV3 與 BST 的網路架構程式碼，並收錄 ShuttleSet 的擊球真值，三者皆為 MIT License。模型權重、執行時下載的模型與套件則適用各自的授權。報告與截圖中的轉播畫面、介面彩蛋素材不在本專案授權範圍內。完整清單與授權條文見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

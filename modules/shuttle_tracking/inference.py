@@ -1,3 +1,6 @@
+# Portions of this file are derived from TrackNetV3
+# (https://github.com/qaz812345/TrackNetV3), Copyright (c) 2024 qaz812345,
+# licensed under the MIT License. See THIRD_PARTY_NOTICES.md.
 """Run TrackNet over one rally segment and return its raw heatmaps.
 
 Two things here matter more than they look:

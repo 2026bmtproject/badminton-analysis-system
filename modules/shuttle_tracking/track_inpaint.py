@@ -1,3 +1,6 @@
+# Portions of this file are derived from TrackNetV3
+# (https://github.com/qaz812345/TrackNetV3), Copyright (c) 2024 qaz812345,
+# licensed under the MIT License. See THIRD_PARTY_NOTICES.md.
 """Tracker A — TrackNetV3's own trajectory repair, via InpaintNet.
 
 Takes the baseline blob track (see ``blob.py``) and fills the frames where the
