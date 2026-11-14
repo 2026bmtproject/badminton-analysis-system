@@ -56,6 +56,18 @@
 % 表格內用較緊的行距，避免沿用內文 1.5 倍行距讓表格過高
 \usepackage{etoolbox}
 \AtBeginEnvironment{table}{\setstretch{1.1}}
+% 圖表採浮動排版（[htbp]）：放得下就留在原處，放不下就移到該頁或下一頁的頂端，
+% 內文接著往下排，不會在頁尾留下一大塊空白。以下放寬 LaTeX 預設的浮動比例限制，
+% 讓大圖也能放在頁首頁尾，避免累積成只有圖的頁面。
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+% 圖表不會跨過所屬的節（\section）浮動到下一節
+\usepackage[section]{placeins}
 \renewcommand{\figurename}{圖}
 \renewcommand{\tablename}{表}
 

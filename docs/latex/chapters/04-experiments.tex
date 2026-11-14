@@ -6,7 +6,7 @@
 
 本章視覺模組的實驗共用下述影片庫。音訊模型另使用四場開發比賽與一場偵測器外部驗證，資料角色與結果另列於\secref{sec:exp-cheer}。資料集由 16 支 YouTube 羽球單打完整轉播構成，涵蓋 2018 至 2023 年的國際賽事。影片皆為 1920 $\times$ 1080，幀率為 25 或 30 fps，編碼格式包含 H.264、AV1 與 VP9。全部影片合計約 18.09 小時。為避免同一場比賽的資料同時出現在開發與評估中，資料以影片為單位切分為 7 場開發集與 9 場測試集（\tabref{tab:dataset-split}）。開發集用於設計與調整規則，測試集不參與開發，僅在完成後用於報告測試結果。由於其中 15 支影片來自 BWF 官方製作，跨轉播單位的泛化能力仍待後續驗證。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \caption{資料集切分}
   \label{tab:dataset-split}
@@ -44,7 +44,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 配對規則為 IoU $\geq$ 0.9、一對一，未配對的輸出段計為 FP、未配對的真值段計為 FN（\tabref{tab:seg-accuracy}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{賽事影片分段的偵測準確率（\%）}
@@ -64,7 +64,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 誤差定義為「輸出 $-$ 真值」，單位為影格，只計算配對成功的段。起點為正代表系統比真值晚開始（切掉了開頭），終點為負代表系統比真值早結束（切掉了結尾）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{賽事影片分段的邊界誤差（影格）}
@@ -84,7 +84,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 27 筆失配可歸為三類，且各自集中於特定影片（\tabref{tab:seg-failures}）。其中漏掉表示回合未被完整切出，多切則表示產生額外片段。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{賽事影片分段的失配成因}
@@ -99,26 +99,26 @@ uv run python experiments/dataset/verify_video.py --all
   \end{tabularx}
 \end{table}
 
-\textbf{一、播報圖卡動畫。}轉播在回合開始或結束時播放球員名條、比分卡等動畫，使 MAD 超過門檻，將回合切成碎片。動畫持續 3--6 秒，遠超過邊界精修可橋接的 12 影格，因此無法重新連接。
+\textbf{一、播報圖卡動畫：}轉播在回合開始或結束時播放球員名條、比分卡等動畫，使 MAD 超過門檻，將回合切成碎片。動畫持續 3--6 秒，遠超過邊界精修可橋接的 12 影格，因此無法重新連接。
 
-\textbf{二、全域亮度變化。}test4 開賽後前兩個回合整段消失。MAD 中位數與正常回合相近，表示門檻判斷本身沒有問題。真正失效的是跨片段一致性篩選。由於開賽初期場館燈光逐漸變亮，兩段畫面與其他回合雖然構圖相同，整體像素差卻明顯較高，因而被誤判為非比賽畫面。此類錯誤表現為整段消失，而非邊界偏移。
+\textbf{二、全域亮度變化：}test4 開賽後前兩個回合整段消失。MAD 中位數與正常回合相近，表示門檻判斷本身沒有問題。真正失效的是跨片段一致性篩選。由於開賽初期場館燈光逐漸變亮，兩段畫面與其他回合雖然構圖相同，整體像素差卻明顯較高，因而被誤判為非比賽畫面。此類錯誤表現為整段消失，而非邊界偏移。
 
-\textbf{三、門檻邊緣的高強度回合。}test6 有兩個高強度回合被切成數段，其中一個 11.4 秒的回合被切成三段。切斷處與保留區段的 MAD 均接近門檻，顯示球員劇烈移動使畫面差異在門檻附近波動。由於目前採用全片固定門檻，無法適應此類時間上的動態變化。
+\textbf{三、門檻邊緣的高強度回合：}test6 有兩個高強度回合被切成數段，其中一個 11.4 秒的回合被切成三段。切斷處與保留區段的 MAD 均接近門檻，顯示球員劇烈移動使畫面差異在門檻附近波動。由於目前採用全片固定門檻，無法適應此類時間上的動態變化。
 
-\textbf{已知但未在本資料集上觸發的限制。}若影片包含大量且相似的非比賽畫面，跨片段一致性篩選可能失效。系統亦假設存在穩定主機位，不適用於手持或多機快切影片。此外，16 支影片中有 15 支來自 BWF 官方製作，因此跨轉播單位的泛化能力尚未驗證。
+\textbf{已知但未在本資料集上觸發的限制：}若影片包含大量且相似的非比賽畫面，跨片段一致性篩選可能失效。系統亦假設存在穩定主機位，不適用於手持或多機快切影片。此外，16 支影片中有 15 支來自 BWF 官方製作，因此跨轉播單位的泛化能力尚未驗證。
 
 \subsection{場地偵測}
 \label{sec:exp-court}
 
 在 9 場未參與開發的比賽、36 個球場外角上，本模組的角點定位誤差中位數為 2.79 像素，命中率 72.22\%，9 場中有 6 場四角全中。16 場、64 個外角的整體誤差中位數為 3.05 像素，命中率 76.56\%，11 場四角全中。
 
-\textbf{真值定義。}球場外緣是有寬度的白線，邊線與底線在外角交疊成一個小四邊形，本節稱為「角區」。標記時不直接點選角點，而是在合成圖上標出外框四條線各自的外緣與內緣，共 8 條邊緣，每個角區由相交的兩條底線邊緣與兩條邊線邊緣的 4 個交點構成。所有真值由同一位標記者完成。
+\textbf{真值定義：}球場外緣是有寬度的白線，邊線與底線在外角交疊成一個小四邊形，本節稱為「角區」。標記時不直接點選角點，而是在合成圖上標出外框四條線各自的外緣與內緣，共 8 條邊緣，每個角區由相交的兩條底線邊緣與兩條邊線邊緣的 4 個交點構成。所有真值由同一位標記者完成。
 
 \subsubsection{定位誤差}
 
 誤差定義為偵測角點到角區中心的歐氏距離，單位為像素（\tabref{tab:court-error}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{場地偵測的角點定位誤差（像素）}
@@ -138,7 +138,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 命中定義為偵測角點落在角區內，或在角區外緣 2 像素容差內（\tabref{tab:court-hit}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{場地偵測的命中率}
@@ -158,7 +158,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 15 個未命中的角中，14 個來自同一根因，底線旁的地面廣告字樣在線段分群時與底線合併，導致代表線偏移（\tabref{tab:court-failures}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{場地偵測的未命中成因}
@@ -173,30 +173,30 @@ uv run python experiments/dataset/verify_video.py --all
   \end{tabularx}
 \end{table}
 
-\textbf{底線被廣告字樣污染。}轉播場館常在場地墊印製贊助商字樣，距底線僅約 10--40 像素。由於字樣位於球場遮罩內，白色字母會被視為線像素，並經霍夫轉換產生大量與底線平行的短線段，其方向正確，因此無法由消失點過濾排除。
+\textbf{底線被廣告字樣污染：}轉播場館常在場地墊印製贊助商字樣，距底線僅約 10--40 像素。由於字樣位於球場遮罩內，白色字母會被視為線像素，並經霍夫轉換產生大量與底線平行的短線段，其方向正確，因此無法由消失點過濾排除。
 
 將人工標記的真值四角直接代入同一套吻合度評分，test5 與 CTC\_vs\_CL\_2019 分別得到 0.825 與 0.922，明顯高於實際錯誤解的約 0.45，顯示評分本身能辨識正確解，問題主要發生在候選生成階段。
 
 進一步僅修改線段分群方式並重跑 16 場，將合併距離由 14 像素縮為 6 像素，或改以最長線段為錨點並依線段長度加權擬合，命中數皆由 49/64 提升至 61/64，且上述四場全部恢復命中。由於這些修正是在觀察測試集失敗後才提出，因此不能將修正後結果視為未參與開發的測試結果，修正列為後續改進方向。
 
-\textbf{系統無法察覺自身失敗。}三場四角全錯的比賽中，模組皆正常輸出四角與單應性，未標記為偵測失敗。原因是吻合度目前僅用於候選間比較，沒有絕對門檻判斷最佳解是否可信，因此錯誤結果仍會傳入下游模組。
+\textbf{系統無法察覺自身失敗：}三場四角全錯的比賽中，模組皆正常輸出四角與單應性，未標記為偵測失敗。原因是吻合度目前僅用於候選間比較，沒有絕對門檻判斷最佳解是否可信，因此錯誤結果仍會傳入下游模組。
 
-\textbf{已知但未觸發的限制。}本模組假設機位固定，且球場大致位於畫面中央偏下，並從該區域取樣參考色。若機位偏移使取樣區域落在場外，顏色分割可能整體失效。
+\textbf{已知但未觸發的限制：}本模組假設機位固定，且球場大致位於畫面中央偏下，並從該區域取樣參考色。若機位偏移使取樣區域落在場外，顏色分割可能整體失效。
 
 \subsection{擊球時刻偵測}
 \label{sec:exp-events}
 
 在 8 場未參與開發的比賽、6990 拍上，本模組在 $\pm$5 幀容差下達到 Precision 95.49\%、Recall 90.90\%，配對成功的擊球時間誤差中位數為 $-1$ 幀。14 場、12163 拍的整體 F1 為 92.10\%。
 
-\textbf{真值來源。}本模組的真值取自公開資料集 ShuttleSet~\cite{shuttleset}（MIT 授權），以原檔形式收錄。16 場中有 14 場在 ShuttleSet 內，因此本節的開發集為 6 場、測試集為 8 場。答案幀原樣使用，唯一的調整是 \texttt{test5} 與 \texttt{test8}，我們取得的影片版本開頭多出一段賽前畫面，整體差了整數分鐘（+15000 與 +12000 幀），先予補回。
+\textbf{真值來源：}本模組的真值取自公開資料集 ShuttleSet~\cite{shuttleset}（MIT 授權），以原檔形式收錄。16 場中有 14 場在 ShuttleSet 內，因此本節的開發集為 6 場、測試集為 8 場。答案幀原樣使用，唯一的調整是 \texttt{test5} 與 \texttt{test8}，我們取得的影片版本開頭多出一段賽前畫面，整體差了整數分鐘（+15000 與 +12000 幀），先予補回。
 
-\textbf{評分範圍。}真值只涵蓋 ShuttleSet 收錄的回合，系統輸出也只存在於分段模組切出的片段內。因此只在兩者重疊的時間評分，以每個回合的第一拍到最後一拍（前後各放寬容差 tol）與片段取交集。全真值中有 97.9\% 落在評分範圍內。
+\textbf{評分範圍：}真值只涵蓋 ShuttleSet 收錄的回合，系統輸出也只存在於分段模組切出的片段內。因此只在兩者重疊的時間評分，以每個回合的第一拍到最後一拍（前後各放寬容差 tol）與片段取交集。全真值中有 97.9\% 落在評分範圍內。
 
 \subsubsection{偵測準確率}
 
 配對規則為偵測幀與答案幀相差 $\leq$ 5 幀、一對一，由相差最小者開始配對。未配對的偵測計為 FP，未配對的答案計為 FN（\tabref{tab:event-accuracy}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{擊球時刻偵測的準確率（\%，容差 $\pm$5 影格）}
@@ -212,7 +212,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 容差放寬或收緊時的變化如\tabref{tab:event-tolerance}。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{不同容差下的擊球時刻偵測準確率（\%，全部 14 場）}
@@ -230,7 +230,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 誤差定義為「偵測 $-$ 答案」，單位為影格，只計算配對成功的擊球（\tabref{tab:event-timing}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{擊球時刻偵測的時間誤差（影格）}
@@ -250,7 +250,7 @@ uv run python experiments/dataset/verify_video.py --all
 
 以下分析測試集的 636 個 FN 與 300 個 FP，根據失配前後 $\pm$5 影格的模組內部紀錄，將失配依成因分類（\tabref{tab:event-failures}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{擊球時刻偵測的失配成因（測試集）}
@@ -281,13 +281,13 @@ FP 則主要來自同一拍的重複偵測。同一擊球可能產生多個候�
 
 在 3 場 BST 未曾看過的比賽、1601 拍上，本模組的 8 類球種準確率為 87.38\%，Macro-F1 為 84.71\%，擊球者（上方／下方）準確率為 97.88\%。若把擊球時刻偵測漏掉的拍也算錯，端到端準確率為 78.99\%。
 
-\textbf{真值來源。}本節與擊球時刻偵測使用同一份 ShuttleSet 真值，評分範圍與配對規則也完全相同。ShuttleSet 的 18 種球種先依 BST 訓練時的方式併為 12 類，再併為系統輸出的 8 類。
+\textbf{真值來源：}本節與擊球時刻偵測使用同一份 ShuttleSet 真值，評分範圍與配對規則也完全相同。ShuttleSet 的 18 種球種先依 BST 訓練時的方式併為 12 類，再併為系統輸出的 8 類。
 
-\textbf{BST 看過的比賽。}本模組使用的 BST 權重即以 ShuttleSet 訓練~\cite{bst}。依 BST 公開的切分，14 場中有 11 場屬於其訓練集，在這些比賽上量得的準確率可能偏高，只有 3 場未參與 BST 訓練。因此本節以這 3 場為主要結果，其餘 11 場僅作對照。
+\textbf{BST 看過的比賽：}本模組使用的 BST 權重即以 ShuttleSet 訓練~\cite{bst}。依 BST 公開的切分，14 場中有 11 場屬於其訓練集，在這些比賽上量得的準確率可能偏高，只有 3 場未參與 BST 訓練。因此本節以這 3 場為主要結果，其餘 11 場僅作對照。
 
 \subsubsection{分類準確率}
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{球種分類的準確率（\%）}
@@ -305,7 +305,7 @@ BST 看過與沒看過的兩組只相差約 1 個百分點（\tabref{tab:stroke-
 
 沒看過的 3 場各球種表現如\tabref{tab:stroke-per-class}。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{各球種的分類表現（BST 沒看過的 3 場，\%）}
@@ -328,7 +328,7 @@ BST 看過與沒看過的兩組只相差約 1 個百分點（\tabref{tab:stroke-
 
 為區分錯誤來自擊球時刻還是 BST 本身，另將擊球幀換成真值的擊球幀重跑一次球種分類，其他輸入（骨架、球軌跡、場地、權重）不變（\tabref{tab:stroke-upstream}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{以系統偵測或真值擊球幀進行球種分類的比較（\%）}
@@ -347,7 +347,7 @@ BST 看過與沒看過的兩組只相差約 1 個百分點（\tabref{tab:stroke-
 
 沒看過的 3 場中共有 202 拍判錯，依重跑結果分類如\tabref{tab:stroke-failures}。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{球種分類的錯誤成因（BST 沒看過的 3 場）}
@@ -371,7 +371,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 歡呼偵測任務以 3 秒窗口為單位，資料來自四場開發比賽。每場以固定 seed 42 的 segment-diverse deterministic sampling 選取 100 個窗口，再由人工進行 blind labeling（\tabref{tab:cheer-dataset}）。標註允許 ambiguous；二元分類資料會排除 ambiguous，本次四場凍結資料沒有 ambiguous 樣本。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{歡呼偵測的標註資料}
@@ -391,7 +391,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 \subsubsection{跨比賽歡呼偵測結果}
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{歡呼偵測的逐場交叉驗證結果（LOMO）}
@@ -411,7 +411,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 校準診斷採 10 個等寬 bins，每場 100 個窗口；結果只用於檢查分數分布，沒有重新擬合校準器（\tabref{tab:cheer-calibration}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{歡呼分類器的校準診斷}
@@ -430,7 +430,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 為比較特徵路線，研究亦評估 RMS、YAMNet 原生 \texttt{Cheering} 分數、YAMNet crowd-combination 分數與 YAMNet embedding + Logistic Regression（\tabref{tab:cheer-features}）：
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{不同歡呼特徵路線的比較（LOMO）}
@@ -453,7 +453,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 強度實驗使用 \texttt{match\_005} 中 34 個已確認的歡呼窗口。單一主要標註者在不查看候選特徵值的情況下完成 60 組配對比較，其中 39 組有明確較強者、21 組平手、0 組無法判斷（\tabref{tab:cheer-intensity}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{歡呼強度候選方法與人工配對比較的一致性}
@@ -475,7 +475,7 @@ BST 本身的錯誤集中在軌跡相近的球種之間。最多的是高遠球�
 
 Segment 聚合實驗使用 \texttt{match\_005} 的 106 個 segments、1142 個重疊窗口與 420 個 detector-positive 窗口。人工 segment detection 標註包含 75 個 cheer 與 31 個 no-cheer segments；尖峰強度實驗則由 60 組人工配對構成，其中 45 組有明確結果、15 組平手（\tabref{tab:cheer-aggregation}）。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{片段層級聚合方法的比較}
@@ -504,11 +504,11 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 
 在 5 支影片中，回合總長 1.63 小時，整條管線從空快取開始執行共耗時 4.42 小時。主要計算只作用在回合片段，因此處理時間以回合總長衡量，E2E 時間為回合總長的 2.71 倍，扣除比分辨識等待 Gemini API 的時間後為 1.96 倍。
 
-\textbf{量測方式。}每場另建只含原始影片的資料夾，所有 stage 都從空快取開始實際執行。E2E 時間由外層計時包住 runner 取得，各 stage 時間取自各自的狀態紀錄。比分辨識的耗時主要取決於 API 速率上限而非本機效能，因此另列扣除該 stage 後的「本機時間」。賽評不在預設管線內，不列入。測試環境為 Windows 11 與 RTX 3060 Ti（8 GB）。
+\textbf{量測方式：}每場另建只含原始影片的資料夾，所有 stage 都從空快取開始實際執行。E2E 時間由外層計時包住 runner 取得，各 stage 時間取自各自的狀態紀錄。比分辨識的耗時主要取決於 API 速率上限而非本機效能，因此另列扣除該 stage 後的「本機時間」。賽評不在預設管線內，不列入。測試環境為 Windows 11 與 RTX 3060 Ti（8 GB）。
 
 \subsection{處理時間}
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{端到端處理時間}
@@ -529,7 +529,7 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 
 \subsection{時間分布}
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{各階段佔總處理時間的比例}
@@ -550,8 +550,8 @@ Max 與 p95 是預先指定的主要候選，mean 是參考方法，top-2 與 to
 \subsection{限制}
 
 \begin{itemize}
-  \item \textbf{偶發崩潰。}TTY\_vs\_ASY\_2023 第一次執行時，骨架追蹤在開始約 11 秒後發生原生程式崩潰，重跑後正常完成，表中為重跑結果。原因尚未查明。
-  \item \textbf{量測範圍。}每場只執行一次，未估計量測變異，也只在單一硬體上測試。
+  \item \textbf{偶發崩潰：}TTY\_vs\_ASY\_2023 第一次執行時，骨架追蹤在開始約 11 秒後發生原生程式崩潰，重跑後正常完成，表中為重跑結果。原因尚未查明。
+  \item \textbf{量測範圍：}每場只執行一次，未估計量測變異，也只在單一硬體上測試。
 \end{itemize}
 
 \subsection{應用於延遲直播的可能性}
