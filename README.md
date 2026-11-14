@@ -1,6 +1,6 @@
-# 羽球比賽分析系統
+# 自動化羽球賽事分析系統
 
-**Badminton Analysis System**：從羽球單打轉播影片，全自動產出逐拍資料。
+**Automated Badminton Match Analysis from Broadcast Video**：從羽球單打轉播影片，全自動產出逐拍資料。
 
 ![回看介面：影片疊上球場線、球員骨架、羽球軌跡與擊球標記，右側為逐拍擊球序列，下方為全場時間軸](docs/report_pic/ui/review_workspace_clean.jpg)
 
@@ -8,7 +8,7 @@
 
 ## 目錄
 
-- [羽球比賽分析系統](#羽球比賽分析系統)
+- [自動化羽球賽事分析系統](#自動化羽球賽事分析系統)
   - [目錄](#目錄)
   - [為什麼做這個](#為什麼做這個)
   - [成果](#成果)

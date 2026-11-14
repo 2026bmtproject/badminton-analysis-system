@@ -20,7 +20,7 @@
 
 管線共有十一個階段（\figref{fig:system-architecture}），每個階段讀取上游的產物，輸出一個 JSON 產物。除分段直接讀取原始影片外，其餘階段都以 \texttt{segments.json} 界定分析範圍。各階段的相依與產物如\tabref{tab:stages}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{system-architecture.pdf}
   \caption{系統架構}
@@ -33,13 +33,13 @@
 以下四個約定讓各階段能各自開發、單獨執行與重跑。
 
 \begin{enumerate}
-  \item \textbf{單一產物、統一格式。}每個階段只寫一個 JSON 產物，外層固定是一個物件、內含一組記錄陣列，記錄欄位由程式中的資料類別統一定義。因為形狀一致，讀寫共用同一組函式，新增階段只需定義資料類別。
-  \item \textbf{以完整比賽時間對齊。}所有產物都以原始影片的時間為準，視覺結果記錄絕對影格編號，音訊窗口記錄在整場比賽中的起訖秒數，片段層級的結果則以片段在 \texttt{segments.json} 中的索引對應。
-  \item \textbf{產物與快取分離。}每場比賽的 \texttt{cache/} 放昂貴但可重建的中間結果（降解析度影片、TrackNet 熱圖、人體偵測結果、逐幀球種機率）。快取以內容命名並以片段為單位存放，因此中斷可續跑，重新分段時也只有內容改變的片段需要重算。
-  \item \textbf{依內容判斷是否重跑。}使用者可只選取部分階段，執行器依相依關係排序後逐一執行，已完成的階段預設跳過。透過比對上游產物的內容雜湊判斷是否跳過。任一階段失敗即停止整條管線。
+  \item \textbf{單一產物、統一格式：}每個階段只寫一個 JSON 產物，外層固定是一個物件、內含一組記錄陣列，記錄欄位由程式中的資料類別統一定義。因為形狀一致，讀寫共用同一組函式，新增階段只需定義資料類別。
+  \item \textbf{以完整比賽時間對齊：}所有產物都以原始影片的時間為準，視覺結果記錄絕對影格編號，音訊窗口記錄在整場比賽中的起訖秒數，片段層級的結果則以片段在 \texttt{segments.json} 中的索引對應。
+  \item \textbf{產物與快取分離：}每場比賽的 \texttt{cache/} 放昂貴但可重建的中間結果（降解析度影片、TrackNet 熱圖、人體偵測結果、逐幀球種機率）。快取以內容命名並以片段為單位存放，因此中斷可續跑，重新分段時也只有內容改變的片段需要重算。
+  \item \textbf{依內容判斷是否重跑：}使用者可只選取部分階段，執行器依相依關係排序後逐一執行，已完成的階段預設跳過。透過比對上游產物的內容雜湊判斷是否跳過。任一階段失敗即停止整條管線。
 \end{enumerate}
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{管線各階段的相依與產物}
@@ -75,7 +75,7 @@
 
 \textbf{處理流程總覽：}如\figref{fig:match-segmentation-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{match-segmentation.pdf}
   \caption{賽事影片分段處理流程}
@@ -93,7 +93,7 @@
 
 取樣採每隔三個影格一次，並與前一個取樣影格計算 MAD。間隔取樣一方面縮短處理時間，一方面避免特寫片段和固定機位比賽片段混淆。特寫中球員動作緩慢、背景固定，MAD 偏低且接近固定機位比賽片段，間隔取樣把緩慢位移放大、拉高其 MAD。固定機位比賽片段中球員佔比小、動作劇烈，間隔取樣影響有限。兩類片段因此在 MAD 上分開。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/mad_timeline.png}
   \caption{部分片段 MAD}
@@ -108,7 +108,7 @@
 
 分析前先對 MAD 取以 10 為底的對數。鏡頭切換到完全不同畫面時每個像素都不一樣，會產生極大 MAD，使分佈右側出現長尾。取對數可壓縮長尾，使高低兩側尺度相當。實作取 $\log_{10}(\max(\mathrm{MAD}, 1))$，因為 MAD 可能為 0，需要地板值 1。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/log_transform.png}
   \caption{取對數}
@@ -119,14 +119,14 @@
 
 \textbf{門檻方法：}設門檻的問題與影像二值化相似，二值化統計像素亮度並切成兩類，本階段統計影格 MAD 並切成兩類，故沿用二值化的門檻計算方法。本系統採 Otsu 法，它只要求兩類均值不同即可分離，不限制分佈形狀、不需調參，正好適用於本階段低 MAD 側有尖峰、高 MAD 側是不對稱長尾的情形。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/rally_split_hist.png}
   \caption{固定機位比賽片段與其他片段的 MAD 分佈}
   \label{fig:rally-split-hist}
 \end{figure}
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \caption{$\log_{10}(\mathrm{MAD})$ 的分佈與組成}
   \label{tab:mad-composition}
@@ -143,7 +143,7 @@
 
 \textbf{三類切分：}直接做兩類 Otsu 會產生系統性偏差，高 MAD 側佔全片 68\% 且橫跨 2.75 至 128，類內變異遠大於低 MAD 側，會把切點從谷底推進高 MAD 團內部，讓大量非固定機位比賽影格進入下一步。改用三類切分，上切點（10.80）吸收長尾壓力，下切點（2.81）回到谷底，取下切點為門檻（\figref{fig:otsu-3class}）。三類 Otsu 的效果等價於先移除長尾再做兩類 Otsu。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/otsu_3class.png}
   \caption{三類 Otsu 的兩個切點}
@@ -162,7 +162,7 @@
   \label{eq:cross-mad}
 \end{equation}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/cross_matrix.png}
   \caption{跨片段兩兩 MAD 矩陣（依平均差異排序）}
@@ -173,7 +173,7 @@
 
 實測固定機位比賽片段間 $\bar{d}(i)$ 的極差在 5\% 以內，最小的非固定機位比賽片段比全體最小值大 13\%，門檻取全體最小值的 1.07 倍（\figref{fig:cross-avg}）。此門檻成立的前提是固定機位比賽片段屬於最緊密的群，若影片含大量彼此相似的畫面，會形成新的低 $\bar{d}(i)$ 群使門檻失效。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/cross_avg.png}
   \caption{跨片段平均差異的分佈與門檻}
@@ -190,7 +190,7 @@
 
 \textbf{做邊界對齊：}在每個邊界附近逐影格計算相鄰 MAD，尋找同時滿足絕對值門檻與區域中位數倍率的尖峰，此尖峰對應剪接點，起點設為切入尖峰所在的影格，終點設為切出尖峰的前一張影格。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{match_segmentation/cut_spike.png}
   \caption{邊界尖峰偵測與修正}
@@ -216,7 +216,7 @@
 
 \textbf{處理流程總覽：}如\figref{fig:score-recognition-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{score-recognition.pdf}
   \caption{比分辨識處理流程}
@@ -229,7 +229,7 @@
 
 合成採 \texttt{dominant\_cluster}（主群集平均）：對每個像素的亮度值分箱，只平均落入最多值的那一箱。overlay 出現時亮度幾乎固定，會全擠進同一箱。背景每幀不同而分散各箱。因此最密集的一簇即為計分板（\figref{fig:overlay-recovery}）。這個方法不預設目標信號在時間上佔多數，即使轉播 overlay 只間歇出現仍能保留。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{score_recognition/overlay_recovery.png}
   \caption{overlay 只出現在部分影格時，主群集平均的還原結果}
@@ -242,7 +242,7 @@
 
 實作上使用 Gemini 2.5 Flash，將 temperature 設為 0，並且關閉 thinking，減少結果變化的同時避免模型進行不必要的推理，多餘的推理浪費 token、時間又容易出錯。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{score_recognition/transcription_pick.png}
   \caption{轉錄取代挑選，VLM 完整抄寫每隊數字，程式取最右一個為當前比分}
@@ -279,7 +279,7 @@
 
 \textbf{處理流程總覽：}如\figref{fig:court-detection-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{court-detection.pdf}
   \caption{場地偵測處理流程}
@@ -293,7 +293,7 @@
   M(x,y) = \mathrm{median}\{I_1(x,y),\dots,I_K(x,y)\}
 \end{equation}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/composite_median.png}
   \caption{四張取樣影格與合成圖}
@@ -304,7 +304,7 @@
 
 本步驟要圈出球場在畫面中的大概範圍，好把範圍外的線段擋在後續場線偵測之外。實測對整張畫面掃描會得到近 200 條線段，真正屬於球場的只有 12 條（\figref{fig:mask-scope}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/mask_scope.png}
   \caption{全畫面掃描到的線段，與落在球場遮罩內的部分}
@@ -318,7 +318,7 @@
 \end{gather}
 其中 $\sigma_a,\sigma_b$ 為 $S$ 在兩色度通道的標準差。捨棄亮度通道使光照與陰影不進入判斷。用中位數以避免取樣區塊內的像素影響門檻。門檻取 $3\sigma$ 使其隨取樣塊自身的顏色離散程度放寬，下限 18 則用以容忍過於平滑的場地（\figref{fig:lab-chroma}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/lab_chroma.png}
   \caption{取樣區塊、參考色與門檻的判定}
@@ -327,7 +327,7 @@
 
 上述門檻得到的是逐像素獨立的判斷，還不是一塊完整區域。白色場線把場地切成數塊，雜訊與反光留下零星破洞。模組以形態學運算補洞去雜點、取面積最大的連通區域、再自畫面左上角向內填充背景，把內部空洞併回球場（\figref{fig:morphology}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/morphology.png}
   \caption{形態學清理、最大連通區域與空洞填補各階段的遮罩變化}
@@ -336,7 +336,7 @@
 
 本步驟實際產生的不只一張遮罩。除上述色度版本外，另備一個紋理版本，在色度條件之外再加一道局部亮度標準差門檻，只留下平滑區域，用以濾掉與場地同色卻花紋雜亂的地面贊助商圖樣（\figref{fig:texture-gate}）。另有一個低色度版本，在整體畫面色度過低、色度判準失效時改以亮度相似度取代色度。這些版本不互相取代，而是一併往下送，構成後續多假設並行的二至三組遮罩。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/texture_gate.png}
   \caption{場邊看板與球場同色時，紋理版本剔除色度版本誤納的區域}
@@ -353,7 +353,7 @@
   P_v(x,y) = \big[\,G(x,y)-G(x,y-d) > \tau\,\big] \wedge \big[\,G(x,y)-G(x,y+d) > \tau\,\big]
 \end{gather}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/line_pixels.png}
   \caption{局部亮度突起與場線像素的萃取結果}
@@ -362,7 +362,7 @@
 
 上一步的輸出是散落的像素，以機率霍夫轉換（PPHT，\texttt{cv2.HoughLinesP}）把共線者組織成線段（\figref{fig:hough-families}）。場線常因球員殘影、地面反光與遮罩侵蝕而斷開，霍夫轉換靠投票決定共線性、不依賴像素連通，能跨越這些缺口。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/hough_families.png}
   \caption{霍夫線段與兩族的角度粗分}
@@ -371,7 +371,7 @@
 
 粗分後仍混有地面贊助商圖樣等非球場線段，以透視幾何篩選。球場的 12 條線分屬兩組平行線，在畫面上各自通過一個消失點。找消失點是離群比例可能很高的穩健估計問題，採 RANSAC，隨機取兩條線段、以交點為候選消失點，統計族內有多少線段方向指向它（以線段長度加權），重複數百次取支持度最高者（\figref{fig:vp-ransac}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/vp_ransac.png}
   \caption{消失點 RANSAC 三次抽樣的候選點與其支持度}
@@ -380,7 +380,7 @@
 
 球網遮擋常把一條球場線拆成方向略有出入的數段，同一條物理線會以不同位置重複參與運算，故先合併。同族線段方向相近、只在垂直於該方向的位置上分開，取一條參考線把每條線段化為一維位置，位置相近者歸為一簇，每簇以最小平方擬合出一條代表線。數百條線段因此收斂成十餘條物理線，既去除重複，也把後續窮舉的組合數壓到可行範圍（\figref{fig:line-merge}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/line_merge.png}
   \caption{同族線段合併的前後對比}
@@ -395,7 +395,7 @@
 
 DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，故對每個 $\mathrm{H}$ 加設合法性檢查：四角須為有限值、不超出畫面、不退化成細條、近端底線不短於遠端（\figref{fig:valid-h}）。此檢查貫穿後續所有產生 $\mathrm{H}$ 的階段。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/valid_h.png}
   \caption{合法性檢查}
@@ -409,7 +409,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 \end{equation}
 此評分是整個場地偵測判斷好壞的統一依據，後續的候選選擇與邊界修正都以它裁決。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/distance_transform.png}
   \caption{場線像素與其距離轉換圖}
@@ -422,7 +422,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{網格枚舉（主要方法）：}從候選縱線任取兩條作左右邊界、橫線任取兩條作上下邊界，四線相交得一組四角，枚舉所有 $\binom{10}{2}\times\binom{12}{2}=2970$ 組合，取 12 線網格吻合度最高者（\figref{fig:grid-search}）。穩健的關鍵在於以最可靠的內部線反推最不可靠的外角，等於讓發球線與中線一起投票決定四角。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/grid_search.png}
   \caption{網格枚舉的候選與其吻合度評分}
@@ -439,7 +439,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{以 ICP 重估單應性：}難點在建立線像素與球場模型的對應，影像中場線因透視而方向各異，難以直接配對。利用前一步的近似 $\mathrm{H}$，把每個線像素反投影回球場座標，那裡的縱線是 $x$ 為定值、橫線是 $y$ 為定值的直線，量出該像素離哪條最近即建立對應。再用全部點對重解 $\mathrm{H}$、以新 $\mathrm{H}$ 更新對應，反覆逼近。點對數以千計，採 RANSAC 版本把配錯到相鄰線的像素當離群值排除，對應的距離門檻隨迭代由寬到窄（\figref{fig:icp}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/icp.png}
   \caption{ICP 第一輪與最終輪的網格與反投影殘差}
@@ -448,14 +448,14 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{邊界修正：}透視壓縮下球場遠端的內、外邊界在畫面上靠得很近，全域解無從分辨，外邊界可能整條鎖到內側線上。本步驟只動四條外邊界，把某條投影線附近的像素依「離線多遠」投到一維直方圖，每條平行線形成一個峰，二維的找線因此降為一維的找顯著峰（\figref{fig:perp-profile}）。遠端刻意偏取最外側的峰重新擬合邊界，因為兩種誤差不對稱，外邊界略往場外時場內物體的相對位置仍成立、下游影響有限，一旦鎖進內側則截斷場內內容、不可逆。搜尋帶寬由寬到窄逐級縮小。這是帶方向的推測，故結果不直接採用，而是回到吻合度評分重算，只有分數未明顯變差才取代原解（\figref{fig:boundary-refine}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/perp_profile.png}
   \caption{投影線的鄰近像素與其離線距離直方圖}
   \label{fig:perp-profile}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/boundary_refine.png}
   \caption{遠端底線由內側峰改取最外側峰的前後對比}
@@ -466,7 +466,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 前述步驟以多假設並行：球場區域定位產生二至三組遮罩，場線偵測再對每組遮罩各給三種外角候選，故候選池大小為遮罩組數乘以三，每個候選都帶著它所依據的線像素圖。本步驟把這一池候選收斂成唯一答案，每個候選經角點重估與邊界修正後，在自己的線像素圖上算出吻合度評分，全部比較之下取最高者，其四角與單應性即為模組的最終輸出（\figref{fig:eval-pool}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{court_detection/eval_pool.png}
   \caption{候選池的吻合度評分與勝出者的投影}
@@ -489,7 +489,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{處理流程總覽：}如\figref{fig:pose-tracking-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{pose-tracking.pdf}
   \caption{球員骨架追蹤處理流程}
@@ -500,7 +500,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 第一階段為片段的每一幀還原畫面上所有人的骨架並快取，是整個模組的 GPU 時間瓶頸。先用人體偵測器（YOLOX）框出所有人，再採由上而下路線逐人裁切、放大回模型輸入尺寸後在滿解析度下估骨架（RTMPose），讓很小的球員仍能得到準確的關節點（\figref{fig:top-down}）。由於逐人估骨架的成本隨人數線性成長，而每幀偵到的十幾二十人裡真正相關的只有兩到四人，估骨架前先借單應性把每個人的腳點反投影回球場座標，只讓落在放寬球場範圍內者進入姿態模型。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{pose/top_down.png}
   \caption{由上而下，先裁切放大再估骨架}
@@ -515,7 +515,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{非對稱邊界放寬：}單應性只在地平面上成立，球員起跳殺球時腳踝離地，反投影會把腳點推到底線之外。為此把場內範圍在底線方向（縱向）放寬、邊線方向（橫向）收緊（\figref{fig:court-select}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{pose/court_select.png}
   \caption{腳點反投影至球場座標}
@@ -524,7 +524,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{靜態錨點排除干擾：}尺寸與邊界仍擋不住一種情形，站在底線後、身高又與遠端球員相當的裁判，一旦真球員該幀被漏偵便可能頂替上來。關鍵在於是否移動，官員整場腳點落在同一處，球員則掃過整個球場。統計整場每個候選人的腳點落點，把在很高比例的幀裡被占用且幾乎不動的格子標為靜態錨點，之後腳點離錨點太近的候選人一律拒絕（\figref{fig:static-anchors}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{pose/static_anchors.png}
   \caption{整場腳點落點，固定不動者被判為靜態錨點}
@@ -552,7 +552,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{處理流程總覽：}如\figref{fig:shuttle-tracking-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{shuttle-tracking.pdf}
   \caption{球體追蹤與軌跡重建處理流程}
@@ -565,7 +565,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 先以 largest-blob 讀出一條基準軌跡，用信心門檻二值化後取面積最大的連通區塊，以其中心為位置、區塊峰值為該幀信心（\figref{fig:heatmap-readout}）。這條基準軌跡是修補法的輸入，而選擇法另從同一份熱圖以低門檻自取候選。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{shuttle_tracking/heatmap_readout.png}
   \caption{從熱圖以 largest-blob 讀出基準軌跡}
@@ -576,7 +576,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 第一種方法先將熱圖二值化，取每幀面積最大的連通區塊作為基準位置，再由補洞網路（InpaintNet~\cite{tracknetv3}）補回遮擋造成的缺幀（\figref{fig:inpaint-gaps}）。補值點的信心標為 0，使下游能區分實際偵測與模型推論。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{shuttle_tracking/inpaint_gaps.png}
   \caption{InpaintNet 補回球員遮擋造成的缺幀}
@@ -587,7 +587,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 第二種方法改以全域路徑搜尋壓制孤立誤偵。它用極低門檻把每幀所有稍可能是球的區塊全留作候選，再找一條最像真實飛行的路徑穿過它們。把每幀候選當節點、相鄰候選間連邊，給節點獎勵（信心越高越好）、給邊代價（前後兩點推出的速度越不合物理越貴、跨幀越多越貴），以動態規劃取總分最高的路徑。如此微弱但連貫的偵測能勝過強烈但孤立的偵測（\figref{fig:viterbi-path}）。當某幀球員鞋子或場線在信心上壓過真球，只要接不上前後飛行就不會入選。最後才對剩餘缺口依長度與兩端運動狀態決定補或不補，並以卡爾曼濾波填值。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{shuttle_tracking/viterbi_path.png}
   \caption{低門檻多候選與 Viterbi 選出的最佳路徑}
@@ -616,7 +616,7 @@ DLT 對趨近退化的輸入不會報錯，仍會得出病態的 $\mathrm{H}$，
 
 \textbf{處理流程總覽：}如\figref{fig:event-detection-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{event-detection.pdf}
   \caption{擊球時刻偵測處理流程}
@@ -635,7 +635,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 \textbf{連續球種區間：}若把某個真實擊球影格前後半秒作為窗口輸入模型會得到球種 a，那麼對它鄰近的前後一兩影格做同樣的事，因窗口內容高度重疊，也極可能得到相同的球種 a，只是信心略低。反過來說，只要觀察到連續多個窗口被判為同一球種，就代表該區間附近很可能存在一次擊球。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/dense_evidence.png}
   \caption{逐幀滑動窗口產生的球種、信心與擊球者證據}
@@ -656,14 +656,14 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 本步驟刻意偏向敏感、高召回，先保留不確定候選，再交由後續規則排除（\figref{fig:candidate-pool}）。擊球時刻要用來為下一階段的球種模型切分析窗口，一旦漏掉一拍，窗口就會整段錯位，後續的比賽脈絡也會出現難以復原的斷點。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/candidate_signals.png}
   \caption{四種互補的擊球候選訊號}
   \label{fig:candidate-signals}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/candidate_pool.png}
   \caption{各訊號在完整回合中的候選分布與合併結果}
@@ -680,7 +680,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 \textbf{回合脈絡：}已知擊球側的候選附近應能找到對側球員的其他擊球候選。目前規則要求在指定時間窗內至少存在兩個對側候選，否則將其視為落地彈跳、追蹤脫線或其他孤立訊號。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/candidate_gates.png}
   \caption{三道候選篩選規則及其保留／刪除結果}
@@ -699,14 +699,14 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 \textbf{近端發球補漏：}畫面下方球員發球時，部分軌跡可能被身體遮擋。若持續上升錨點附近尚無擊球，而 BST 同時提供下方球員的發球證據，系統便在附近被篩掉的候選中選擇最接近者（\figref{fig:fill-trajectory}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/fill_sequence.png}
   \caption{由擊球序列與連續球種證據反推漏拍位置}
   \label{fig:fill-sequence}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/fill_trajectory.png}
   \caption{由輔助軌跡與發球錨點救回漏拍}
@@ -723,14 +723,14 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 \textbf{計分板死時間：}特定休息比分下的計分板死時間（如開局 0:0、局中技術暫停，\figref{fig:prune-scoreboard}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/prune_rally_edges.png}
   \caption{利用回合有效邊界清除開頭誤偵與尾段落地球}
   \label{fig:prune-rally-edges}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{event_detection/prune_scoreboard.png}
   \caption{結合比分與發球證據判定計分板死時間}
@@ -748,7 +748,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 \textbf{處理流程總覽：}如\figref{fig:stroke-classification-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{stroke-classification.pdf}
   \caption{球種分類處理流程}
@@ -761,14 +761,14 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 整理後的資料送入預訓練 BST，模型輸出 25 類機率（\figref{fig:bst-output}），將結果依賽評需求整理為 8 類：高遠球、發球、小球、平快球、殺球、切球、撲球與勾球。若模型輸出未知類別，系統保留為未知。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{stroke_classification/bst_window.png}
   \caption{依相鄰擊球時刻建立 BST 的 100 幀輸入窗口}
   \label{fig:bst-window}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{stroke_classification/bst_output.png}
   \caption{BST 的 25 類預測}
@@ -789,7 +789,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 
 \textbf{處理流程總覽：}如\figref{fig:audio-cheer-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{audio-cheer.pdf}
   \caption{歡呼音訊量測處理流程}
@@ -805,7 +805,7 @@ BST 原本設計的窗口是「兩次擊球之間」，需要以擊球時刻作�
 \end{equation}
 延伸的原因是歡呼往往在回合結束時才開始，並在片段結束後持續數秒。分析範圍以 3 秒窗口切分，相鄰窗口的 hop 為 1 秒，只保留完整落在範圍內的窗口，尾端不足 3 秒的窗口直接捨棄（\figref{fig:audio-windows}）。相鄰片段各自切窗，因此兩者的窗口可能重疊。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{audio_highlight/audio_windows.png}
   \caption{片段音訊的讀取範圍與切窗}
@@ -865,7 +865,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{處理流程總覽：}如\figref{fig:highlight-ranking-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{highlight-ranking.pdf}
   \caption{精彩片段排序處理流程}
@@ -886,7 +886,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{處理流程總覽：}如\figref{fig:identity-mapping-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{identity-mapping.pdf}
   \caption{球員身分對應處理流程}
@@ -895,11 +895,11 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \subsubsection{判定流程}
 
-\textbf{誰發球。}落地得分制下，贏得回合的一方發下一球。\texttt{scores.json} 記錄的是回合開始前的比分，所以比較相鄰兩個片段，比分剛好加一分的選手就是下一個片段的發球者。
+\textbf{誰發球：}落地得分制下，贏得回合的一方發下一球。\texttt{scores.json} 記錄的是回合開始前的比分，所以比較相鄰兩個片段，比分剛好加一分的選手就是下一個片段的發球者。
 
-\textbf{發球者在哪一側。}回合第一拍的擊球者所在的半場，就是發球者的半場。但若擊球時刻偵測漏掉發球，第一拍其實是接發球，半場會整個判反。因此只採用 BST 判為發球的第一拍。其餘回合再從擊球時刻偵測的逐幀球種機率中找回發球，且只在發球類別與擊球者都明顯佔優時採用。
+\textbf{發球者在哪一側：}回合第一拍的擊球者所在的半場，就是發球者的半場。但若擊球時刻偵測漏掉發球，第一拍其實是接發球，半場會整個判反。因此只採用 BST 判為發球的第一拍。其餘回合再從擊球時刻偵測的逐幀球種機率中找回發球，且只在發球類別與擊球者都明顯佔優時採用。
 
-\textbf{投票與補齊。}同時知道發球選手與發球半場的回合各投一票，同一換邊時段內取多數。票數不足 5 票的時段，沿用最近已判定時段的結果，並依計分板慣例調整：列序固定的計分板每次換邊對調一次，隨場地換列的則不變。採用哪種慣例，由已判定時段之間是否對調推得。仍無法判定時，才比對兩側球員上衣與褲子的 HSV 色彩；連外觀也分不出來就留空，不做猜測。每個時段的判定依據（投票、慣例或外觀）都寫入 \texttt{identity.json}。
+\textbf{投票與補齊：}同時知道發球選手與發球半場的回合各投一票，同一換邊時段內取多數。票數不足 5 票的時段，沿用最近已判定時段的結果，並依計分板慣例調整：列序固定的計分板每次換邊對調一次，隨場地換列的則不變。採用哪種慣例，由已判定時段之間是否對調推得。仍無法判定時，才比對兩側球員上衣與褲子的 HSV 色彩；連外觀也分不出來就留空，不做猜測。每個時段的判定依據（投票、慣例或外觀）都寫入 \texttt{identity.json}。
 
 \subsection{賽評生成}
 \label{sec:commentary}
@@ -914,7 +914,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{處理流程總覽：}如\figref{fig:commentary-generation-flow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{commentary-generation.pdf}
   \caption{賽評生成處理流程}
@@ -925,7 +925,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 程式先依片段範圍取出擊球並接上球種，再以該片段所屬換邊時段的身分對應，把畫面上方或下方換成選手 a 或 b。各項資訊送給模型的方式如\tabref{tab:commentary-facts}。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{賽評生成各項資訊的來源與處理方式}
@@ -941,11 +941,11 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
   \end{tabularx}
 \end{table}
 
-\textbf{信心分級。}球種信心達 0.70 視為可靠，0.50--0.70 為謹慎，低於 0.50 為低信心。只有可靠的球種能作為戰術觀察的依據。謹慎與低信心的拍仍要輸出，但句子必須帶有「可能」、「似乎」等不確定語氣。
+\textbf{信心分級：}球種信心達 0.70 視為可靠，0.50--0.70 為謹慎，低於 0.50 為低信心。只有可靠的球種能作為戰術觀察的依據。謹慎與低信心的拍仍要輸出，但句子必須帶有「可能」、「似乎」等不確定語氣。
 
-\textbf{球場區域。}以擊球時球員雙腳腳踝的中點，透過單應矩陣投影到球場平面，依該球員所在半場分為前、中、後場，依場寬分為左、中、右。只有雙腳腳踝都可用時，結果才視為可靠。系統目前無法自行察覺場地偵測的錯誤，因此球場必須先經使用者在介面確認，否則一律不提供區域，賽評也就不會提到位置。區域只表示擊球當下的位置，不代表跑動路徑。
+\textbf{球場區域：}以擊球時球員雙腳腳踝的中點，透過單應矩陣投影到球場平面，依該球員所在半場分為前、中、後場，依場寬分為左、中、右。只有雙腳腳踝都可用時，結果才視為可靠。系統目前無法自行察覺場地偵測的錯誤，因此球場必須先經使用者在介面確認，否則一律不提供區域，賽評也就不會提到位置。區域只表示擊球當下的位置，不代表跑動路徑。
 
-\textbf{無法處理的情況。}擊球者不明的拍會保留在時間序中供模型參考，但不輸出賽評。賽評以回合為單位，若比分辨識判定片段內含多個回合，或該片段所屬時段的身分未判定，整個片段都不生成。在分析流程的示範中，這類片段的名額由下一名遞補。這些檢查都在呼叫模型之前完成。
+\textbf{無法處理的情況：}擊球者不明的拍會保留在時間序中供模型參考，但不輸出賽評。賽評以回合為單位，若比分辨識判定片段內含多個回合，或該片段所屬時段的身分未判定，整個片段都不生成。在分析流程的示範中，這類片段的名額由下一名遞補。這些檢查都在呼叫模型之前完成。
 
 \subsubsection{戰術觀察}
 
@@ -974,7 +974,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \tabref{tab:commentary-example}是 \texttt{MK\_vs\_CT\_2019} 片段 10 的實際輸出。第 1 拍的信心未達 0.70，模型因此使用「似乎」。這場比賽的球場未經使用者確認，模型沒有球場區域可用，第 3 拍的原句與回合摘要都因描述了沒有依據的位置而被審查拒絕，前者改用模板句，後者則省略。被拒絕的原句不會保留。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{賽評生成的實際輸出範例}
@@ -1008,7 +1008,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{使用流程總覽：}如\figref{fig:ui-workflow}。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{ui-workflow.pdf}
   \caption{使用者介面操作流程}
@@ -1017,14 +1017,14 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 比賽庫列出比賽資料夾中的每一場比賽及其分析狀態（\figref{fig:match-library}）。尚未分析的比賽從「分析設定」選擇要執行的項目（\figref{fig:analysis-settings}），分析在背景執行，完成後回看資料自動更新。已在其他環境完成分析的比賽，則可直接匯入既有結果，不需重新計算。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{ui/match_library.png}
   \caption{比賽庫，每場比賽標示分析狀態與是否可回看}
   \label{fig:match-library}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.850\linewidth]{ui/analysis_settings.png}
   \caption{分析設定，每個分析項目標示已完成、未執行或已過期}
@@ -1035,10 +1035,10 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 回看工作區是介面的核心，由播放器、回合分析欄與時間軸三個區域組成（\figref{fig:review-workspace-full}）。三者共用同一個影片時間，任一區域的操作都會同步反映到另外兩區。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{ui/review_workspace.jpg}
-  \caption{回看工作區。\circnum{①} 播放器與疊圖 \circnum{②} 回合分析欄 \circnum{③} 時間軸}
+  \caption{回看工作區：\circnum{①} 播放器與疊圖 \circnum{②} 回合分析欄 \circnum{③} 時間軸}
   \label{fig:review-workspace-full}
 \end{figure}
 
@@ -1048,10 +1048,10 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 完整轉播中，回合只佔播出時間的約三成。「只播片段」模式會自動跳過回合之間的重播、休息與觀眾畫面，只播放分段模組切出的比賽片段。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{ui/overlay_layers.jpg}
-  \caption{疊圖開啟前後。(a) 原始轉播畫面 (b) 開啟全部圖層}
+  \caption{疊圖開啟前後：(a) 原始轉播畫面 (b) 開啟全部圖層}
   \label{fig:overlay-layers}
 \end{figure}
 
@@ -1066,10 +1066,10 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
   \item \textbf{擊球點：}以俯視球場標出本回合每一拍的擊球位置，依擊球順序連線，顏色區分兩名球員，可一眼看出回合中雙方的跑動與落點分布。
 \end{itemize}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.950\linewidth]{ui/inspector.png}
-  \caption{回合分析欄。(a) 擊球序列與精華排名 (b) 產生賽評後 (c) 擊球點分頁}
+  \caption{回合分析欄：(a) 擊球序列與精華排名 (b) 產生賽評後 (c) 擊球點分頁}
   \label{fig:inspector}
 \end{figure}
 
@@ -1084,19 +1084,19 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
   \item \textbf{歡呼：}顯示各片段的歡呼訊號，並以三角形與數字標示精彩度排名。
 \end{itemize}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{ui/timeline_modes.png}
-  \caption{時間軸的四種模式（全場尺度）。(a) 片段 (b) 擊球 (c) 比分 (d) 歡呼}
+  \caption{時間軸的四種模式（全場尺度）：(a) 片段 (b) 擊球 (c) 比分 (d) 歡呼}
   \label{fig:timeline-modes}
 \end{figure}
 
 時間軸可在「全場」與「單片段」兩種尺度間切換（\figref{fig:timeline-zoom}）。全場尺度用於掌握整場比賽的分布與走勢。雙擊任一片段即放大到該回合，此時每一拍成為一個點並標上球種縮寫，可以看出來回的節奏。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{ui/timeline_zoom.png}
-  \caption{擊球模式在兩種尺度下的呈現。(a) 全場 (b) 單回合}
+  \caption{擊球模式在兩種尺度下的呈現：(a) 全場 (b) 單回合}
   \label{fig:timeline-zoom}
 \end{figure}
 
@@ -1104,7 +1104,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{分析計畫預覽：}使用者勾選分析項目時，介面即時列出執行計畫：哪些階段會執行、哪些沿用既有結果及其原因，以及計畫是否會呼叫 Gemini API（\figref{fig:plan-preview}）。若某些未勾選階段的上游結果會因這次分析而改變，介面也會列出這些將會過期的階段，回看時不會顯示過期的資料。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.850\linewidth]{ui/plan_preview.png}
   \caption{分析計畫預覽}
@@ -1113,7 +1113,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{任務進度：}分析在獨立的背景程序中執行。任務頁顯示整體進度、各階段耗時與詳細記錄，使用者也可以隨時取消，取消時已完成的階段會保留，下次分析只需從中斷處繼續（\figref{fig:task-progress}）。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.798\linewidth]{ui/task_progress.png}
   \caption{任務進度，顯示整體與各階段的進度及詳細記錄}
@@ -1122,7 +1122,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 \textbf{場地校正：}場地偵測是後續選人與站位換算的基礎，因此任務會先執行場地偵測，並把需要讀取球場的階段排到最後。球場一偵測完，介面即提示使用者檢查，分析設定頁自動展開場地預覽，其餘階段照常進行。若角點明顯偏移，使用者可直接在球場畫面上拖曳四個外角點，並以方向鍵逐像素微調（\figref{fig:court-calibration}）。保存後，尚未開始的階段直接使用新球場，已讀過舊球場的階段則自動重跑。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.797\linewidth]{ui/court_calibration.png}
   \caption{場地校正，拖曳四個外角點對齊球場邊線}
@@ -1133,7 +1133,7 @@ $C_s$ 為片段歡呼分數，聚合片段內全部窗口；$I_s$ 為片段歡�
 
 介面以 Vue 3 與 TypeScript 開發，並以 Electron 包裝為 Windows 桌面程式。分析本身仍由本機的 Python 服務執行，介面只負責送出分析任務與顯示進度。分析完成後，匯入程式會先驗證各階段的 JSON 是否完整、是否與影片相符，再整合成一份回看資料，介面只讀取這一份資料，不直接讀取各階段的原始輸出（\figref{fig:ui-architecture}）。骨架、軌跡等資料量較大的疊圖內容則按回合分開儲存，只在使用者打開疊圖時才讀取目前與下一個回合，避免開啟比賽時長時間等待。
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[scale=\flowscale]{ui-architecture.pdf}
   \caption{使用者介面實作架構}

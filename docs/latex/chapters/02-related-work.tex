@@ -14,7 +14,7 @@
 
 文字報告方面，RallyLens 以 Gemini 生成回合分析報告，並讓數字全由程式計算、模型只負責詮釋，以避免數字幻覺~\cite{rallylens}。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \footnotesize
   \setlength{\tabcolsep}{3.5pt}
@@ -67,10 +67,10 @@
 既有方法依所用訊號可分為四種思路：
 
 \begin{enumerate}
-  \item \textbf{軌跡幾何。}在球的 Y 座標找峰值、X 座標找極值~\cite{bosi2021thesis}，開源專案 SoloShuttlePose \cite{soloshuttlepose} 亦屬此類。殺球前後球的運動方向連貫，此法容易漏抓~\cite{bosi2021thesis}。
-  \item \textbf{球員姿態。}以 Transformer 由雙方骨架序列預測羽球飛行方向，方向轉換處即為擊球幀。容差由 $\pm$15 收緊到 $\pm$5 幀時，F1 由 79.55\% 降至 63.92\%~\cite{chien2023hitframe}。
-  \item \textbf{多源學習式。}MonoTrack 的 HitNet 以 GRU 讀取球場角點、姿態與羽球位置，逐幀判斷是否擊球，再以動態規劃施加「最短間隔、擊球者交替」約束，F1 由 0.866 提升至 0.946~\cite{monotrack}。AI-Powered Badminton Coach 先判斷擊球者並以其切換處分段，再依羽球角度變化定位擊球幀~\cite{guo2025coach}。
-  \item \textbf{音訊。}以 LPC 殘差偵測擊球聲，但球評、觀眾等背景噪音使召回率不理想~\cite{bosi2021thesis}。
+  \item \textbf{軌跡幾何：}在球的 Y 座標找峰值、X 座標找極值~\cite{bosi2021thesis}，開源專案 SoloShuttlePose \cite{soloshuttlepose} 亦屬此類。殺球前後球的運動方向連貫，此法容易漏抓~\cite{bosi2021thesis}。
+  \item \textbf{球員姿態：}以 Transformer 由雙方骨架序列預測羽球飛行方向，方向轉換處即為擊球幀。容差由 $\pm$15 收緊到 $\pm$5 幀時，F1 由 79.55\% 降至 63.92\%~\cite{chien2023hitframe}。
+  \item \textbf{多源學習式：}MonoTrack 的 HitNet 以 GRU 讀取球場角點、姿態與羽球位置，逐幀判斷是否擊球，再以動態規劃施加「最短間隔、擊球者交替」約束，F1 由 0.866 提升至 0.946~\cite{monotrack}。AI-Powered Badminton Coach 先判斷擊球者並以其切換處分段，再依羽球角度變化定位擊球幀~\cite{guo2025coach}。
+  \item \textbf{音訊：}以 LPC 殘差偵測擊球聲，但球評、觀眾等背景噪音使召回率不理想~\cite{bosi2021thesis}。
 \end{enumerate}
 
 \subsection{球種辨識}
@@ -88,7 +88,7 @@
 
 本系統定位為一條批次執行的分析管線。上游步驟不需另外訓練模型，也不需針對每支影片人工標記或調整參數，讓既有的成熟模型能直接用在未經處理的轉播影片上，並以公開的真值與評分程式評估各模組。在此基礎上再產生精彩片段排序與自然語言賽評。各子任務的路線如\tabref{tab:positioning}。
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \caption{本系統在各子任務採用的路線}
