@@ -1,4 +1,4 @@
-% 羽球比賽分析系統 專題報告
+% 自動化羽球賽事分析系統 專題報告
 % 版面依照 docs/專題報告範本（report 類別、標楷體、1.5 倍行距、2cm 邊界）
 % 編譯：在本目錄執行 latexmk（設定見 latexmkrc，使用 LuaLaTeX + biber）
 
@@ -95,6 +95,9 @@
 \newcommand{\chapref}[1]{\hyperref[#1]{第\zhnumber{\getrefnumber{#1}}章}}
 % 檔案路徑：可在 / 處斷行
 \newcommand{\file}[1]{\path{#1}}
+
+% 摘要頁的專案連結 QR code
+\usepackage{qrcode}
 
 \begin{document}
 
